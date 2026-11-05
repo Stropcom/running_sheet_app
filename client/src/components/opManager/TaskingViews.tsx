@@ -14,7 +14,13 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ShieldAlert } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import type { BreachItem } from "@shared/taskingBreaches";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -86,6 +92,12 @@ interface Ctx {
   focus: string | null;
   dim: (c: DayCell) => string;
   warn: (teamId: string, dayIndex: number, primary: string) => ReactNode;
+  /** The red EA-breach dot for a team-day, or null when there is none. */
+  breach: (
+    teamId: string,
+    dayIndex: number,
+    slot?: "top" | "bottom"
+  ) => ReactNode;
 }
 
 /** Clicking an operation's name highlights that operation. */
@@ -133,8 +145,103 @@ function localISO(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * The red dot on a team-day where someone on duty has an EA breach on the
+ * roster. Same alert as the roster's own dot; click for what and who. Stops
+ * the press so it never starts a slide or opens a bar's menu.
+ */
+function BreachDot({
+  items,
+  heading,
+  dayName,
+  onOpenRoster,
+  className = "",
+}: {
+  items: BreachItem[];
+  heading: string;
+  dayName: string;
+  onOpenRoster?: () => void;
+  className?: string;
+}) {
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={`tcv-breach ${items.length > 1 ? "n" : ""} ${className}`}
+          aria-label={`${items.length} EA breach${items.length !== 1 ? "es" : ""}, ${heading}`}
+          title={`${items.length} EA breach${items.length !== 1 ? "es" : ""}`}
+          data-testid="tasking-breach-dot"
+          onPointerDown={stop}
+          onMouseDown={stop}
+          onClick={stop}
+          onKeyDown={stop}
+        >
+          {items.length > 1 ? items.length : ""}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-80 max-w-[calc(100vw-24px)] p-0"
+        align="end"
+        data-testid="tasking-breach-popover"
+        onPointerDown={stop}
+        onMouseDown={stop}
+        onKeyDown={stop}
+        onClick={stop}
+      >
+        <div className="flex items-center gap-2 border-b px-3 py-2 bg-red-500/10">
+          <ShieldAlert className="h-4 w-4 text-red-600 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">
+              EA compliance issue{items.length !== 1 ? "s" : ""}
+            </div>
+            <div className="text-xs text-foreground/70">{heading}</div>
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto divide-y">
+          {items.map(b => (
+            <div key={b.id} className="px-3 py-2 text-sm">
+              <div className="font-semibold">{b.ruleTitle}</div>
+              {b.eaReference && (
+                <div className="text-xs text-foreground/70">
+                  {b.eaReference}
+                </div>
+              )}
+              <div className="mt-1 text-xs">
+                {b.detail.startsWith(b.memberName) ? (
+                  <>
+                    <span className="font-semibold">{b.memberName}</span>
+                    {b.detail.slice(b.memberName.length)}
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">{b.memberName}:</span>{" "}
+                    {b.detail}
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {onOpenRoster && (
+          <div className="border-t px-3 py-2">
+            <button
+              type="button"
+              className="text-xs font-semibold text-primary underline-offset-2 hover:underline"
+              onClick={onOpenRoster}
+            >
+              Open {dayName} on the roster
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Banded columns */
-function PanelBanded({ week, days, today, teams, dim, warn }: Ctx) {
+function PanelBanded({ week, days, today, teams, dim, warn, breach }: Ctx) {
   return (
     <div className="tcv">
       {teams.map(t => (
@@ -169,6 +276,7 @@ function PanelBanded({ week, days, today, teams, dim, warn }: Ctx) {
                       )}
                       {bl && !c.off && <BlendTag />}
                       {warn(t.id, i, c.primary)}
+                      {breach(t.id, i)}
                     </div>
                     <div className={`tcv-pa-task ${c.off ? "hide" : ""}`}>
                       <i className="tcv-tag">P</i>
@@ -202,7 +310,7 @@ function PanelBanded({ week, days, today, teams, dim, warn }: Ctx) {
 }
 
 /** Schedule tables (two panels across) */
-function PanelTables({ week, days, teams, dim, warn }: Ctx) {
+function PanelTables({ week, days, teams, dim, warn, breach }: Ctx) {
   return (
     <div className="tcv-pb">
       {teams.map(t => (
@@ -236,6 +344,7 @@ function PanelTables({ week, days, teams, dim, warn }: Ctx) {
                     {c.off ? (
                       <td colSpan={3} className="off">
                         Rostered day off
+                        {breach(t.id, i)}
                       </td>
                     ) : (
                       <>
@@ -249,6 +358,7 @@ function PanelTables({ week, days, teams, dim, warn }: Ctx) {
                           )}
                           {bl && <BlendTag />}
                           {warn(t.id, i, c.primary)}
+                          {breach(t.id, i)}
                         </td>
                         <td>
                           {c.primary ? (
@@ -280,7 +390,7 @@ function PanelTables({ week, days, teams, dim, warn }: Ctx) {
 }
 
 /** Day tiles (seven days and a week summary: four across, two rows) */
-function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
+function DayTiles({ week, days, today, teams, dim, warn, breach }: Ctx) {
   const sum = weekSummary(week);
   const ops = Object.keys(sum.primaryByOp);
   return (
@@ -307,7 +417,9 @@ function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
                 <i />
                 <div className="tcv-tl-body">
                   <div className="tcv-tl-team">
-                    {bl ? "T1 + T2 combined" : t.label}
+                    <span>{bl ? "T1 + T2 combined" : t.label}</span>
+                    {breach(t.id, i)}
+                    {bl && breach("surv2", i)}
                   </div>
                   {c.off ? (
                     <span className="tcv-rdo" style={{ fontWeight: 600 }}>
@@ -556,7 +668,13 @@ function TimelineBar({
             onKeyDown: key,
             // A click on the operation's name opens this menu, it does not
             // also highlight the operation.
-            onClickCapture: (e: React.MouseEvent) => e.stopPropagation(),
+            // (Not for an EA breach dot or its popover, which have their own click.)
+            onClickCapture: (e: React.MouseEvent) => {
+              const t = e.target as HTMLElement;
+              if (!e.currentTarget.contains(t) || t.closest(".tcv-breach"))
+                return;
+              e.stopPropagation();
+            },
           }
         : {})}
     >
@@ -762,7 +880,17 @@ function countTitle(
 }
 
 /** Timeline (hours across, a lane for each team) */
-function Timeline({ week, days, today, teams, dim, warn, edit, counts }: Ctx) {
+function Timeline({
+  week,
+  days,
+  today,
+  teams,
+  dim,
+  warn,
+  breach,
+  edit,
+  counts,
+}: Ctx) {
   const [lo, hi0] = timelineSpan(week);
   // Editable: always reach midnight, so a bar slid to a 23:00 start has room.
   const hi = edit?.editable ? Math.max(hi0, 24 * 60) : hi0;
@@ -807,6 +935,7 @@ function Timeline({ week, days, today, teams, dim, warn, edit, counts }: Ctx) {
             span={[lo, hi]}
             dim={dim}
             warn={warn}
+            breach={breach}
             edit={edit}
             counts={counts}
             openMenu={setMenu}
@@ -836,6 +965,7 @@ function TimelineRow({
   span,
   dim,
   warn,
+  breach,
   edit,
   counts,
   openMenu,
@@ -853,6 +983,7 @@ function TimelineRow({
   pct: (m: number) => number;
   dim: Ctx["dim"];
   warn: Ctx["warn"];
+  breach: Ctx["breach"];
 }) {
   const wk = i > 4 ? "wk" : "";
   return (
@@ -897,7 +1028,7 @@ function TimelineRow({
           return (
             <TimelineBar
               key={t.id}
-              className={`tcv-bar ${bl ? "tcv-blend merged" : "tcv-team"} ${dim(c)}`}
+              className={`tcv-bar ${bl ? "tcv-blend merged" : "tcv-team"} ${dim(c)}${breach(t.id, i) || (bl && breach("surv2", i)) ? " has-breach" : ""}`}
               edit={edit}
               teamId={t.id}
               dayIndex={i}
@@ -934,6 +1065,8 @@ function TimelineRow({
                   <span className="t" style={{ marginLeft: 0 }}>
                     {formatShiftText(c.shift)}
                   </span>
+                  {breach("surv1", i, "top")}
+                  {breach("surv2", i, "bottom")}
                   <span className="tcv-count-pair">
                     <TeamCount
                       counts={counts}
@@ -961,6 +1094,7 @@ function TimelineRow({
                   ) : null}
                   <span className="t">{formatShiftText(c.shift)}</span>
                   <TeamCount counts={counts} teamId={t.id} dayIndex={i} />
+                  {breach(t.id, i)}
                 </>
               )}
             </TimelineBar>
@@ -985,7 +1119,17 @@ export function TaskingCalendarViews({
   renderWarning,
   edit,
   counts,
+  breaches,
+  breachCount = 0,
+  onOpenRoster,
 }: {
+  /** EA breaches by `team-day` (see shared/taskingBreaches.ts); shown to
+   * everyone who can see the calendar. Screen only, not in the PDF. */
+  breaches?: Record<string, BreachItem[] | undefined>;
+  /** How many distinct EA breaches the week has (the header chip). */
+  breachCount?: number;
+  /** Open the roster at a day of this week. */
+  onOpenRoster?: (dayIndex: number) => void;
   /** Admin editing on the Timeline (slide a bar, pick an operation). */
   edit?: TimelineEdit;
   /** People rostered on duty against the team's minimum for each `team-day`
@@ -1030,6 +1174,21 @@ export function TaskingCalendarViews({
     focus,
     dim: c => (focus && !cellHasOp(c, focus) ? "tcv-dim" : ""),
     warn: renderWarning,
+    breach: (teamId, dayIndex, slot) => {
+      const items = breaches?.[`${teamId}-${dayIndex}`];
+      if (!items || items.length === 0) return null;
+      const team = teams.find(t => t.id === teamId);
+      const d = days[dayIndex];
+      return (
+        <BreachDot
+          items={items}
+          heading={`${team?.label ?? teamId} · ${d.name} ${String(d.day).padStart(2, "0")} ${d.month}`}
+          dayName={d.name}
+          className={slot ? `slot-${slot}` : ""}
+          onOpenRoster={onOpenRoster ? () => onOpenRoster(dayIndex) : undefined}
+        />
+      );
+    },
   };
 
   // The pink-and-blue of a blended day are Team 1's and Team 2's own colours.
@@ -1049,6 +1208,16 @@ export function TaskingCalendarViews({
           <h2 className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
             Weekly Tasking Calendar
           </h2>
+          {breachCount > 0 && (
+            <Badge
+              variant="outline"
+              className="gap-1 text-red-600 border-red-500/40 bg-red-500/5"
+              data-testid="tasking-breach-chip"
+            >
+              <ShieldAlert className="h-3 w-3" />
+              {breachCount} EA breach{breachCount !== 1 ? "es" : ""}
+            </Badge>
+          )}
           {issueCount > 0 && (
             <Badge
               variant="outline"

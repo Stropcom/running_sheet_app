@@ -71,10 +71,26 @@ import {
   deleteCtoRosterTeam,
   reorderCtoRosterTeams,
   upsertRosterShiftNotification,
+  planTaskingSyncFor,
+  applyTaskingSyncFor,
 } from "../ctoRoster";
+import { groupSyncChanges } from "../../shared/taskingRosterSync";
 import { protectedProcedure, router } from "../_core/trpc";
 
 import { adminProcedure } from "./_helpers";
+
+/** A team's start time on the tasking for one day (the roster sync). */
+const taskingSyncInput = z.object({
+  targets: z
+    .array(
+      z.object({
+        teamName: z.string().min(1).max(60),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        start: z.string().regex(/^\d{2}:\d{2}$/),
+      })
+    )
+    .max(60),
+});
 
 // Ported from the standalone roster_app. Editing stays admin-only, matching
 // that app's own access model (unlike opManager's tasking board above,
@@ -390,6 +406,32 @@ export const ctoRosterRouter = router({
         }
         return { success: true };
       }),
+
+    /**
+     * Which on-duty members' roster start times differ from the start times
+     * the CTO Weekly Tasking now has (today and later), for the "update the
+     * roster?" question. Reads only — admin only.
+     */
+    previewTaskingSync: adminProcedure
+      .input(taskingSyncInput)
+      .query(async ({ input }) => {
+        const changes = await planTaskingSyncFor(input.targets);
+        return {
+          groups: groupSyncChanges(changes),
+          shifts: changes.length,
+          members: new Set(changes.map(c => c.memberId)).size,
+        };
+      }),
+
+    /** Brings the roster into line with the tasking's start times, and tells the members — admin only. */
+    applyTaskingSync: adminProcedure
+      .input(taskingSyncInput)
+      .mutation(async ({ ctx, input }) =>
+        applyTaskingSyncFor(input.targets, {
+          id: ctx.user.id,
+          name: ctx.user.name ?? null,
+        })
+      ),
 
     /** Bulk update shifts for a member across multiple dates — admin only */
     bulkUpdate: adminProcedure
@@ -1091,6 +1133,15 @@ export const ctoRosterRouter = router({
     liveFindings: adminProcedure.query(async () =>
       runCtoRosterEbaCheck("main")
     ),
+
+    // The same findings for the red dots on the CTO Weekly Tasking calendar.
+    // Anyone who can see the calendar sees the dots (the roster's own dots stay
+    // admin-only), so this is open to every signed-in user. Findings only;
+    // the team-day mapping is the pure rule in shared/taskingBreaches.ts.
+    taskingBreaches: protectedProcedure.query(async () => {
+      const r = await runCtoRosterEbaCheck("main");
+      return r.findings;
+    }),
   }),
 
   // Team coverage minimums shown on the roster "Outlook" projection view.

@@ -62,10 +62,18 @@ import {
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
+import { RosterSyncDialog } from "@/components/opManager/RosterSyncDialog";
+import { toClock } from "@shared/taskingRosterSync";
+import {
+  distinctBreachCount,
+  taskingBreachCells,
+} from "@shared/taskingBreaches";
+import type { SyncGroup } from "@shared/taskingRosterSync";
 import {
   SHIFT_PRESETS,
   changedCellKeys,
   describeTimelineChanges,
+  shiftStart,
   shiftToCellFields,
 } from "@shared/taskingTimeline";
 import { useTeamColour } from "@/lib/teams";
@@ -390,6 +398,15 @@ export default function OperationManagerPage() {
   const [declinedBlend, setDeclinedBlend] = useState<Record<number, string>>(
     {}
   );
+  // "Update the roster too?": the question being asked, and how to answer the
+  // step (Save, Post) that is waiting on it.
+  const [rosterAsk, setRosterAsk] = useState<{
+    groups: SyncGroup[];
+    members: number;
+    answer: (yes: boolean) => void;
+  } | null>(null);
+  const applyRosterSyncMut =
+    trpc.ctoRoster.roster.applyTaskingSync.useMutation();
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
     new Set()
   );
@@ -512,6 +529,49 @@ export default function OperationManagerPage() {
     rosterShiftMap,
     outlookSettingsQuery.data,
   ]);
+
+  // ── EA breaches (the roster's red dots, carried onto the calendar) ──────────
+  // Open to everyone who can see the calendar. If the roster is switched off
+  // for this Command the query is refused and the calendar just shows no dots.
+  const breachQuery = trpc.ctoRoster.eba.taskingBreaches.useQuery(undefined, {
+    staleTime: 30_000,
+    retry: false,
+  });
+  const taskingBreaches = useMemo(() => {
+    const teams = rosterTeamsQuery.data;
+    const members = rosterMembersQuery.data;
+    if (!breachQuery.data || !teams || !members) return {};
+    const dates = DAYS.map((_, i) => addDaysUTC(weekStart, i));
+    const cells = taskingBreachCells(
+      breachQuery.data,
+      teams,
+      members,
+      rosterSecondmentsQuery.data ?? [],
+      (memberId, date) => rosterShiftMap.get(memberId)?.get(date) ?? "",
+      TEAM_ROWS.map(r => TEAM_LABELS[r]),
+      dates
+    );
+    // Re-key by the calendar's own `teamRow-dayIndex`.
+    const byCell: Record<string, (typeof cells)[string]> = {};
+    for (const r of TEAM_ROWS) {
+      dates.forEach((date, i) => {
+        const list = cells[`${TEAM_LABELS[r]}|${date}`];
+        if (list) byCell[`${r}-${i}`] = list;
+      });
+    }
+    return byCell;
+  }, [
+    breachQuery.data,
+    rosterTeamsQuery.data,
+    rosterMembersQuery.data,
+    rosterSecondmentsQuery.data,
+    rosterShiftMap,
+    weekStart,
+  ]);
+  const taskingBreachCount = useMemo(
+    () => distinctBreachCount(taskingBreaches),
+    [taskingBreaches]
+  );
 
   const taskingIssueCount = useMemo(
     () => Object.values(taskingCoverage).filter(c => c.short).length,
@@ -755,6 +815,67 @@ export default function OperationManagerPage() {
     };
   };
 
+  // ── Carry the tasking's start times to the roster ───────────────────────────
+  /** Each team's start time on the tasking, by day (a shift with no time, such
+   * as RDO, has none). */
+  const rosterTargets = () => {
+    const out: { teamName: string; date: string; start: string }[] = [];
+    for (const teamRow of TEAM_ROWS)
+      DAYS.forEach((_, dayIndex) => {
+        const start = shiftStart(
+          cellShift(taskingGrid[`${teamRow}-${dayIndex}`])
+        );
+        if (start === null) return;
+        out.push({
+          teamName: TEAM_LABELS[teamRow],
+          date: addDaysUTC(weekStart, dayIndex),
+          start: toClock(start),
+        });
+      });
+    return out;
+  };
+  /**
+   * If the on-duty members' roster start times differ from the tasking's (today
+   * and later), asks whether to update the roster; Yes updates it and notifies
+   * them. Asked after every Save and before every Post / Re-post while they
+   * differ (a No is not remembered, so changing the times again and saving asks
+   * again). Resolves when the question is answered (or there was nothing to
+   * ask), so Save and Re-post can carry on after it.
+   */
+  const checkRosterAgainstTasking = async () => {
+    if (!isAdmin) return;
+    const targets = rosterTargets();
+    if (targets.length === 0) return;
+    try {
+      const plan = await utils.ctoRoster.roster.previewTaskingSync.fetch(
+        { targets },
+        { staleTime: 0 }
+      );
+      if (plan.shifts === 0) return;
+      const yes = await new Promise<boolean>(resolve =>
+        setRosterAsk({
+          groups: plan.groups,
+          members: plan.members,
+          answer: resolve,
+        })
+      );
+      if (!yes) return;
+      const done = await applyRosterSyncMut.mutateAsync({ targets });
+      await utils.ctoRoster.roster.getRange.invalidate();
+      await utils.ctoRoster.eba.liveFindings.invalidate();
+      toast.success(
+        `Roster updated: ${done.shifts} shift${done.shifts === 1 ? "" : "s"} for ${done.members} ${done.members === 1 ? "person" : "people"}. They have been notified in the app.`
+      );
+    } catch {
+      toast.error("Could not update the roster from the tasking.");
+    }
+  };
+  /** Post / Re-post: the roster question first, then who to notify. */
+  const postWithRosterCheck = async () => {
+    await checkRosterAgainstTasking();
+    openNotifyDialog();
+  };
+
   const saveAllTaskingCells = async () => {
     setIsSavingTasking(true);
     try {
@@ -767,6 +888,7 @@ export default function OperationManagerPage() {
       await utils.opManager.getTaskingCalendar.invalidate();
       setSavedGrid(taskingGrid);
       toast.success("Tasking calendar saved.");
+      await checkRosterAgainstTasking();
     } catch {
       toast.error("Failed to save tasking calendar.");
     }
@@ -829,6 +951,7 @@ export default function OperationManagerPage() {
       toast.success(
         keys.length === 1 ? "Saved 1 change." : `Saved ${keys.length} changes.`
       );
+      await checkRosterAgainstTasking();
       if (repost) openNotifyDialog();
     } catch {
       toast.error("Failed to save the changes.");
@@ -1122,6 +1245,22 @@ export default function OperationManagerPage() {
       }}
       onYes={keep => blendDay(blendAsk ?? 0, keep)}
       onNo={() => keepApart(blendAsk ?? 0)}
+    />
+  );
+
+  const rosterSyncDialog = (
+    <RosterSyncDialog
+      open={rosterAsk !== null}
+      groups={rosterAsk?.groups ?? []}
+      members={rosterAsk?.members ?? 0}
+      onYes={() => {
+        rosterAsk?.answer(true);
+        setRosterAsk(null);
+      }}
+      onNo={() => {
+        rosterAsk?.answer(false);
+        setRosterAsk(null);
+      }}
     />
   );
 
@@ -1509,7 +1648,7 @@ export default function OperationManagerPage() {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={openNotifyDialog}
+                        onClick={() => void postWithRosterCheck()}
                         disabled={postWeekMut.isPending}
                         className="gap-1"
                         variant={
@@ -1584,6 +1723,11 @@ export default function OperationManagerPage() {
                 grid={taskingGrid}
                 issueCount={taskingIssueCount}
                 counts={taskingCoverage}
+                breaches={taskingBreaches}
+                breachCount={taskingBreachCount}
+                onOpenRoster={i =>
+                  navigate(`/cto-roster?date=${addDaysUTC(weekStart, i)}`)
+                }
                 edit={
                   isAdmin
                     ? {
@@ -1668,6 +1812,7 @@ export default function OperationManagerPage() {
           </div>
         )}
         {blendDialog}
+        {rosterSyncDialog}
         {notifyDialog}
         <ExportTaskingDialog
           open={exportDialogOpen}
@@ -2083,6 +2228,7 @@ export default function OperationManagerPage() {
       </div>
 
       {blendDialog}
+      {rosterSyncDialog}
       {notifyDialog}
       {deleteWeekDialog}
     </DashboardLayout>

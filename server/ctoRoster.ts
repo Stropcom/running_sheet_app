@@ -53,6 +53,11 @@ import {
 import { runEbaChecks, type ShiftRecord } from "./ctoRosterEbaEngine";
 import { computeShiftInterval } from "../shared/ctoRosterShiftDuration";
 import { rosterCommand, rosterCommandForWrite } from "./rosterContext";
+import {
+  planTaskingRosterSync,
+  type SyncChange,
+  type SyncTarget,
+} from "../shared/taskingRosterSync";
 import { COMMAND_LABELS, type CommandCode } from "../shared/commands";
 
 // ── Per-Command scope ────────────────────────────────────────────────────────
@@ -2700,4 +2705,111 @@ export async function getWeeklyTaskingReport(
     atRiskDayCount,
     outstandingTodos,
   };
+}
+
+// ── Carrying the CTO Weekly Tasking's start times to the roster ──────────────
+// The rule (who is affected, what changes) is shared/taskingRosterSync.ts; this
+// reads this Command's teams, members, secondments and shifts and applies the
+// result.
+
+/** A team's start on the tasking, as the screen sends it. */
+export interface TaskingSyncInput {
+  teamName: string;
+  date: string;
+  /** "HH:MM" */
+  start: string;
+}
+
+/** Today in the unit's own time zone (the server runs on Perth time). */
+const unitToday = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "Australia/Perth" });
+
+export async function planTaskingSyncFor(
+  inputs: TaskingSyncInput[]
+): Promise<SyncChange[]> {
+  if (inputs.length === 0) return [];
+  const teams = await getAllCtoRosterTeams();
+  const teamByName = new Map(teams.map(t => [t.name.trim().toLowerCase(), t]));
+  const targets: SyncTarget[] = [];
+  for (const i of inputs) {
+    const team = teamByName.get(i.teamName.trim().toLowerCase());
+    const [h, m] = i.start.split(":").map(Number);
+    if (!team || h > 23 || m > 59) continue;
+    targets.push({
+      teamId: team.id,
+      teamName: team.name,
+      date: i.date,
+      startMinutes: h * 60 + m,
+    });
+  }
+  if (targets.length === 0) return [];
+  const dates = targets.map(t => t.date).sort();
+  const [members, secondments, shifts] = await Promise.all([
+    getAllCtoRosterMembers(),
+    getRelevantCtoRosterSecondments(),
+    getCtoRosterShiftsForDateRange(dates[0], dates[dates.length - 1]),
+  ]);
+  return planTaskingRosterSync({
+    targets,
+    members,
+    secondments,
+    shifts,
+    today: unitToday(),
+  });
+}
+
+/**
+ * Applies the plan: each affected shift gets the new type and start time (its
+ * comment, acting flag and length are left alone), an audit entry, and the
+ * usual "Your Roster Was Updated" notice to the person (joined into one per
+ * person by the existing notice logic).
+ */
+export async function applyTaskingSyncFor(
+  inputs: TaskingSyncInput[],
+  actor: { id: number; name: string | null }
+): Promise<{ shifts: number; members: number }> {
+  const changes = await planTaskingSyncFor(inputs);
+  for (const c of changes) {
+    await upsertCtoRosterShift(
+      c.memberId,
+      c.date,
+      c.toCode,
+      actor.id,
+      undefined,
+      undefined,
+      c.storeTime,
+      undefined
+    );
+    await writeCtoRosterAudit({
+      userId: actor.id,
+      userName: actor.name,
+      action: "upsert_shift",
+      memberId: c.memberId,
+      memberName: c.memberName,
+      shiftDate: c.date,
+      oldValue: JSON.stringify({
+        shiftCode: c.fromCode,
+        shiftTime: c.fromTime,
+      }),
+      newValue: JSON.stringify({ shiftCode: c.toCode, shiftTime: c.storeTime }),
+      detail: `From the CTO Weekly Tasking: ${c.teamName} starts at ${c.toTime}`,
+    });
+  }
+  const byMember = new Map<number, SyncChange[]>();
+  for (const c of changes)
+    byMember.set(c.memberId, [...(byMember.get(c.memberId) ?? []), c]);
+  for (const [memberId, list] of Array.from(byMember)) {
+    const dates = list.map(c => c.date).sort();
+    await upsertRosterShiftNotification({
+      memberId,
+      actingUserId: actor.id,
+      kind: "count",
+      count: list.length,
+      startDate: dates[0],
+      endDate: dates[dates.length - 1],
+    }).catch(err =>
+      console.warn("[Notifications] Roster shift notify failed:", err)
+    );
+  }
+  return { shifts: changes.length, members: byMember.size };
 }

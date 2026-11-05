@@ -168,3 +168,18 @@
 .tcv-count.short { color: #dc2626; }
 .tcv-count-pair { position: absolute; right: 14px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: space-around; align-items: flex-end; padding: 2px 0; pointer-events: none; }
 .tcv-count-pair .tcv-count { position: static; transform: none; }
+
+/* EA breach dot: the roster's red dot, carried onto each team-day. */
+.tcv-breach { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; min-width: 12px; border-radius: 999px; background: #dc2626; box-shadow: 0 0 0 2px var(--card); color: #fff; font-size: 8px; font-weight: 800; line-height: 1; padding: 0; border: 0; cursor: pointer; margin-left: auto; }
+.tcv-breach.n { width: 14px; height: 14px; min-width: 14px; font-size: 9px; }
+.tcv-breach:focus-visible { outline: 2px solid #dc2626; outline-offset: 2px; }
+.tcv-tl-team { display: flex; align-items: center; gap: 6px; }
+.tcv-tl-team .tcv-breach { margin-left: auto; }
+.tcv-tl-team .tcv-breach + .tcv-breach { margin-left: 0; }
+.tcv-table td.off .tcv-breach { margin-left: 8px; vertical-align: middle; }
+.tcv-table td.sh { position: relative; }
+.tcv-table td.sh .tcv-breach { position: absolute; right: 10px; top: 12px; margin: 0; }
+.tcv-bar > .tcv-breach { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); margin: 0; }
+.tcv-bar.merged > .tcv-breach.slot-top { top: 25%; }
+.tcv-bar.merged > .tcv-breach.slot-bottom { top: 75%; }
+.tcv-bar.has-breach .tcv-count, .tcv-bar.has-breach .tcv-count-pair { right: 26px; }

@@ -3575,6 +3575,7 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
   await call("opManager.deleteWeek", { weekStart: W });
   // A real operation, so it is one of the menu's choices to switch back to.
   const opName = `E2E NINE HOUR ${Date.now()}`;
+  const createdName = `E2E CREATED ${Date.now()}`;
   const made = (
     await (await call("operation.create", { name: opName })).json()
   )[0].result.data.json;
@@ -3647,8 +3648,45 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
       page.locator(".tcv-bar", { hasText: "0600–1500" })
     ).toHaveCount(2);
     await expect(wed).toHaveCount(0);
+
+    // None (under the line, with Admin and Other) clears the operation.
+    const first = page.locator(".tcv-bar", { hasText: opName }).first();
+    await first.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await first.click();
+    await menu.getByRole("menuitemradio", { name: "None" }).click();
+    await expect(
+      page.getByRole("region", { name: "Unsaved timeline changes" })
+    ).toContainText(`operation ${opName} to none`);
+
+    // Create (above the line, with the operations) makes a new operation and
+    // puts it on the bar.
+    const bar = page
+      .locator(".tcv-bar")
+      .filter({ hasNotText: opName })
+      .filter({ hasNotText: "Admin" })
+      .first();
+    await bar.click();
+    await menu.getByRole("menuitem", { name: /Create operation/ }).click();
+    await menu.getByLabel("New operation name").fill(createdName);
+    await menu.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(
+      page.locator(".tcv-bar", { hasText: createdName })
+    ).toHaveCount(1);
   } finally {
     await call("opManager.deleteWeek", { weekStart: W });
     await call("operation.delete", { id: opId });
+    const all = await (
+      await page.request.get(
+        `/api/trpc/operation.list?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: null } }))}`
+      )
+    ).json();
+    const rows = (all[0]?.result?.data?.json ?? []) as {
+      id: number;
+      name: string;
+    }[];
+    for (const r of rows.filter(r => r.name === createdName))
+      await call("operation.delete", { id: r.id });
   }
 });

@@ -183,3 +183,4 @@
 .tcv-bar.merged > .tcv-breach.slot-top { top: 25%; }
 .tcv-bar.merged > .tcv-breach.slot-bottom { top: 75%; }
 .tcv-bar.has-breach .tcv-count, .tcv-bar.has-breach .tcv-count-pair { right: 26px; }
+.tcv-menu button.tcv-menu-create { color: var(--primary); font-weight: 600; justify-content: flex-start; }

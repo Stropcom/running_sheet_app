@@ -1752,6 +1752,12 @@ export default function OperationManagerPage() {
                         ops: activeOps.map(o => o.name),
                         onSlide: slideTeamShift,
                         onOp: pickTeamOp,
+                        onCreateOp: name =>
+                          new Promise<string | null>(resolve => {
+                            void handleCreateOp(name, (_, made) =>
+                              resolve(made)
+                            ).then(() => resolve(null));
+                          }),
                         onSplit: splitDay,
                         changed: new Set(changedCellKeys(timelineChanges)),
                       }

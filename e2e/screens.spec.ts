@@ -2879,3 +2879,39 @@ test("Calendar: month grid by default, List view is selectable and remembered", 
     "true"
   );
 });
+
+test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit in the header, Esc and Exit put it back", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/cto-roster");
+  await expect(page.getByText("Showing", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.getByText("Showing", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toHaveCount(0);
+  const bar = page.getByRole("group", { name: "Roster full screen controls" });
+  await expect(bar.getByRole("button", { name: "Zoom out" })).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Today" })).toBeVisible();
+
+  // Exit button puts the toolbar back.
+  await bar.getByRole("button", { name: "Exit full screen" }).click();
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toBeVisible();
+  await expect(page.getByText("Showing", { exact: true })).toBeVisible();
+
+  // Esc does too.
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toBeVisible();
+
+  // A phone gets the same controls as a strip on the page.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(
+    page
+      .getByRole("group", { name: "Roster full screen controls" })
+      .getByRole("button", { name: "Exit full screen" })
+  ).toBeVisible();
+});

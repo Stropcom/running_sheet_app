@@ -1,4 +1,6 @@
 import { RosterCommandBar, isRosterPath } from "@/components/RosterCommandBar";
+import { RosterFullscreenBar } from "@/components/roster/RosterZoomControl";
+import { useRosterFullscreen } from "@/lib/rosterFullscreen";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { BannerOperation } from "@/components/BannerOperation";
 import { PasskeyBanner } from "@/components/PasskeyBanner";
@@ -1693,6 +1695,7 @@ function DashboardLayoutContent({
   }, []);
 
   const isMobile = useIsMobile();
+  const rosterFullscreen = useRosterFullscreen();
 
   const { data: outstanding } = trpc.sheet.outstandingForMe.useQuery(
     undefined,
@@ -2021,7 +2024,11 @@ function DashboardLayoutContent({
               centre rather than being pushed around by whatever is on either
               side of it. pointer-events-none so it can never swallow a click
               aimed at a control underneath. */}
-          <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2.5">
+          <div
+            className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center gap-2.5 ${
+              rosterFullscreen ? "hidden 2xl:flex" : "flex"
+            }`}
+          >
             <ShieldCheck className="w-7 h-7 text-sidebar-primary shrink-0" />
             <span className="font-semibold text-sidebar-foreground tracking-tight text-xl">
               RunLog
@@ -2035,6 +2042,13 @@ function DashboardLayoutContent({
               link, just consolidated into the one place every other page
               already has it. */}
           <div className="flex items-center gap-2">
+            {/* Roster full screen: its few controls live here on a laptop
+                (narrower screens get a strip on the page instead). */}
+            {rosterFullscreen && (
+              <div className="mr-2 hidden lg:block">
+                <RosterFullscreenBar variant="header" />
+              </div>
+            )}
             {mapOperationLabel && <BannerOperation label={mapOperationLabel} />}
             <button
               onClick={() => {

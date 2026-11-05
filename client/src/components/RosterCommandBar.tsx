@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useRosterFullscreen } from "@/lib/rosterFullscreen";
 import {
   Select,
   SelectContent,
@@ -35,7 +36,8 @@ export function isRosterPath(path: string): boolean {
  */
 export function RosterCommandBar() {
   const { user } = useAuth();
-  if (!user) return null;
+  const fullscreen = useRosterFullscreen();
+  if (!user || fullscreen) return null;
   const home: CommandCode = isCommandCode(user.command)
     ? user.command
     : DEFAULT_COMMAND;

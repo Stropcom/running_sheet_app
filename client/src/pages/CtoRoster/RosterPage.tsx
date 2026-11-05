@@ -10,6 +10,7 @@ import {
 import {
   RosterScrubber,
   RosterZoomControl,
+  RosterFullscreenBar,
 } from "@/components/roster/RosterZoomControl";
 import {
   ROSTER_FRAME_CHROME,
@@ -69,6 +70,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useIsMobile } from "@/hooks/useMobile";
+import {
+  registerRosterToday,
+  setRosterFullscreen,
+  useRosterFullscreen,
+} from "@/lib/rosterFullscreen";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -80,6 +86,7 @@ import {
   CheckSquare2,
   Star,
   CalendarDays,
+  Maximize2,
   Copy,
   ClipboardPaste,
   Scissors,
@@ -1362,6 +1369,7 @@ export default function RosterPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const isMobile = useIsMobile();
+  const fullscreen = useRosterFullscreen();
 
   // Single scroll container ref — both axes scroll here
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1515,6 +1523,26 @@ export default function RosterPage() {
   const today = format(new Date(), "yyyy-MM-dd");
   // scrolledToToday ref — the actual effect is placed after shiftsData is declared (line ~680)
   const scrolledToToday = useRef(false);
+
+  // Full screen: the header's Today button scrolls this grid; Esc leaves it
+  // (unless a dialog is open, where Esc closes the dialog first); leaving the
+  // roster always puts the page back to normal.
+  useEffect(
+    () => registerRosterToday(() => scrollToDate(today)),
+    [scrollToDate, today]
+  );
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]'))
+        return;
+      setRosterFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+  useEffect(() => () => setRosterFullscreen(false), []);
 
   // Month navigation
   const visibleMonthIndex = useMemo(() => {
@@ -2256,15 +2284,30 @@ export default function RosterPage() {
   return (
     <DashboardLayout>
       <div
-        className="flex flex-col select-none px-4 py-3"
+        className={cn(
+          "flex flex-col select-none",
+          fullscreen ? "px-2 py-1.5" : "px-4 py-3"
+        )}
         style={{
           height: "calc(100vh - 0px)",
           minHeight: 0,
           overflow: "hidden",
         }}
       >
-        {/* ── Toolbar ───────────────────────────────────────────────────────── */}
-        <div className="flex flex-col gap-1.5 mb-3 flex-shrink-0">
+        {/* ── Full screen on a phone or tablet: the controls that are left, as
+            a strip (a laptop has them in the RunLog header bar) ─────────── */}
+        {fullscreen && (
+          <div className="mb-1.5 flex-shrink-0 lg:hidden">
+            <RosterFullscreenBar variant="strip" />
+          </div>
+        )}
+        {/* ── Toolbar (gone in full screen) ─────────────────────────────────── */}
+        <div
+          className={cn(
+            "flex flex-col gap-1.5 mb-3 flex-shrink-0",
+            fullscreen && "hidden"
+          )}
+        >
           {/* Row 1: title + Today button (Today visible on mobile only here) */}
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-lg font-semibold tracking-tight mr-auto">
@@ -2279,6 +2322,24 @@ export default function RosterPage() {
             >
               <CalendarDays className="h-3.5 w-3.5" />
               Today
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-xs"
+              onClick={() => {
+                // Bulk modes and a held clipboard need the toolbar, which is
+                // hidden in full screen, so they are put away first.
+                setBulkMode(false);
+                setBulkCopyMode(false);
+                setSelectedCells(new Map());
+                setCopiedBlock(null);
+                setClipboard(null);
+                setRosterFullscreen(true);
+              }}
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              Full screen
             </Button>
           </div>
           {/* Row 2: month nav + bulk buttons. On a phone the three admin

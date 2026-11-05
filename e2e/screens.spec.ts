@@ -3029,3 +3029,50 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await call("opManager.deleteWeek", { weekStart: W });
   }
 });
+
+test("Side menu: CTO Roster opens the roster, and its tools are grouped under Roster tools (folded by default)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/cto-roster");
+  const tools = page.getByRole("button", { name: "Roster tools", exact: true });
+  await expect(tools).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("button", { name: "My Shifts", exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Outlook", exact: true })
+  ).toBeVisible();
+  for (const name of [
+    "Drafts",
+    "Saved Rosters",
+    "EA Compliance",
+    "Audit Log",
+    "Members",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
+      0
+    );
+
+  await tools.click();
+  await expect(tools).toHaveAttribute("aria-expanded", "true");
+  for (const name of [
+    "Drafts",
+    "Saved Rosters",
+    "EA Compliance",
+    "Audit Log",
+    "Members",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+
+  // Going to a tool leaves the group open so you can see where you are.
+  await page.getByRole("button", { name: "Audit Log", exact: true }).click();
+  await expect(page).toHaveURL(/\/cto-roster\/audit/);
+  await expect(
+    page.getByRole("button", { name: "Roster tools", exact: true })
+  ).toHaveAttribute("aria-expanded", "true");
+
+  // The CTO Roster entry itself opens the main roster page.
+  await page.getByRole("button", { name: "CTO Roster", exact: true }).click();
+  await expect(page).toHaveURL(/\/cto-roster$/);
+});

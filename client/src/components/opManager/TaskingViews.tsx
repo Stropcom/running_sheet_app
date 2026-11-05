@@ -553,12 +553,13 @@ function TimelineBar({
     if (el)
       openMenu({ teamId, dayIndex, label, rect: el.getBoundingClientRect() });
   };
-  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+  /** A press starts at x. Shared by the mouse / pen (pointer events) and a
+   * finger (touch events, below). */
+  const begin = (x: number) => {
     const el = ref.current;
-    if (!canEdit || !el || e.button !== 0) return;
-    el.setPointerCapture(e.pointerId);
+    if (!canEdit || !el) return;
     drag.current = {
-      x0: e.clientX,
+      x0: x,
       s0: start ?? 0,
       w: el.parentElement?.getBoundingClientRect().width || 1,
       moved: false,
@@ -568,11 +569,11 @@ function TimelineBar({
       start: start ?? 0,
     };
   };
-  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const track = (x: number) => {
     const d = drag.current;
     const el = ref.current;
     if (!d || !el || !canSlide || start === null || len === null) return;
-    const dx = e.clientX - d.x0;
+    const dx = x - d.x0;
     if (!d.moved && Math.abs(dx) < 5) return;
     d.moved = true;
     el.classList.add("sliding");
@@ -601,15 +602,15 @@ function TimelineBar({
     const t = el.querySelector(".t");
     if (t) t.textContent = formatShiftText(cell.shift);
   };
-  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+  /** The press ended: a click, a slide to hand over, or (cancelled) put back. */
+  const finish = (cancelled: boolean) => {
     const d = drag.current;
     const el = ref.current;
     drag.current = null;
     if (!d || !el) return;
-    try {
-      el.releasePointerCapture(e.pointerId);
-    } catch {
-      /* not captured */
+    if (cancelled) {
+      restore(el, d);
+      return;
     }
     if (!d.moved) {
       restore(el, d);
@@ -626,6 +627,91 @@ function TimelineBar({
       restore(el, d);
     }
   };
+  // Mouse and pen: pointer events with the pointer captured. A finger is left
+  // to the touch events below (pointer events from a finger are cancelled as
+  // soon as the browser starts to scroll, which on an iPhone / iPad is most
+  // drags: the bar was "grabbed" but never moved).
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch" || e.button !== 0) return;
+    ref.current?.setPointerCapture(e.pointerId);
+    begin(e.clientX);
+  };
+  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch") track(e.clientX);
+  };
+  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") return;
+    try {
+      ref.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      /* not captured */
+    }
+    finish(false);
+  };
+  const pointerCancel = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch") finish(true);
+  };
+
+  // A finger: touch events, so the slide does not depend on how the browser
+  // treats `touch-action`. The direction is decided from the first few pixels:
+  // sideways slides the bar (and stops the page scrolling, which needs a
+  // non-passive listener); up or down is left to scroll the page; a tap opens
+  // the operation menu.
+  const live = useRef({ begin, track, finish });
+  live.current = { begin, track, finish };
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !canEdit) return;
+    let t: { id: number; x: number; y: number; intent: "" | "x" | "y" } | null =
+      null;
+    const onStart = (e: globalThis.TouchEvent) => {
+      if (e.touches.length !== 1) {
+        if (t && t.intent !== "y") live.current.finish(true);
+        t = null;
+        return;
+      }
+      const p = e.touches[0];
+      t = { id: p.identifier, x: p.clientX, y: p.clientY, intent: "" };
+      live.current.begin(p.clientX);
+    };
+    const onMove = (e: globalThis.TouchEvent) => {
+      if (!t || t.intent === "y") return;
+      const p = Array.from(e.touches).find(q => q.identifier === t!.id);
+      if (!p) return;
+      if (!t.intent) {
+        const dx = p.clientX - t.x;
+        const dy = p.clientY - t.y;
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        t.intent = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        if (t.intent === "y") {
+          live.current.finish(true); // scrolling the page, not sliding
+          return;
+        }
+      }
+      if (e.cancelable) e.preventDefault(); // no page scroll while sliding
+      live.current.track(p.clientX);
+    };
+    const onEnd = (e: globalThis.TouchEvent) => {
+      if (!t) return;
+      const was = t;
+      t = null;
+      if (was.intent === "y") return;
+      // Handled here: no second (mouse) click after the finger lifts.
+      if (e.cancelable && e.type === "touchend") e.preventDefault();
+      live.current.finish(e.type === "touchcancel");
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: false });
+    el.addEventListener("touchcancel", onEnd, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [canEdit]);
+
   const key = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!canEdit) return;
     if (e.key === "Enter" || e.key === " ") {
@@ -659,12 +745,7 @@ function TimelineBar({
             onPointerDown: down,
             onPointerMove: move,
             onPointerUp: up,
-            onPointerCancel: () => {
-              const d = drag.current;
-              const el = ref.current;
-              drag.current = null;
-              if (d && el) restore(el, d);
-            },
+            onPointerCancel: pointerCancel,
             // No browser text selection or drag image while sliding.
             onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
             onDragStart: (e: React.DragEvent) => e.preventDefault(),

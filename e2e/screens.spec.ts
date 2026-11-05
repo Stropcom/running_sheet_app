@@ -3800,3 +3800,107 @@ test("Team Duty Roster: the operation a team is tasked on shows on the tile of p
       await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
   }
 });
+
+test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar sideways, drags up or down scroll the page, a tap opens the menu", async ({
+  browser,
+  baseURL,
+}) => {
+  test.setTimeout(120_000);
+  const W = "2040-11-05"; // a Monday, a made-up week
+  for (const view of [
+    { name: "phone", width: 390, height: 844 },
+    { name: "iPad", width: 820, height: 1180 },
+  ]) {
+    const context = await browser.newContext({
+      baseURL: baseURL ?? "http://localhost:3000",
+      storageState: "e2e/.auth/user.json",
+      viewport: { width: view.width, height: view.height },
+      hasTouch: true,
+      isMobile: true,
+    });
+    const page = await context.newPage();
+    const call = (proc: string, input: unknown) =>
+      page.request.post(`/api/trpc/${proc}?batch=1`, {
+        data: { "0": { json: input } },
+      });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type: string, x: number, y: number) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
+      });
+    const drag = async (x0: number, y0: number, dx: number, dy: number) => {
+      await touch("touchStart", x0, y0);
+      for (let i = 1; i <= 12; i++) {
+        await touch("touchMove", x0 + (dx * i) / 12, y0 + (dy * i) / 12);
+        await page.waitForTimeout(16);
+      }
+      await touch("touchEnd", 0, 0);
+    };
+    await call("opManager.deleteWeek", { weekStart: W });
+    try {
+      await call("opManager.saveTaskingCell", {
+        weekStart: W,
+        dayIndex: 0,
+        teamRow: "surv1",
+        shiftTime: "0600-1500",
+        primaryTask: "RAVEN",
+      });
+      await page.goto("/operation-manager");
+      await page.getByText(/CTO Weekly Tasking — 05 Nov/).click();
+      await page.getByRole("combobox", { name: "Calendar view" }).click();
+      await page.getByRole("option", { name: "Timeline" }).click();
+      // Some browsers (iOS Safari) do not honour touch-action on the bar: the
+      // slide must work without it.
+      await page.addStyleTag({
+        content: ".tcv-bar.tcv-edit{touch-action:auto !important}",
+      });
+      const bar = page.locator(".tcv-bar", { hasText: "RAVEN" }).first();
+      await bar.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(500);
+      const mid = async () => {
+        const b = (await bar.boundingBox())!;
+        return { x: b.x + Math.min(b.width / 2, 120), y: b.y + b.height / 2 };
+      };
+      const saveBar = page.getByRole("region", {
+        name: "Unsaved timeline changes",
+      });
+
+      // Sideways (a little off level, as a finger is): the bar moves.
+      let p = await mid();
+      await drag(p.x, p.y, 80, 12);
+      await expect(bar, view.name).toContainText("0800–1700");
+      await expect(saveBar, view.name).toContainText("1 change");
+      await saveBar.getByRole("button", { name: "Discard" }).click();
+      await expect(bar, view.name).toContainText("0600–1500");
+
+      // Up or down: the page scrolls, the bar stays.
+      const scrolled = () =>
+        page.evaluate(
+          () =>
+            window.scrollY +
+            (document.querySelector(".app-canvas")?.scrollTop ?? 0)
+        );
+      const before = await scrolled();
+      p = await mid();
+      await drag(p.x, p.y, 0, -70);
+      await expect(bar, view.name).toContainText("0600–1500");
+      await expect(saveBar, view.name).toHaveCount(0);
+      expect(await scrolled(), view.name).toBeGreaterThan(before);
+
+      // A tap opens the operation menu.
+      await bar.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      p = await mid();
+      await touch("touchStart", p.x, p.y);
+      await touch("touchEnd", 0, 0);
+      await expect(
+        page.getByRole("menu", { name: /Operation for/ }),
+        view.name
+      ).toBeVisible();
+    } finally {
+      await call("opManager.deleteWeek", { weekStart: W });
+      await context.close();
+    }
+  }
+});

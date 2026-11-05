@@ -110,3 +110,7 @@ Add also reached the new list and closed it again (Radix `defaultOpen` did exact
 that). A sheet with no team roster still gets the typed-CIN box (nothing to list).
 Checked in e2e at 1280 and 390 px, and with touch taps in a headless mobile
 browser; **not tried on a real iPhone/Safari** — check there after deploy.
+
+## Calendar: full sheet names, and a List view (v2.64.0)
+
+The Calendar page used to cut each running sheet's name to fit its day ("20261028 - 492 - RAVEN (ROC…") and fold the rest into "+N more". Picked from four mock-ups: the **Month** grid stays the default, but the chips now wrap onto as many lines as the name needs and the week row grows with it (`showAllEvents`, auto height, in the page's style block), so every name is whole. A second layout, **List**, is one row per day that has a sheet (a date block, then a bordered button per sheet with the full title; click opens the sheet), with the same month arrows and Today. A two-button switch beside the heading (equal halves) picks between them and the choice is remembered on that device (`runlog.calendarView`). The grouping rule is `shared/calendarList.ts` (`groupSheetsByDay`, tested in `server/calendarList.test.ts`). In Month view the sheets on one line of a week share a row height, so one long name can leave a gap under its neighbours; that is how the grid lines events up. Check: `e2e/screens.spec.ts` "Calendar: month grid by default…".

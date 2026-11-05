@@ -16,7 +16,9 @@ import {
   CheckSquare,
   RefreshCw,
   ExternalLink,
+  Clock,
 } from "lucide-react";
+import { countOverdue } from "@shared/sheetOverdue";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTeams } from "@/lib/teams";
 
@@ -456,6 +458,11 @@ export default function ReportsPage() {
   } = trpc.reports.outstandingTodos.useQuery();
 
   const isLoading = sheetsLoading || todosLoading;
+  // Not closed 7 days after the sheet was made (shared/sheetOverdue.ts).
+  const overdueCount = useMemo(
+    () => countOverdue(sheets, Date.now()),
+    [sheets]
+  );
 
   function toggleCategory(id: CategoryId) {
     setActiveCategories(prev => {
@@ -521,12 +528,20 @@ export default function ReportsPage() {
               </div>
               <div className="h-4 w-px bg-border max-sm:hidden" />
               <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                <span className="text-sm font-semibold text-foreground">
+                  {overdueCount}
+                </span>
+                <span className="text-xs text-foreground/70">overdue</span>
+              </div>
+              <div className="h-4 w-px bg-border max-sm:hidden" />
+              <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-blue-700 dark:text-blue-300" />
                 <span className="text-sm font-semibold text-foreground">
                   {todoUsers.length}
                 </span>
                 <span className="text-xs text-foreground/70">
-                  officer{todoUsers.length !== 1 ? "s" : ""} with outstanding
+                  member{todoUsers.length !== 1 ? "s" : ""} with outstanding
                   actions
                 </span>
               </div>

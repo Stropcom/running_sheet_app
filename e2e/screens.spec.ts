@@ -123,10 +123,12 @@ test("Governance is the Outstanding Actions page: the banner opens the checklist
   await expect(
     page.getByRole("heading", { name: "Outstanding Actions" })
   ).toBeVisible();
-  // The banner counts incomplete sheets and officers; the checklist list is
-  // closed until it is clicked.
+  // The banner counts incomplete sheets, overdue sheets and members; the
+  // checklist list is closed until it is clicked.
   const banner = page.getByRole("button", { name: /incomplete sheet/ });
   await expect(banner).toBeVisible();
+  await expect(banner).toContainText(/\d+\s*overdue/);
+  await expect(banner).toContainText(/members? with outstanding actions/);
   await expect(banner).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByText(/\d+ to review/)).toHaveCount(0);
   await banner.click();
@@ -759,6 +761,14 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
   ).toBeVisible();
   await expect(page.getByText("Wed 21 Oct").first()).toBeVisible();
   await expect(page.getByText("07:00 – 14:00").first()).toBeVisible();
+  // The dropdown has sections like the PDF: the overview is its own card and
+  // each target is its own card, each section in it under a titled band.
+  await expect(page.getByTestId("wk-overview")).toHaveCount(1);
+  const wkTargets = page.getByTestId("wk-target");
+  await expect(wkTargets).toHaveCount(3);
+  await expect(
+    wkTargets.first().getByText("Deployment", { exact: true })
+  ).toBeVisible();
   const popupP = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Export PDF" }).click();
   const pop = await popupP;
@@ -2746,19 +2756,27 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
       "xpath=ancestor::div[contains(@class,'mb-5')][1]"
     );
     // The team's section is drawn in the colour set in User Management.
-    await expect(card).toHaveCSS("border-top-color", "rgb(0, 170, 85)");
+    // (the colour end at the card's left, which stays on screen when scrolled)
+    await expect(card.locator("> div").first()).toHaveCSS(
+      "background-color",
+      "rgb(0, 170, 85)"
+    );
 
     // Zoom: 100% to start, the slider zooms the grid and it is remembered.
     const grid = card.locator("xpath=..");
-    await expect(page.getByText("100%", { exact: true })).toBeVisible();
+    // The percentage is only read out for screen readers now (no number shown).
+    const zoomSays = page
+      .getByRole("group", { name: "Roster zoom" })
+      .locator("[aria-live=polite]");
+    await expect(zoomSays).toHaveText("100%");
     await expect(grid).toHaveCSS("zoom", "1");
     await page.getByRole("slider", { name: "Zoom level" }).fill("50");
-    await expect(page.getByText("50%", { exact: true })).toBeVisible();
+    await expect(zoomSays).toHaveText("50%");
     await expect(grid).toHaveCSS("zoom", "0.5");
     await page.reload();
-    await expect(page.getByText("50%", { exact: true })).toBeVisible();
+    await expect(zoomSays).toHaveText("50%");
     await page.getByRole("button", { name: "Zoom in" }).click();
-    await expect(page.getByText("55%", { exact: true })).toBeVisible();
+    await expect(zoomSays).toHaveText("55%");
     // A team folds down to its totals and back.
     await page.getByRole("button", { name: "Collapse Team 1" }).click();
     await expect(
@@ -2791,4 +2809,124 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
     if (addedTeam)
       await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
   }
+});
+
+test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or letter key", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-05-07";
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0700-1500",
+      primaryTask: "RAVEN",
+    });
+    // A saved Banded columns choice (made on a laptop) shows as Day tiles on a phone.
+    await page.addInitScript(() =>
+      localStorage.setItem("runlog.taskingView", "panel-banded")
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 07 May/).click();
+    const picker = page.getByRole("combobox", { name: "Calendar view" });
+    await expect(picker).toContainText("Day tiles");
+    await expect(page.locator(".tcv-legend")).toHaveCount(0);
+    await picker.click();
+    await expect(page.getByRole("option")).toHaveText([
+      "Day tiles",
+      "Timeline",
+    ]);
+    await page.keyboard.press("Escape");
+
+    // A laptop still has all four, and the key.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect(page.locator(".tcv-legend")).toHaveCount(1);
+    await page.getByRole("combobox", { name: "Calendar view" }).click();
+    await expect(page.getByRole("option")).toHaveCount(4);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});
+
+test("Calendar: month grid by default, List view is selectable and remembered", async ({
+  page,
+}) => {
+  await page.goto("/calendar");
+  await page.evaluate(() => localStorage.removeItem("runlog.calendarView"));
+  await page.reload();
+  const group = page.getByRole("group", { name: "Calendar layout" });
+  await expect(group.getByRole("button", { name: "Month" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(page.locator(".rbc-month-view")).toBeVisible();
+
+  await group.getByRole("button", { name: "List" }).click();
+  await expect(group.getByRole("button", { name: "List" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(page.locator(".rbc-month-view")).toHaveCount(0);
+
+  // Remembered on this device.
+  await page.reload();
+  await expect(group.getByRole("button", { name: "List" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});
+
+test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit in the header, Esc and Exit put it back", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/cto-roster");
+  await expect(page.getByText("Showing", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toBeVisible();
+  // Repeat Cycle is gone; Today sits in the row with Bulk Edit and Bulk Copy.
+  await expect(page.getByRole("button", { name: "Repeat Cycle" })).toHaveCount(
+    0
+  );
+  const todayBox = await page
+    .getByRole("button", { name: "Today" })
+    .boundingBox();
+  const editBox = await page
+    .getByRole("button", { name: "Bulk Edit" })
+    .boundingBox();
+  expect(Math.abs((todayBox?.y ?? 0) - (editBox?.y ?? 99))).toBeLessThan(4);
+
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.getByText("Showing", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toHaveCount(0);
+  const bar = page.getByRole("group", { name: "Roster full screen controls" });
+  await expect(bar.getByRole("button", { name: "Zoom out" })).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Today" })).toBeVisible();
+
+  // Exit button puts the toolbar back.
+  await bar.getByRole("button", { name: "Exit full screen" }).click();
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toBeVisible();
+  await expect(page.getByText("Showing", { exact: true })).toBeVisible();
+
+  // Esc does too.
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Bulk Edit" })).toBeVisible();
+
+  // A phone gets the same controls as a strip on the page.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(
+    page
+      .getByRole("group", { name: "Roster full screen controls" })
+      .getByRole("button", { name: "Exit full screen" })
+  ).toBeVisible();
 });

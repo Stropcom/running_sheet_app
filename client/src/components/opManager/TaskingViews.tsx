@@ -1,4 +1,5 @@
 import { isBlendDay, isBlendTeam } from "@shared/taskingBlend";
+import { useIsMobile } from "@/hooks/useMobile";
 import { readableOn } from "@shared/teamColours";
 import {
   createContext,
@@ -22,13 +23,16 @@ import {
   TASKING_VIEWS,
   isTaskingView,
   useTaskingView,
+  type TaskingViewId,
 } from "@/lib/taskingViewPref";
 import {
   cellHasOp,
   formatShiftText,
   readWeek,
   timelineSpan,
+  PHONE_VIEWS,
   todayIndex,
+  viewOnPhone,
   weekDays,
   weekOps,
   weekSummary,
@@ -520,7 +524,14 @@ export function TaskingCalendarViews({
     primary: string
   ) => ReactNode;
 }) {
-  const [view, setView] = useTaskingView();
+  const [savedView, setView] = useTaskingView();
+  // A phone offers only Day tiles and Timeline (and has no colour / letter key);
+  // the saved choice is left alone for the laptop.
+  const isMobile = useIsMobile();
+  const view = isMobile ? (viewOnPhone(savedView) as TaskingViewId) : savedView;
+  const viewChoices = isMobile
+    ? TASKING_VIEWS.filter(v => PHONE_VIEWS.includes(v.id))
+    : TASKING_VIEWS;
   const [focusRaw, setFocus] = useState<string | null>(null);
 
   const ids = useMemo(() => teams.map(t => t.id), [teams]);
@@ -581,7 +592,7 @@ export function TaskingCalendarViews({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {TASKING_VIEWS.map(v => (
+            {viewChoices.map(v => (
               <SelectItem key={v.id} value={v.id}>
                 {v.label}
               </SelectItem>
@@ -618,17 +629,19 @@ export function TaskingCalendarViews({
           ))}
         </div>
       )}
-      <div className="tcv-legend">
-        {teams.map(t => (
-          <span key={t.id} style={teamStyle(t)}>
-            <i />
-            {t.label}
+      {!isMobile && (
+        <div className="tcv-legend">
+          {teams.map(t => (
+            <span key={t.id} style={teamStyle(t)}>
+              <i />
+              {t.label}
+            </span>
+          ))}
+          <span>
+            P = primary task, S = secondary task, RDO = rostered day off
           </span>
-        ))}
-        <span>
-          P = primary task, S = secondary task, RDO = rostered day off
-        </span>
-      </div>
+        </div>
+      )}
 
       <ToggleOp.Provider value={toggle}>
         {view === "panel-banded" && <PanelBanded {...ctx} />}

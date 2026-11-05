@@ -146,3 +146,39 @@ The roster is about 230 date columns by every member, and each date was drawn al
 - **Fit all teams** was taken out of the zoom control (the slider, − and + and Ctrl + scroll / pinch remain), with `fitZoom` and its test.
 - The team sections have **rounded corners** (v2.62.0 had square ones).
 - A team called **Admin** has no ON CALL totals row, only ON DUTY: its people are never on call (`teamShowsOnCall` in `shared/rosterTeams.ts`, by team name, tested in `server/teamColours.test.ts`). To change which teams, edit that one list.
+
+## Roster: the section's left end is rounded while scrolled (v2.62.2)
+
+In v2.62.1 the sections had rounded corners, but the left corners are at the far left of the dates, off screen once you scroll, so what you saw was the square end of the colour spine. The spine is now the section's left edge itself (`RosterTeamFrame.tsx`): 10px wide, sticky, running the full height including over the top and bottom border, with the same rounded left corners as the frame, so a rounded end is always on screen. The frame has no left border of its own, and no `overflow: clip` (the spine has to extend over the border).
+
+## Roster: team sections are soft cards (v2.62.3)
+
+After a mock-up of four looks ("B · Soft card" chosen), each team is a **soft card** (`RosterTeamFrame.tsx`): rounded corners (22px), a tint of the team's colour, a fine outline (a 2px `box-shadow`, so it takes no room), and a **wide colour end (22px) at the left that is sticky**, with the rounded left corners, so the card always shows where it begins while the dates scroll. The header band is just the team's name and count in its colour with the fold arrow. The v2.62.1 and v2.62.2 looks (heavy outline, thin spine) are gone.
+
+- **Sizes that must not shrink with the zoom** (the corners, the colour end, the outline) use `--rpx`, one screen pixel in the zoomed grid: `RosterPage.tsx` sets `--rpx = 1/zoom` on the scroller whenever the zoom changes, and `RosterTeamFrame.tsx` writes `calc(22 * var(--rpx))`. At 40% zoom the corners are still 22 screen pixels (before, they shrank to about 9 and looked square).
+- The name column now **sticks 22 screen pixels in** from the left (its `left` is `ROSTER_FRAME_EDGE`, not 0), beside the colour end rather than under it; the date header and the ON DUTY / ON CALL labels do the same, and the month badge is moved in to match. The grid is that much wider than its columns.
+- The e2e roster test checks the colour end's background is the User Management colour.
+
+## User Management: an OIC team (v2.63.1)
+
+Every Command now has an **OIC** team in User Management → Teams (migration `0139_oic_team.sql`, which adds it only where it is missing, after the Command's other teams, in dark slate `#374151`, and not offered on a new sheet). People can be put in it like any other team, and its colour can be changed there like any other; the CTO roster's OIC section and anything else that looks a team up by name (`shared/teamColours.ts`, which also has OIC's colour as the fallback) uses that colour. A Command that had already made its own team called OIC keeps it as it was.
+
+## CTO Weekly Tasking on a phone: two layouts, no key (v2.63.2)
+
+On a phone (the app's usual mobile width, `useIsMobile`) the weekly tasking calendar's dropdown offers only **Day tiles** and **Timeline** (the wide Banded columns and Schedule tables are left out), and the **team colour key and the "P = primary task, S = secondary task, RDO = rostered day off" line are not shown**. A saved choice of one of the left-out layouts shows as Day tiles on a phone; the saved choice itself is not changed, so a laptop still opens on the layout picked there (`viewOnPhone` / `PHONE_VIEWS` in `shared/taskingView.ts`, tested in `server/taskingView.test.ts`). The colour stripes on the tiles and the team names are unchanged. A laptop or tablet-width screen keeps all four layouts and the key; the PDF is unaffected. Check: `e2e/screens.spec.ts` "CTO Weekly Tasking on a phone…".
+
+## Team Duty Roster on a phone: less cramped (v2.63.3)
+
+On a phone the roster toolbar squeezed Bulk Edit, Bulk Copy and Repeat Cycle onto the month picker's line, so they overlapped it. Now the month picker has its own line and the three admin buttons sit on the next line as equal thirds (from tablet width up they stay in one row, as before). The floating month badge is gone on a phone (it sat over the day headers; the month picker already says the month). The team name in each card's header is no longer cut to "A…" / "TE…" (the header row has no cells, so it can be wider than the narrow name column), and ON DUTY / ON CALL stay on one line. Checked by screenshot at iPhone 14 width; no rule changed.
+
+## Team Duty Roster: Full screen (v2.65.0)
+
+A **Full screen** button beside the zoom on the roster (picked from a mock-up, style A). It hides the "Showing <Command>" strip, the title and the whole toolbar (month arrows, Today, Bulk Edit, Bulk Copy, Repeat Cycle) so the grid reaches up to the RunLog header; the folder menu stays. What is still needed moves into the RunLog header bar on a laptop (≥1024px): − / slider / + / %, Today and **Exit full screen** (`RosterFullscreenBar`, `RosterZoomControl.tsx`; the centred wordmark is hidden below 2xl while it is on so nothing overlaps, and the slider only shows from xl). On a phone or tablet the header has no room, so the same controls are a slim strip at the top of the page instead. **Esc** also exits (not while a dialog is open). Entering full screen puts away Bulk Edit / Bulk Copy / a pasted block / the shift clipboard first, because their buttons are in the hidden toolbar. It is a view mode for the visit only: the state is an outside-React store (`client/src/lib/rosterFullscreen.ts`, same reason as the zoom store) and is reset on reload or when leaving the roster, never saved. Check: `e2e/screens.spec.ts` "Team Duty Roster: Full screen…".
+
+## Team Duty Roster: toolbar tidy-up, Repeat Cycle removed (v2.65.1)
+
+The **Repeat Cycle** button is gone on every device, with its dialog and the client code behind it (the `ctoRoster.roster.repeatCycle` server procedure is left in place, unused by the page). The **zoom percentage** number is no longer drawn (the slider and − / + say it; the figure is still read out to screen readers, and the e2e test reads it from there), on the page toolbar and in the full-screen bar. That freed room, so the toolbar is now: title and Full screen on the first line; month arrows and the zoom slider (− / slider / +) on the second; **Today, Bulk Edit and Bulk Copy** together on the third (equal thirds on a phone, one row from tablet width up; a non-admin just gets Today). Checked by screenshot at iPhone 14 and 1300px width; no rule changed.
+
+## Team Duty Roster: zoom under Full screen, Today and month arrows land in the second column (v2.65.2)
+
+On a tablet or laptop the zoom (− / slider / +) now sits at the right end of the month line, straight under Full screen; a phone keeps it beside the month arrows. **Today** and the month arrows used to leave the date near the middle of the screen: the scroll position was worked out with a column 68px wide, but a date column plus its gap is `DATE_STRIDE` = 71px, so the error grew by 3px for every day since the roster's start. They now use the real stride, and put the date in the **second** column from the names (the first is a lead-in so the day before is still in view): `scrollLeftForDay` / `dayIndexAtScroll` in `shared/rosterZoom.ts`, tested in `server/teamColours.test.ts`. The month label follows the second column too, so after a month arrow it already says the new month. Checked in the browser at 100% and 65% zoom.

@@ -2,21 +2,28 @@ import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** The team's border and the colour spine down its left edge. The grid is wider
- * than its columns by the left edge plus the right border, and the date header
- * starts the left edge in so its columns line up with the cells. */
-const FRAME_BORDER = 3;
-const SPINE_WIDTH = 7;
-export const ROSTER_FRAME_EDGE = FRAME_BORDER + SPINE_WIDTH;
-export const ROSTER_FRAME_CHROME = ROSTER_FRAME_EDGE + FRAME_BORDER;
+/**
+ * Sizes here are in SCREEN pixels, whatever the roster's zoom. The grid is
+ * zoomed with CSS `zoom`, which shrinks everything including the card corners,
+ * so at 70% the rounding was barely visible. `--rpx` is one screen pixel in
+ * the zoomed grid (RosterPage sets it to 1/zoom), so `22 * var(--rpx)` is
+ * always 22 pixels on screen.
+ */
+const px = (n: number) => `calc(${n} * var(--rpx, 1px))`;
+const CORNER = 22; // the rounded corners and the width of the colour end
+/** The colour end down the left of a team; the date header starts this far in
+ * so its columns line up with the cells. */
+export const ROSTER_FRAME_EDGE = px(CORNER);
+/** Width of the grid beyond its columns at 100% (the colour end and the right
+ * padding); only a minimum, the grid is as wide as its rows. */
+export const ROSTER_FRAME_CHROME = CORNER + 6;
 
 /**
- * One team on the roster as its own section: a heavy line in the team's colour
- * (from User Management → Teams) around it with rounded corners like the other
- * sections of the app, a light tint behind its
- * rows, and a colour spine down the left edge that stays on screen while the
- * dates scroll, so you can always see which team you are in and where it ends.
- * Holds the band, the member rows and the ON DUTY / ON CALL rows.
+ * One team on the roster as its own soft card: a rounded card tinted with the
+ * team's colour (from User Management → Teams) with a fine outline, a wide
+ * colour end at its left that stays on screen with its rounded corners while
+ * the dates scroll (so the card always shows where it begins), then the header
+ * band, the member rows and the ON DUTY / ON CALL rows.
  */
 export function RosterTeamFrame({
   colour,
@@ -27,17 +34,14 @@ export function RosterTeamFrame({
 }) {
   return (
     <div
-      className="mb-5 flex rounded-xl"
+      className="mb-5 flex"
       style={{
-        border: `${FRAME_BORDER}px solid ${colour}`,
-        background: `color-mix(in srgb, ${colour} 9%, transparent)`,
-        // Clips the spine and the band to the rounded corners; unlike
-        // overflow: hidden it keeps the spine and name column sticky.
-        overflow: "clip",
+        borderRadius: px(CORNER),
+        // Opaque, so the dates sliding under the name column are hidden.
+        background: `color-mix(in srgb, ${colour} 14%, var(--color-background))`,
+        boxShadow: `0 0 0 ${px(2)} color-mix(in srgb, ${colour} 55%, transparent)`,
       }}
     >
-      {/* The spine: sticky to the left edge, full height of the team, above the
-          name cells (which also stick there). */}
       <div
         aria-hidden
         className="flex-none"
@@ -45,20 +49,22 @@ export function RosterTeamFrame({
           position: "sticky",
           left: 0,
           zIndex: 25,
-          width: SPINE_WIDTH,
+          width: px(CORNER),
           background: colour,
+          borderRadius: `${px(CORNER)} 0 0 ${px(CORNER)}`,
         }}
       />
-      <div className="min-w-0 flex-1 pt-[3px]">{children}</div>
+      <div className="min-w-0 flex-1" style={{ padding: "4px 6px 6px 0" }}>
+        {children}
+      </div>
     </div>
   );
 }
 
 /**
- * The team's header band, in place of the old grey team label row: the team's
- * name and member count on a tint of its colour, with an arrow to fold the
- * team down to its ON DUTY / ON CALL totals. The name part stays at the left
- * edge while the dates scroll.
+ * The card's header: the team's name and member count in its colour, with an
+ * arrow that folds the team down to its ON DUTY / ON CALL totals. The name part
+ * stays at the left while the dates scroll.
  */
 export function RosterTeamBand({
   colour,
@@ -78,12 +84,15 @@ export function RosterTeamBand({
   /** A member is being dragged over this team. */
   highlight?: boolean;
 }) {
-  const band = `color-mix(in srgb, ${colour} ${highlight ? 45 : 24}%, var(--color-card))`;
-  const ink = `color-mix(in srgb, ${colour} 62%, var(--color-foreground))`;
+  const ink = `color-mix(in srgb, ${colour} 70%, var(--color-foreground))`;
   return (
     <div
       className="mb-[3px] flex h-8 items-center rounded-lg"
-      style={{ background: band }}
+      style={{
+        background: highlight
+          ? `color-mix(in srgb, ${colour} 35%, transparent)`
+          : "transparent",
+      }}
     >
       <button
         type="button"
@@ -91,13 +100,14 @@ export function RosterTeamBand({
         aria-label={`${collapsed ? "Expand" : "Collapse"} ${name}`}
         onClick={onToggle}
         onPointerDown={e => e.stopPropagation()}
-        className="flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg pl-2 pr-2 text-left text-[11px] font-extrabold uppercase tracking-wider"
+        className="flex h-8 flex-shrink-0 items-center gap-1.5 pl-2 pr-2 text-left text-[11px] font-extrabold uppercase tracking-wider"
         style={{
-          width: nameColWidth,
+          // Wider than the name column when that is narrow (a phone), so the
+          // team name is not cut to "A…" / "TE…"; the band row has no cells.
+          width: Math.max(nameColWidth, 168),
           position: "sticky",
-          left: 0,
+          left: ROSTER_FRAME_EDGE,
           zIndex: 20,
-          background: band,
           color: ink,
         }}
       >

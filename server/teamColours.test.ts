@@ -139,3 +139,29 @@ describe("roster teams", () => {
     expect(teamShowsOnCall("OIC")).toBe(true);
   });
 });
+
+describe("roster go-to-date scroll", () => {
+  it("puts a date in the second column from the names", async () => {
+    const { scrollLeftForDay, dayIndexAtScroll, DATE_STRIDE } = await import(
+      "../shared/rosterZoom"
+    );
+    // Date 100 sits one column in from the left: scrolled to 99 columns.
+    expect(scrollLeftForDay(100, 1)).toBe(99 * DATE_STRIDE);
+    // The zoom shrinks the columns, so the scroll position shrinks with it.
+    expect(scrollLeftForDay(100, 0.5)).toBe(99 * DATE_STRIDE * 0.5);
+    // Near the start it never goes below 0.
+    expect(scrollLeftForDay(0, 1)).toBe(0);
+    expect(scrollLeftForDay(1, 1)).toBe(0);
+  });
+
+  it("reads the same date back from the scroll position", async () => {
+    const { scrollLeftForDay, dayIndexAtScroll } = await import(
+      "../shared/rosterZoom"
+    );
+    for (const zoom of [1, 0.65, 0.3]) {
+      for (const idx of [2, 37, 308]) {
+        expect(dayIndexAtScroll(scrollLeftForDay(idx, zoom), zoom)).toBe(idx);
+      }
+    }
+  });
+});

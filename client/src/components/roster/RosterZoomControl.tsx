@@ -56,10 +56,7 @@ export function RosterZoomControl() {
       >
         <Plus className="h-3.5 w-3.5" />
       </Button>
-      <span
-        className="w-10 text-right text-xs font-bold tabular-nums"
-        aria-live="polite"
-      >
+      <span className="sr-only" aria-live="polite">
         {Math.round(zoom * 100)}%
       </span>
     </div>
@@ -144,13 +141,7 @@ export function RosterFullscreenBar({
           className="hidden h-2 w-24 cursor-pointer accent-primary xl:block"
         />
       )}
-      <span
-        className={cn(
-          "w-10 text-center text-xs font-bold tabular-nums",
-          inHeader && "text-sidebar-foreground"
-        )}
-        aria-live="polite"
-      >
+      <span className="sr-only" aria-live="polite">
         {Math.round(zoom * 100)}%
       </span>
       <Button

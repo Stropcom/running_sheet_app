@@ -2764,15 +2764,19 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
 
     // Zoom: 100% to start, the slider zooms the grid and it is remembered.
     const grid = card.locator("xpath=..");
-    await expect(page.getByText("100%", { exact: true })).toBeVisible();
+    // The percentage is only read out for screen readers now (no number shown).
+    const zoomSays = page
+      .getByRole("group", { name: "Roster zoom" })
+      .locator("[aria-live=polite]");
+    await expect(zoomSays).toHaveText("100%");
     await expect(grid).toHaveCSS("zoom", "1");
     await page.getByRole("slider", { name: "Zoom level" }).fill("50");
-    await expect(page.getByText("50%", { exact: true })).toBeVisible();
+    await expect(zoomSays).toHaveText("50%");
     await expect(grid).toHaveCSS("zoom", "0.5");
     await page.reload();
-    await expect(page.getByText("50%", { exact: true })).toBeVisible();
+    await expect(zoomSays).toHaveText("50%");
     await page.getByRole("button", { name: "Zoom in" }).click();
-    await expect(page.getByText("55%", { exact: true })).toBeVisible();
+    await expect(zoomSays).toHaveText("55%");
     // A team folds down to its totals and back.
     await page.getByRole("button", { name: "Collapse Team 1" }).click();
     await expect(
@@ -2887,6 +2891,17 @@ test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit
   await page.goto("/cto-roster");
   await expect(page.getByText("Showing", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Bulk Edit" })).toBeVisible();
+  // Repeat Cycle is gone; Today sits in the row with Bulk Edit and Bulk Copy.
+  await expect(page.getByRole("button", { name: "Repeat Cycle" })).toHaveCount(
+    0
+  );
+  const todayBox = await page
+    .getByRole("button", { name: "Today" })
+    .boundingBox();
+  const editBox = await page
+    .getByRole("button", { name: "Bulk Edit" })
+    .boundingBox();
+  expect(Math.abs((todayBox?.y ?? 0) - (editBox?.y ?? 99))).toBeLessThan(4);
 
   await page.getByRole("button", { name: "Full screen" }).click();
   await expect(page.getByText("Showing", { exact: true })).toHaveCount(0);

@@ -422,6 +422,8 @@ function TimelineBar({
     next: string | null;
     left: string;
     width: string;
+    /** The start of the bar's current time, in minutes. */
+    start: number;
   } | null>(null);
   const start = shiftStart(cell.shift);
   const len = shiftLength(cell.shift);
@@ -447,6 +449,7 @@ function TimelineBar({
       next: null,
       left: el.style.left,
       width: el.style.width,
+      start: start ?? 0,
     };
   };
   const move = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -464,10 +467,23 @@ function TimelineBar({
     if (!next) return;
     d.next = next;
     const ns = shiftStart(next) ?? start;
-    el.style.left = `${pct(ns)}%`;
+    // Moved with a transform (its own layer, no layout) rather than by
+    // changing `left` on every pointer move; the width only changes when the
+    // end reaches the edge of the axis.
+    el.style.transform = `translateX(${((ns - d.start) / (span[1] - span[0])) * d.w}px)`;
     el.style.width = `${pct(Math.min(ns + len, span[1])) - pct(ns)}%`;
     const t = el.querySelector(".t");
     if (t) t.textContent = formatShiftText(next);
+  };
+  /** Puts the bar's own position and time back (a slide that changed nothing,
+   * or was cancelled). */
+  const restore = (el: HTMLDivElement, d: { left: string; width: string }) => {
+    el.classList.remove("sliding");
+    el.style.transform = "";
+    el.style.left = d.left;
+    el.style.width = d.width;
+    const t = el.querySelector(".t");
+    if (t) t.textContent = formatShiftText(cell.shift);
   };
   const up = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
@@ -479,16 +495,19 @@ function TimelineBar({
     } catch {
       /* not captured */
     }
-    el.classList.remove("sliding");
     if (!d.moved) {
+      restore(el, d);
       open();
     } else if (d.next && d.next !== cell.shift) {
+      // Land on the new place in one step, then hand it over (the page
+      // re-draws the bar at the same place).
+      const ns = shiftStart(d.next) ?? d.start;
+      el.classList.remove("sliding");
+      el.style.transform = "";
+      el.style.left = `${pct(ns)}%`;
       edit?.onSlide(teamId, dayIndex, d.next);
     } else {
-      el.style.left = d.left;
-      el.style.width = d.width;
-      const t = el.querySelector(".t");
-      if (t) t.textContent = formatShiftText(cell.shift);
+      restore(el, d);
     }
   };
   const key = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -525,8 +544,14 @@ function TimelineBar({
             onPointerMove: move,
             onPointerUp: up,
             onPointerCancel: () => {
+              const d = drag.current;
+              const el = ref.current;
               drag.current = null;
+              if (d && el) restore(el, d);
             },
+            // No browser text selection or drag image while sliding.
+            onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
+            onDragStart: (e: React.DragEvent) => e.preventDefault(),
             onKeyDown: key,
             // A click on the operation's name opens this menu, it does not
             // also highlight the operation.
@@ -707,7 +732,9 @@ function Timeline({ week, days, today, teams, dim, warn, edit }: Ctx) {
   for (let m = lo; m <= hi; m += 120) ticks.push(m);
   const pct = (m: number) => ((m - lo) / (hi - lo)) * 100;
   return (
-    <div className="tcv-card tcv-scroll">
+    <div
+      className={`tcv-card tcv-scroll${edit?.editable ? " tcv-editing" : ""}`}
+    >
       <div className="tcv-cb">
         <div className="tcv-cb-corner" />
         <div className="tcv-cb-axis">

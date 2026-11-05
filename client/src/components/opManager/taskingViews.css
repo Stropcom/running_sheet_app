@@ -145,7 +145,8 @@
 /* Slidable bars (admin only) */
 .tcv-bar.tcv-edit { cursor: grab; user-select: none; touch-action: pan-y; }
 .tcv-bar.tcv-edit:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-.tcv-bar.tcv-edit.sliding { cursor: grabbing; z-index: 5; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3); }
+.tcv-bar.tcv-edit.sliding { cursor: grabbing; z-index: 5; will-change: transform; outline: 2px solid var(--ring); outline-offset: 1px; }
+.tcv-editing { -webkit-user-select: none; user-select: none; }
 .tcv-bar.tcv-changed { outline: 2px dashed #d97706; outline-offset: 1px; }
 .tcv-grip { position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 4px; height: 12px; border-left: 2px dotted currentColor; border-right: 2px dotted currentColor; opacity: 0.55; pointer-events: none; }
 .tcv-more { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: 800; pointer-events: none; }

@@ -76,6 +76,9 @@ export interface TimelineEdit {
   /** An operation was picked from a bar's menu. "Other" comes with the typed
    * description in `other`; "Admin" and the operations are plain names. */
   onOp: (teamId: string, dayIndex: number, op: string, other?: string) => void;
+  /** Create a new operation from the menu; resolves with its name (to set on
+   * the bar) or null when it could not be created. */
+  onCreateOp: (name: string) => Promise<string | null>;
   /** Split a blended day back into Team 1 and Team 2. */
   onSplit: (dayIndex: number) => void;
   /** Cells (`team-day`) with a change not saved yet. */
@@ -727,6 +730,9 @@ function BarMenu({
     current && !isAdmin && !opNames.includes(current) ? current : "";
   const [typing, setTyping] = useState(false);
   const [text, setText] = useState(custom);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const down = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -789,6 +795,44 @@ function BarMenu({
       style={{ left, top }}
     >
       <div className="tcv-menu-h">Operation · {target.label}</div>
+      {creating ? (
+        <form
+          className="tcv-menu-other"
+          onSubmit={e => {
+            e.preventDefault();
+            const v = newName.trim();
+            if (!v || busy) return;
+            setBusy(true);
+            void edit.onCreateOp(v).then(made => {
+              setBusy(false);
+              if (made) pick(made);
+            });
+          }}
+        >
+          <input
+            autoFocus
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="New operation name…"
+            aria-label="New operation name"
+          />
+          <button type="submit" disabled={!newName.trim() || busy}>
+            Create
+          </button>
+        </form>
+      ) : (
+        <button
+          type="button"
+          role="menuitem"
+          className="tcv-menu-create"
+          onClick={() => {
+            setCreating(true);
+            setTyping(false);
+          }}
+        >
+          + Create operation…
+        </button>
+      )}
       {opNames.length === 0 && !custom && (
         <div className="tcv-menu-empty">No operations</div>
       )}
@@ -817,10 +861,18 @@ function BarMenu({
           </button>
         </form>
       ) : (
-        <button type="button" role="menuitem" onClick={() => setTyping(true)}>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setTyping(true);
+            setCreating(false);
+          }}
+        >
           Other (free text)…
         </button>
       )}
+      {item("None", current === "", () => pick(""))}
       {blended && (
         <>
           <hr />

@@ -65,6 +65,11 @@ import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
 import { RosterSyncDialog } from "@/components/opManager/RosterSyncDialog";
 import { toClock } from "@shared/taskingRosterSync";
 import {
+  ARVO_SHIFT,
+  DAY_SHIFT,
+  shiftAfterTaskChange,
+} from "@shared/taskingShiftHours";
+import {
   distinctBreachCount,
   taskingBreachCells,
 } from "@shared/taskingBreaches";
@@ -199,21 +204,21 @@ function getDefaultShift(
   dayIndex: number,
   weekStart: string
 ): string {
-  // PTT: 0700-1500 Mon-Fri, RDO Sat-Sun
+  // PTT: Day shift (0600-1500) Mon-Fri, RDO Sat-Sun
   if (teamRow === "ptt") {
-    return dayIndex <= 4 ? "0700-1500" : "RDO";
+    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
   }
-  // Cap. Support: 0700-1500 Mon-Fri, RDO Sat-Sun
+  // Cap. Support: Day shift (0600-1500) Mon-Fri, RDO Sat-Sun
   if (teamRow === "cap") {
-    return dayIndex <= 4 ? "0700-1500" : "RDO";
+    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
   }
   const surv1IsDay = isSurv1DayShift(weekStart);
   const isDay = teamRow === "surv1" ? surv1IsDay : !surv1IsDay;
   if (isDay) {
-    return dayIndex <= 4 ? "0700-1500" : "RDO";
+    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
   } else {
     if (dayIndex === 0) return "RDO";
-    if (dayIndex >= 1 && dayIndex <= 3) return "1400-2200";
+    if (dayIndex >= 1 && dayIndex <= 3) return ARVO_SHIFT;
     if (dayIndex === 4) return "1000-1800";
     return "RDO";
   }
@@ -657,9 +662,21 @@ export default function OperationManagerPage() {
   const updateCell = (
     teamRow: TeamRow,
     dayIndex: number,
-    patch: Partial<TaskingCell>
+    patchIn: Partial<TaskingCell>
   ) => {
     const key = `${teamRow}-${dayIndex}`;
+    // Choosing Admin makes the shift 8 hours (0700-1500); changing it back to
+    // an operation makes it a 9-hour Day shift (0600-1500) again.
+    let patch = patchIn;
+    if ("primaryTask" in patchIn && !("shiftTime" in patchIn)) {
+      const before = taskingGrid[key];
+      const moved = shiftAfterTaskChange(
+        cellShift(before),
+        before?.primaryTask,
+        patchIn.primaryTask
+      );
+      if (moved) patch = { ...patchIn, ...shiftToCellFields(moved) };
+    }
     setTaskingGrid(prev => {
       const next = { ...prev, [key]: { ...prev[key], ...patch } };
       // A blended day is one shared entry: an edit goes to both teams' cells.
@@ -1735,6 +1752,12 @@ export default function OperationManagerPage() {
                         ops: activeOps.map(o => o.name),
                         onSlide: slideTeamShift,
                         onOp: pickTeamOp,
+                        onCreateOp: name =>
+                          new Promise<string | null>(resolve => {
+                            void handleCreateOp(name, (_, made) =>
+                              resolve(made)
+                            ).then(() => resolve(null));
+                          }),
                         onSplit: splitDay,
                         changed: new Set(changedCellKeys(timelineChanges)),
                       }

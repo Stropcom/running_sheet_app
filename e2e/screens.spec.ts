@@ -2539,8 +2539,8 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
   page,
 }) => {
   test.setTimeout(90_000);
-  // One made-up week far from real ones; Monday: Team 1 on 0600-1400 (RAVEN),
-  // Team 2 on 1400-2200 (FALCON).
+  // One made-up week far from real ones; Monday: Team 1 on 0600-1500 (RAVEN),
+  // Team 2 on 1300-2200 (FALCON).
   const W = "2040-02-06";
   const call = (proc: string, input: unknown) =>
     page.request.post(`/api/trpc/${proc}?batch=1`, {
@@ -2565,14 +2565,14 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
       weekStart: W,
       dayIndex: 0,
       teamRow: "surv1",
-      shiftTime: "0600-1400",
+      shiftTime: "0600-1500",
       primaryTask: "RAVEN",
     });
     await call("opManager.saveTaskingCell", {
       weekStart: W,
       dayIndex: 0,
       teamRow: "surv2",
-      shiftTime: "1400-2200",
+      shiftTime: "1300-2200",
       primaryTask: "FALCON",
     });
 
@@ -2593,7 +2593,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     const dialog = page.getByRole("dialog");
 
     // Same shift as Team 1: asked. The tasks differ, so it also asks whose to keep.
-    await setT2Shift("0600-1400");
+    await setT2Shift("0600-1500");
     await expect(
       dialog.getByText("Blend Team 1 and Team 2 on Mon 06 Feb?")
     ).toBeVisible();
@@ -2606,7 +2606,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     // A different shift and back is a new question.
     await setT2Shift("1000-1800");
     await expect(dialog).toHaveCount(0);
-    await setT2Shift("0600-1400");
+    await setT2Shift("0600-1500");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Yes, blend" }).click();
     await expect(dialog).toHaveCount(0);
@@ -2622,13 +2622,13 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     const mon = saved.filter(c => c.dayIndex === 0);
     expect(mon.find(c => c.teamRow === "surv1")).toMatchObject({
       blended: true,
-      shiftTime: "0600-1400",
+      shiftTime: "0600-1500",
       primaryTask: "RAVEN",
     });
     // Team 2 carries the shared entry (Team 1's tasks, as picked by default).
     expect(mon.find(c => c.teamRow === "surv2")).toMatchObject({
       blended: true,
-      shiftTime: "0600-1400",
+      shiftTime: "0600-1500",
       primaryTask: "RAVEN",
     });
 
@@ -3195,7 +3195,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
 
   await call("opManager.deleteWeek", { weekStart: W });
   try {
-    // On the roster: a Day shift (07:00). On the tasking: Team 1 starts 14:00.
+    // On the roster: a Day shift (06:00). On the tasking: Team 1 starts 14:00.
     await call("ctoRoster.roster.updateShift", {
       memberId: member.id,
       shiftDate: W,
@@ -3228,7 +3228,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     await page.getByRole("button", { name: /Post & Notify/ }).click();
     await expect(question).toBeVisible();
     await expect(question).toContainText("Team 1");
-    await expect(question).toContainText("07:00 to 14:00");
+    await expect(question).toContainText("06:00 to 14:00");
     await expect(question).toContainText("1 change between Day and Arvo");
     // No: the roster is left alone and the notify step carries on.
     await question.getByRole("button", { name: "No" }).click();
@@ -3324,7 +3324,7 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
 
   await call("opManager.deleteWeek", { weekStart: W });
   try {
-    // The roster and the tasking agree: Day shift, 07:00.
+    // The roster and the tasking agree: Day shift, 06:00.
     await call("ctoRoster.roster.updateShift", {
       memberId: member.id,
       shiftDate: W,
@@ -3336,7 +3336,7 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
       weekStart: W,
       dayIndex: 0,
       teamRow: "surv1",
-      shiftTime: "0700-1500",
+      shiftTime: "0600-1500",
       primaryTask: "RAVEN",
     });
     await page.addInitScript(() =>
@@ -3364,7 +3364,7 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
       { steps: 5 }
     );
     await page.mouse.up();
-    await expect(bar).toContainText("0900–1700");
+    await expect(bar).toContainText("0800–1700");
     await page
       .getByRole("region", { name: "Unsaved timeline changes" })
       .getByRole("button", { name: "Save", exact: true })
@@ -3374,20 +3374,20 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
       name: "Update the roster too?",
     });
     await expect(question).toBeVisible();
-    await expect(question).toContainText("07:00 to 09:00");
+    await expect(question).toContainText("06:00 to 08:00");
     await question
       .getByRole("button", { name: "Yes, update the roster" })
       .click();
     await expect(page.getByText(/Roster updated: 1 shift/)).toBeVisible();
 
-    // Still a Day shift (09:00 is before midday), now starting at 09:00.
+    // Still a Day shift (08:00 is before midday), now starting at 08:00.
     const rows = (await get("ctoRoster.roster.getRange", {
       startDate: W,
       endDate: W,
     })) as { memberId: number; shiftCode: string; shiftTime: string | null }[];
     expect(rows.find(r => r.memberId === member.id)).toMatchObject({
       shiftCode: "d",
-      shiftTime: "09:00",
+      shiftTime: "08:00",
     });
 
     // Every save asks again: slide on, Save, No; slide on, Save, No; and then
@@ -3412,15 +3412,15 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
         .getByRole("button", { name: "Save", exact: true })
         .click();
     };
-    await slideLater(1); // 10:00
+    await slideLater(1); // 09:00
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
     await expect(question).toHaveCount(0); // closed, the bar is free again
-    await slideLater(1); // 11:00
+    await slideLater(1); // 10:00
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
     await expect(question).toHaveCount(0);
-    await slideLater(-1); // 10:00 again, answered No before
+    await slideLater(-1); // 09:00 again, answered No before
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
     await expect(question).toHaveCount(0);
@@ -3553,6 +3553,244 @@ test("CTO Weekly Tasking: an EA breach on the roster shows as a red dot on the t
       shiftCode: "",
       shiftTime: null,
       shiftDurationHours: null,
+      memberName: "E2E Officer",
+    });
+    await call("opManager.deleteWeek", { weekStart: W });
+    if (addedMemberId !== null)
+      await call("ctoRoster.members.delete", { memberId: addedMemberId });
+    if (addedTeam)
+      await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
+  }
+});
+
+test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosing Admin makes it 8 hours (0700-1500), and back", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-09-03"; // a Monday, a made-up week
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  // A real operation, so it is one of the menu's choices to switch back to.
+  const opName = `E2E NINE HOUR ${Date.now()}`;
+  const createdName = `E2E CREATED ${Date.now()}`;
+  const made = (
+    await (await call("operation.create", { name: opName })).json()
+  )[0].result.data.json;
+  const opId = typeof made === "number" ? made : (made.id ?? made.operationId);
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+      primaryTask: opName,
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 1,
+      teamRow: "surv1",
+      shiftTime: "1300-2200",
+      primaryTask: opName,
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 2,
+      teamRow: "surv1",
+      shiftTime: "0600-1400",
+      primaryTask: "Admin",
+    });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 03 Sep/).click();
+    await page.getByRole("combobox", { name: "Calendar view" }).click();
+    await page.getByRole("option", { name: "Timeline" }).click();
+    const monday = page.locator(".tcv-bar", { hasText: "0600–1500" });
+    const tuesday = page.locator(".tcv-bar", { hasText: "1300–2200" });
+    await expect(monday).toHaveCount(1);
+    await expect(tuesday).toHaveCount(1);
+    const menu = page.getByRole("menu", { name: /Operation for/ });
+
+    // Admin on the 9-hour Day shift: 8 hours, 0700-1500.
+    await monday.click();
+    await menu.getByRole("menuitemradio", { name: "Admin" }).click();
+    await expect(
+      page.locator(".tcv-bar", { hasText: "Admin" }).first()
+    ).toContainText("0700–1500");
+    // And back to an operation: the 9-hour Day shift again.
+    const admin = page.locator(".tcv-bar", { hasText: "Admin" }).first();
+    await admin.click();
+    await menu.getByRole("menuitemradio", { name: opName }).click();
+    await expect(
+      page.locator(".tcv-bar", { hasText: opName }).first()
+    ).toContainText("0600–1500");
+
+    // An Arvo shift chosen as Admin keeps its start and is 8 hours.
+    await tuesday.click();
+    await menu.getByRole("menuitemradio", { name: "Admin" }).click();
+    await expect(
+      page.locator(".tcv-bar", { hasText: "Admin" }).first()
+    ).toContainText("1300–2100");
+
+    // An 8-hour Admin shift at another start (0600-1400) gains its hour back
+    // when changed to an operation.
+    const wed = page.locator(".tcv-bar", { hasText: "0600–1400" });
+    await expect(wed).toHaveCount(1);
+    // Scroll it into view first and let the scroll settle: a scroll that lands
+    // after the click would close the menu again.
+    await wed.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await wed.click();
+    await menu.getByRole("menuitemradio", { name: opName }).click();
+    await expect(
+      page.locator(".tcv-bar", { hasText: "0600–1500" })
+    ).toHaveCount(2);
+    await expect(wed).toHaveCount(0);
+
+    // None (under the line, with Admin and Other) clears the operation.
+    const first = page.locator(".tcv-bar", { hasText: opName }).first();
+    await first.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await first.click();
+    await menu.getByRole("menuitemradio", { name: "None" }).click();
+    await expect(
+      page.getByRole("region", { name: "Unsaved timeline changes" })
+    ).toContainText(`operation ${opName} to none`);
+
+    // Create (above the line, with the operations) makes a new operation and
+    // puts it on the bar.
+    const bar = page
+      .locator(".tcv-bar")
+      .filter({ hasNotText: opName })
+      .filter({ hasNotText: "Admin" })
+      .first();
+    await bar.click();
+    await menu.getByRole("menuitem", { name: /Create operation/ }).click();
+    await menu.getByLabel("New operation name").fill(createdName);
+    await menu.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(
+      page.locator(".tcv-bar", { hasText: createdName })
+    ).toHaveCount(1);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+    await call("operation.delete", { id: opId });
+    const all = await (
+      await page.request.get(
+        `/api/trpc/operation.list?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: null } }))}`
+      )
+    ).json();
+    const rows = (all[0]?.result?.data?.json ?? []) as {
+      id: number;
+      name: string;
+    }[];
+    for (const r of rows.filter(r => r.name === createdName))
+      await call("operation.delete", { id: r.id });
+  }
+});
+
+test("Team Duty Roster: the operation a team is tasked on shows on the tile of people on duty, once the week is posted", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const W = "2026-12-07"; // a Monday inside the roster's dates
+  const call = async (proc: string, input: unknown) => {
+    const res = await page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+    return (await res.json())[0];
+  };
+  const get = async (proc: string, input: unknown = null) => {
+    const res = await page.request.get(
+      `/api/trpc/${proc}?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: input } }))}`
+    );
+    return (await res.json())[0].result.data.json;
+  };
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  let rosterTeams = (await get("ctoRoster.teams.list")) as {
+    id: number;
+    name: string;
+  }[];
+  let addedTeam = false;
+  if (!rosterTeams.some(t => t.name === "Team 1")) {
+    await call("ctoRoster.teams.add", { name: "Team 1" });
+    addedTeam = true;
+    rosterTeams = await get("ctoRoster.teams.list");
+  }
+  const rosterTeam = rosterTeams.find(t => t.name === "Team 1")!;
+  let members = (await get("ctoRoster.members.list")) as {
+    id: number;
+    cin: string;
+  }[];
+  let addedMemberId: number | null = null;
+  if (!members.some(m => m.cin === cin)) {
+    const r = await call("ctoRoster.members.add", {
+      cin,
+      teamId: rosterTeam.id,
+    });
+    addedMemberId = r.result?.data.json.memberId ?? null;
+    members = (await get("ctoRoster.members.list")) as typeof members;
+  }
+  const member = members.find(m => m.cin === cin)!;
+  const name = "GREYFIN AURORA";
+
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "d",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+      primaryTask: name,
+    });
+    await page.setViewportSize({ width: 1400, height: 900 });
+
+    // Saved but not posted: no name on the tile.
+    await page.goto(`/cto-roster?date=${W}`);
+    await expect(page.getByText("E2E Officer").first()).toBeVisible();
+    await expect(page.locator(".roster-cell-op")).toHaveCount(0);
+
+    // Posted: the name shows in the middle of the tile, the second word on a
+    // second line, and the tooltip has the whole name.
+    await call("opManager.postWeek", { weekStart: W, userIds: [] });
+    await page.goto(`/cto-roster?date=${W}`);
+    const tile = page.locator(".roster-cell-op", { hasText: name }).first();
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute("title", `Tasked: ${name}`);
+    const lines = await tile.locator("span").evaluate(el => {
+      const r = el.getBoundingClientRect();
+      return Math.round(r.height / parseFloat(getComputedStyle(el).lineHeight));
+    });
+    expect(lines).toBe(2);
+
+    // Not on duty that day (a rest day): no name.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "r",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await page.goto(`/cto-roster?date=${W}`);
+    await expect(page.getByText("E2E Officer").first()).toBeVisible();
+    await expect(
+      page.locator(".roster-cell-op", { hasText: name })
+    ).toHaveCount(0);
+  } finally {
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "",
+      shiftTime: null,
       memberName: "E2E Officer",
     });
     await call("opManager.deleteWeek", { weekStart: W });

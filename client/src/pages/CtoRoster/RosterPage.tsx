@@ -26,6 +26,7 @@ import {
 } from "@/lib/rosterZoomPref";
 import { useTeamColour } from "@/lib/teams";
 import { teamShowsOnCall } from "@shared/rosterTeams";
+import { opForRosterTile, opsByTeam } from "@shared/rosterTaskingOps";
 import {
   WINDOW_BLOCK,
   dateWindowFor,
@@ -1405,6 +1406,16 @@ export default function RosterPage() {
     enabled: isAdmin,
     staleTime: 30_000,
   });
+  // The operation each team is tasked on (posted weeks), shown on the tiles of
+  // people on duty. Refused or off for this Command: no names, nothing else.
+  const taskingOpsQuery = trpc.opManager.postedTaskingOps.useQuery(
+    { startDate: ROSTER_START, endDate: ROSTER_END },
+    { staleTime: 5_000, retry: false }
+  );
+  const teamOpsByName = useMemo(
+    () => opsByTeam(taskingOpsQuery.data ?? []),
+    [taskingOpsQuery.data]
+  );
   const issuesByCell = useMemo(() => {
     const map = new Map<string, EbaFinding[]>();
     for (const f of ebaQuery.data?.findings ?? []) {
@@ -2332,6 +2343,7 @@ export default function RosterPage() {
                           onPasteCell={handlePasteCell}
                           secondmentWindow={secondmentByMemberId.get(member.id)}
                           issueCells={issueCells}
+                          teamOps={teamOpsByName.get(team.name)}
                         />
                       ))}
 
@@ -2362,6 +2374,7 @@ export default function RosterPage() {
                           rowMode="acting"
                           secondmentWindow={secondmentByMemberId.get(member.id)}
                           issueCells={issueCells}
+                          teamOps={teamOpsByName.get(team.name)}
                         />
                       ))}
 
@@ -2664,6 +2677,7 @@ export default function RosterPage() {
                                 member.id
                               )}
                               issueCells={issueCells}
+                              teamOps={teamOpsByName.get(team.name)}
                             />
                           ))}
                         {isAdmin && activeDragId !== null && (
@@ -2707,6 +2721,7 @@ export default function RosterPage() {
                               member.id
                             )}
                             issueCells={issueCells}
+                            teamOps={teamOpsByName.get(team.name)}
                           />
                         ))}
 
@@ -2990,6 +3005,7 @@ const MemberRow = memo(function MemberRow({
   rowMode = "home",
   secondmentWindow,
   issueCells,
+  teamOps,
 }: {
   member: Member;
   allDates: Date[];
@@ -3031,6 +3047,8 @@ const MemberRow = memo(function MemberRow({
   secondmentWindow?: { startDate: string; endDate: string } | null;
   /** Cell keys ("memberId-date") with a live EA compliance finding. */
   issueCells?: Set<string>;
+  /** Operation each date for this row's team (posted tasking), for the tile. */
+  teamOps?: Record<string, string>;
 }) {
   return (
     <div style={{ display: "flex", gap: "3px", marginBottom: "3px" }}>
@@ -3093,6 +3111,8 @@ const MemberRow = memo(function MemberRow({
         const cellKey = `${member.id}-${ds}`;
         const isSelected = selectedCells.has(cellKey);
         const hasComment = !!shift?.comment;
+        // The operation this team is tasked on that day (posted tasking only).
+        const taskedOp = opForRosterTile(teamOps, code, ds);
         const hasIssue = !!issueCells?.has(cellKey);
         const isActing = shift?.isActing ?? false;
         const label = SHIFT_LABELS[code as keyof typeof SHIFT_LABELS];
@@ -3154,6 +3174,18 @@ const MemberRow = memo(function MemberRow({
             }}
             onPointerEnter={() => onCellPointerEnter(member.id, ds)}
           >
+            {taskedOp && !isSelected && (
+              <span
+                className="roster-cell-op absolute inset-x-1 top-[10px] bottom-[11px] flex items-center justify-center text-center text-[8px] leading-[9px] font-semibold opacity-95 overflow-hidden"
+                title={`Tasked: ${taskedOp}`}
+              >
+                {/* Two words that do not fit on one line: the second goes on a
+                    second line; a longer name is cut with an ellipsis. */}
+                <span className="line-clamp-2 [overflow-wrap:anywhere]">
+                  {taskedOp}
+                </span>
+              </span>
+            )}
             {code && !isSelected && (
               <span className="roster-cell-label absolute inset-x-1 bottom-1 text-[7px] leading-tight opacity-90 truncate text-center block font-medium">
                 {label}
@@ -3222,6 +3254,7 @@ const SortableMemberRow = memo(function SortableMemberRow({
   onPasteCell,
   secondmentWindow,
   issueCells,
+  teamOps,
 }: {
   member: Member;
   allDates: Date[];
@@ -3263,6 +3296,8 @@ const SortableMemberRow = memo(function SortableMemberRow({
   secondmentWindow?: { startDate: string; endDate: string } | null;
   /** Cell keys ("memberId-date") with a live EA compliance finding. */
   issueCells?: Set<string>;
+  /** Operation each date for this row's team (posted tasking), for the tile. */
+  teamOps?: Record<string, string>;
 }) {
   const {
     attributes,
@@ -3350,6 +3385,8 @@ const SortableMemberRow = memo(function SortableMemberRow({
         const cellKey = `${member.id}-${ds}`;
         const isSelected = selectedCells.has(cellKey);
         const hasComment = !!shift?.comment;
+        // The operation this team is tasked on that day (posted tasking only).
+        const taskedOp = opForRosterTile(teamOps, code, ds);
         const hasIssue = !!issueCells?.has(cellKey);
         const isActing = shift?.isActing ?? false;
         const label = SHIFT_LABELS[code as keyof typeof SHIFT_LABELS];
@@ -3412,6 +3449,18 @@ const SortableMemberRow = memo(function SortableMemberRow({
             }}
             onPointerEnter={() => onCellPointerEnter(member.id, ds)}
           >
+            {taskedOp && !isSelected && (
+              <span
+                className="roster-cell-op absolute inset-x-1 top-[10px] bottom-[11px] flex items-center justify-center text-center text-[8px] leading-[9px] font-semibold opacity-95 overflow-hidden"
+                title={`Tasked: ${taskedOp}`}
+              >
+                {/* Two words that do not fit on one line: the second goes on a
+                    second line; a longer name is cut with an ellipsis. */}
+                <span className="line-clamp-2 [overflow-wrap:anywhere]">
+                  {taskedOp}
+                </span>
+              </span>
+            )}
             {code && !isSelected && (
               <span className="roster-cell-label absolute inset-x-1 bottom-1 text-[7px] leading-tight opacity-90 truncate text-center block font-medium">
                 {label}

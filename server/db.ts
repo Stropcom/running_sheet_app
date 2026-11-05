@@ -483,6 +483,7 @@ export {
   getPostedWeeks,
   isWeekPosted,
   markWeekPosted,
+  getPostedTaskingOps,
 } from "./db/opManager";
 export {
   createNotificationsForUsers,

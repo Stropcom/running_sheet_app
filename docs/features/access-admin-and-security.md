@@ -246,3 +246,20 @@ The red dot the roster shows on a day with an EA compliance breach now also show
 - **Data:** `ctoRoster.eba.taskingBreaches` (any signed-in user; the same live check as the roster, Command-scoped). If the Roster feature is off for a Command the query is refused and the calendar simply shows no dots.
 - **Screen only, not in the PDF.** Not on the edit page's grid.
 - Checks: `e2e/screens.spec.ts` "CTO Weekly Tasking: an EA breach on the roster shows as a red dot…" (a 14-hour shift breaks the 12-hour rule; dot in each layout, the chip, the popover, a phone width, the roster link). On a phone the Timeline scrolls sideways, so the dot at a bar's right end is reached by scrolling, as the count is.
+
+## Day and Arvo shifts are 9 hours; Admin is 8 (v2.69.0)
+
+The CTO Roster and the CTO Weekly Tasking now agree on shift lengths:
+
+| Shift | Time | Hours |
+| --- | --- | --- |
+| Day (and Day on-call) | 06:00–15:00 (tasking 0600-1500) | 9 |
+| Arvo (and Arvo on-call) | 13:00–22:00 (tasking 1300-2200) | 9 |
+| Admin | 0700-1500 on the tasking | 8 |
+
+- **Roster defaults** (`SHIFT_TIMES`, `shared/ctoRosterShiftUtils.ts`): Day and Day on-call start **06:00** (was 07:00); Arvo on-call starts **13:00** (was 14:00). These now match what the EA compliance engine already assumed (`shared/ctoRosterShiftDuration.ts`: Day 06:00, Arvo and Arvo on-call 13:00, all 9 hours), so a shift with no typed start is checked at the time the roster shows. Admin (`ad`, `adoc`) is unchanged: 10:00, 8 hours, on the roster.
+- **Tasking presets** (`SHIFT_PRESETS`, `shared/taskingTimeline.ts`): 0600-1500, 0700-1500, 1000-1800, 1300-2200 (was 0600-1400, 0700-1500, 1000-1800, 1400-2200). The default week pattern (`getDefaultShift`) uses 0600-1500 for Day teams, PTT and Capability and 1300-2200 for the Arvo team (Friday's 1000-1800 is unchanged).
+- **Admin switches the length** (`shared/taskingShiftHours.ts`, tested in `server/taskingShiftHours.test.ts`; applied in `updateCell`, so the Timeline's operation menu and the edit page both do it): choosing **Admin** on a standard Day (0600-1500) or Arvo (1300-2200) shift makes it **0700-1500** (8 hours); changing it from Admin to an operation makes it the Day shift **0600-1500** again. A shift set to any other time is never changed, and so is a change that only swaps one operation for another.
+- **One-off data change** (`drizzle/0140_nine_hour_day_arvo_shifts.sql`, data only, safe to run twice): on the live roster every Day / Day on-call shift with a typed start of 07:00 now has no override (so it reads 06:00–15:00); and in **every saved tasking week**, 0700-1500 becomes 0600-1500 and 1400-2200 becomes 1300-2200, except cells whose task is Admin. Past weeks and days are included. Roster **drafts and saved-roster snapshots are not changed** (a draft's untyped Day shifts read 06:00 by the new default; typed starts stay).
+- **Roster question:** the tasking's Day start (0600) now matches the roster's Day start, so "Update the roster too?" is not asked for ordinary Day and Arvo shifts. It is still asked when an Admin shift (0700) is tasked on people the roster has as Day (06:00) or Admin (10:00), as before for any differing start; only the start is carried, not the length.
+- Checks: unit tests (`taskingShiftHours`, `taskingRosterSync`), the e2e "…a Day shift is 9 hours (0600-1500) and choosing Admin makes it 8 hours…", and the existing tasking e2e tests updated to the new times. The migration was run on a database holding old-style rows and changed exactly the rows above.

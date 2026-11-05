@@ -2,8 +2,21 @@
 // Colours live in client/src/index.css as --shift-* CSS variables / .shift-*
 // utility classes (same palette, ported verbatim).
 
-export const SHIFT_CODES = ["d", "a", "r", "o", "l", "c", "tt", "dep", "doc", "adoc", "ad", "aoc"] as const;
-export type ShiftCode = typeof SHIFT_CODES[number];
+export const SHIFT_CODES = [
+  "d",
+  "a",
+  "r",
+  "o",
+  "l",
+  "c",
+  "tt",
+  "dep",
+  "doc",
+  "adoc",
+  "ad",
+  "aoc",
+] as const;
+export type ShiftCode = (typeof SHIFT_CODES)[number];
 
 /** Full human-readable label for each shift code */
 export const SHIFT_LABELS: Record<ShiftCode, string> = {
@@ -21,9 +34,14 @@ export const SHIFT_LABELS: Record<ShiftCode, string> = {
   aoc: "Arvo on-call",
 };
 
-/** Default start time for each shift code */
+/**
+ * Default start time for each shift code. Day and Arvo (and their on-call
+ * versions) are 9 hours: Day 06:00-15:00, Arvo 13:00-22:00. These match the
+ * start times the EA compliance engine assumes (shared/ctoRosterShiftDuration.ts)
+ * and the CTO Weekly Tasking's Day 0600-1500 / Arvo 1300-2200.
+ */
 export const SHIFT_TIMES: Record<ShiftCode, string> = {
-  d: "07:00",
+  d: "06:00",
   a: "13:00",
   r: "",
   o: "",
@@ -31,10 +49,10 @@ export const SHIFT_TIMES: Record<ShiftCode, string> = {
   c: "",
   tt: "",
   dep: "",
-  doc: "07:00",
+  doc: "06:00",
   adoc: "10:00",
   ad: "10:00",
-  aoc: "14:00",
+  aoc: "13:00",
 };
 
 /** CSS utility class for each shift code (see index.css) */

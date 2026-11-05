@@ -9,10 +9,10 @@ import { cellShift } from "./taskingBlend";
 
 /** The ready-made shifts the tasking cell offers (besides RDO and Custom). */
 export const SHIFT_PRESETS = [
-  "0600-1400",
-  "0700-1500",
+  "0600-1500", // Day, 9 hours
+  "0700-1500", // Admin, 8 hours
   "1000-1800",
-  "1400-2200",
+  "1300-2200", // Arvo, 9 hours
 ] as const;
 
 /** A bar slides in steps of this many minutes. */

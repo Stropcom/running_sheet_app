@@ -67,7 +67,7 @@ describe("who and what changes", () => {
     expect(changes[0]).toMatchObject({
       fromCode: "d",
       toCode: "d",
-      fromTime: "07:00",
+      fromTime: "06:00",
       toTime: "09:00",
       storeTime: "09:00",
     });
@@ -95,7 +95,7 @@ describe("who and what changes", () => {
     expect(
       planTaskingRosterSync({
         ...base,
-        targets: [T1("2026-11-06", 7)],
+        targets: [T1("2026-11-06", 6)],
         shifts: [shift(1, "2026-11-06", "d")],
       })
     ).toEqual([]);
@@ -169,7 +169,7 @@ describe("the question's summary", () => {
         date: "2026-11-06",
         toTime: "14:00",
         members: 2,
-        fromTimes: "07:00, 13:00",
+        fromTimes: "06:00, 13:00",
         typeChanges: 1,
       },
     ]);

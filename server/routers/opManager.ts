@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { rosterCommandForWrite } from "../rosterContext";
+import { getOperations } from "../db";
+import { operationsForUser, toAccessUser } from "../operationAccess";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   getAllUsers,
@@ -22,6 +24,7 @@ import {
   copyOpManagerWeek,
   deleteOpManagerWeek,
   findOpManagerCopySourceWeek,
+  getPostedTaskingOps,
 } from "../db";
 
 import { certifierOrAdminProcedure, adminProcedure } from "./_helpers";
@@ -167,6 +170,26 @@ export const opManagerRouter = router({
   getPostedWeeks: protectedProcedure.query(async () => {
     return getPostedWeeks();
   }),
+
+  /**
+   * The operation each team is tasked on, for the posted weeks between two
+   * dates: the name shown at the top of an on-duty person's roster tile. Anyone
+   * who can see the tasking (Member or Admin) gets them all; anyone else only
+   * the operations they can already open; an Investigator none.
+   */
+  postedTaskingOps: protectedProcedure
+    .input(z.object({ startDate: z.string(), endDate: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const rows = await getPostedTaskingOps(input.startDate, input.endDate);
+      if (ctx.user.role === "member" || ctx.user.role === "admin") return rows;
+      if (ctx.user.role === "investigator" || rows.length === 0) return [];
+      const open = await operationsForUser(
+        toAccessUser(ctx.user),
+        await getOperations()
+      );
+      const names = new Set(open.map(o => o.name.trim().toLowerCase()));
+      return rows.filter(r => names.has(r.primary.trim().toLowerCase()));
+    }),
 
   isWeekPosted: protectedProcedure
     .input(z.object({ weekStart: z.string() }))

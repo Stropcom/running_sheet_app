@@ -12,6 +12,7 @@ import {
 } from "@shared/opManagerWeekSnapshot";
 
 import { rosterCommand, rosterCommandForWrite } from "../rosterContext";
+import { addDaysISO, postedTaskingOps } from "@shared/rosterTaskingOps";
 
 import {
   opManagerPriorityRows,
@@ -572,4 +573,33 @@ export async function markWeekPosted(weekStart: string, postedBy: number) {
     })
     .onDuplicateKeyUpdate({ set: { postedAt: new Date(), postedBy } });
   return { weekStart, postedAt: new Date() };
+}
+
+/**
+ * The primary operation of each team-day of the POSTED weeks between two dates
+ * (this Command's tasking), for the operation name on a roster tile. The rule
+ * is `postedTaskingOps` in shared/rosterTaskingOps.ts.
+ */
+export async function getPostedTaskingOps(startDate: string, endDate: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const firstWeek = addDaysISO(startDate, -6);
+  const postedRows = await db
+    .select({ weekStart: opManagerPostedWeeks.weekStart })
+    .from(opManagerPostedWeeks)
+    .where(inOpCommand(opManagerPostedWeeks.command));
+  const posted = new Set(
+    postedRows.map(r => r.weekStart).filter(w => w >= firstWeek && w <= endDate)
+  );
+  if (posted.size === 0) return [];
+  const cells = await db
+    .select({
+      weekStart: opManagerTaskingCells.weekStart,
+      dayIndex: opManagerTaskingCells.dayIndex,
+      teamRow: opManagerTaskingCells.teamRow,
+      primaryTask: opManagerTaskingCells.primaryTask,
+    })
+    .from(opManagerTaskingCells)
+    .where(inOpCommand(opManagerTaskingCells.command));
+  return postedTaskingOps(cells, posted, startDate, endDate);
 }

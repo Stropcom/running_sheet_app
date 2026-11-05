@@ -3690,3 +3690,113 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
       await call("operation.delete", { id: r.id });
   }
 });
+
+test("Team Duty Roster: the operation a team is tasked on shows on the tile of people on duty, once the week is posted", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const W = "2026-12-07"; // a Monday inside the roster's dates
+  const call = async (proc: string, input: unknown) => {
+    const res = await page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+    return (await res.json())[0];
+  };
+  const get = async (proc: string, input: unknown = null) => {
+    const res = await page.request.get(
+      `/api/trpc/${proc}?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: input } }))}`
+    );
+    return (await res.json())[0].result.data.json;
+  };
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  let rosterTeams = (await get("ctoRoster.teams.list")) as {
+    id: number;
+    name: string;
+  }[];
+  let addedTeam = false;
+  if (!rosterTeams.some(t => t.name === "Team 1")) {
+    await call("ctoRoster.teams.add", { name: "Team 1" });
+    addedTeam = true;
+    rosterTeams = await get("ctoRoster.teams.list");
+  }
+  const rosterTeam = rosterTeams.find(t => t.name === "Team 1")!;
+  let members = (await get("ctoRoster.members.list")) as {
+    id: number;
+    cin: string;
+  }[];
+  let addedMemberId: number | null = null;
+  if (!members.some(m => m.cin === cin)) {
+    const r = await call("ctoRoster.members.add", {
+      cin,
+      teamId: rosterTeam.id,
+    });
+    addedMemberId = r.result?.data.json.memberId ?? null;
+    members = (await get("ctoRoster.members.list")) as typeof members;
+  }
+  const member = members.find(m => m.cin === cin)!;
+  const name = "GREYFIN AURORA";
+
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "d",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+      primaryTask: name,
+    });
+    await page.setViewportSize({ width: 1400, height: 900 });
+
+    // Saved but not posted: no name on the tile.
+    await page.goto(`/cto-roster?date=${W}`);
+    await expect(page.getByText("E2E Officer").first()).toBeVisible();
+    await expect(page.locator(".roster-cell-op")).toHaveCount(0);
+
+    // Posted: the name shows in the middle of the tile, the second word on a
+    // second line, and the tooltip has the whole name.
+    await call("opManager.postWeek", { weekStart: W, userIds: [] });
+    await page.goto(`/cto-roster?date=${W}`);
+    const tile = page.locator(".roster-cell-op", { hasText: name }).first();
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute("title", `Tasked: ${name}`);
+    const lines = await tile.locator("span").evaluate(el => {
+      const r = el.getBoundingClientRect();
+      return Math.round(r.height / parseFloat(getComputedStyle(el).lineHeight));
+    });
+    expect(lines).toBe(2);
+
+    // Not on duty that day (a rest day): no name.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "r",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await page.goto(`/cto-roster?date=${W}`);
+    await expect(page.getByText("E2E Officer").first()).toBeVisible();
+    await expect(
+      page.locator(".roster-cell-op", { hasText: name })
+    ).toHaveCount(0);
+  } finally {
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await call("opManager.deleteWeek", { weekStart: W });
+    if (addedMemberId !== null)
+      await call("ctoRoster.members.delete", { memberId: addedMemberId });
+    if (addedTeam)
+      await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
+  }
+});

@@ -2930,3 +2930,198 @@ test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit
       .getByRole("button", { name: "Exit full screen" })
   ).toBeVisible();
 });
+
+test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post, and the change is saved", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const W = "2040-05-14";
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  // Plenty of operations, so the operation menu is long enough to scroll
+  // inside itself (it used to close when it did, which hung this test on a
+  // database that already had operations).
+  const stamp = Date.now();
+  for (let n = 1; n <= 14; n++)
+    await call("operation.create", { name: `E2E MENU OP ${stamp} ${n}` });
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0700-1500",
+      primaryTask: "RAVEN",
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv2",
+      shiftTime: "1400-2200",
+      primaryTask: "AURORA",
+    });
+    // Posted already, so the bar offers Save and re-post.
+    await call("opManager.postWeek", { weekStart: W, userIds: [] });
+    await page.addInitScript(() =>
+      localStorage.setItem("runlog.taskingView", "cal-timeline")
+    );
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 14 May/).click();
+
+    const bar = page.locator(".tcv-bar", { hasText: "RAVEN" }).first();
+    await expect(bar).toContainText("0700–1500");
+    await expect(
+      page.getByRole("region", { name: "Unsaved timeline changes" })
+    ).toHaveCount(0);
+
+    // Slide it later in the day: the bar shows its new time, the save bar appears.
+    const box = (await bar.boundingBox())!;
+    const lane = (await bar.locator("xpath=..").boundingBox())!;
+    const hours = lane.width / 19; // 05:00 to 24:00 while editing
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      box.x + box.width / 2 + hours,
+      box.y + box.height / 2,
+      { steps: 5 }
+    );
+    await page.mouse.move(
+      box.x + box.width / 2 + 2 * hours,
+      box.y + box.height / 2,
+      { steps: 5 }
+    );
+    await page.mouse.up();
+    await expect(bar).toContainText("0900–1700");
+    const saveBar = page.getByRole("region", {
+      name: "Unsaved timeline changes",
+    });
+    await expect(saveBar).toContainText("1 change");
+    await expect(saveBar).toContainText("0700–1500 to 0900–1700");
+    await expect(
+      saveBar.getByRole("button", { name: "Save and re-post" })
+    ).toBeVisible();
+
+    // Discard puts it back.
+    await saveBar.getByRole("button", { name: "Discard" }).click();
+    await expect(saveBar).toHaveCount(0);
+    await expect(bar).toContainText("0700–1500");
+
+    // A click (no slide) opens the operation menu.
+    await bar.click();
+    const menu = page.getByRole("menu", { name: /Operation for/ });
+    await expect(
+      menu.getByRole("menuitemradio", { name: /RAVEN/ })
+    ).toHaveAttribute("aria-checked", "true");
+    // Admin and Other (free text) sit under the operations, as in the edit grid.
+    await expect(
+      menu.getByRole("menuitemradio", { name: "Admin" })
+    ).toBeVisible();
+    await menu.getByRole("menuitem", { name: /Other/ }).click();
+    await menu.getByLabel("Describe the task").fill("Training day");
+    await menu.getByRole("button", { name: "Set" }).click();
+    await expect(menu).toHaveCount(0);
+    const savebar2 = page.getByRole("region", {
+      name: "Unsaved timeline changes",
+    });
+    await expect(savebar2).toContainText("operation RAVEN to Training day");
+    await expect(
+      page.locator(".tcv-bar", { hasText: "Training day" })
+    ).toHaveCount(1);
+    await savebar2.getByRole("button", { name: "Discard" }).click();
+    await expect(bar).toContainText("RAVEN");
+    // Escape closes the menu without changing anything.
+    await bar.click();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    // Slide again and Save: it is stored and still there after a reload.
+    await bar.focus();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(bar).toContainText("0800–1600");
+    await saveBar.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved 1 change.")).toBeVisible();
+    await expect(saveBar).toHaveCount(0);
+    await page.reload();
+    await page.getByText(/CTO Weekly Tasking — 14 May/).click();
+    await expect(
+      page.locator(".tcv-bar", { hasText: "RAVEN" }).first()
+    ).toContainText("0800–1600");
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});
+
+test("Side menu: CTO Roster opens the roster, and its tools are grouped under Roster tools (folded by default)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/cto-roster");
+  const tools = page.getByRole("button", { name: "Roster tools", exact: true });
+  await expect(tools).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("button", { name: "My Shifts", exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Outlook", exact: true })
+  ).toBeVisible();
+  for (const name of [
+    "Drafts",
+    "Saved Rosters",
+    "EA Compliance",
+    "Audit Log",
+    "Members",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
+      0
+    );
+
+  await tools.click();
+  await expect(tools).toHaveAttribute("aria-expanded", "true");
+  for (const name of [
+    "Drafts",
+    "Saved Rosters",
+    "EA Compliance",
+    "Audit Log",
+    "Members",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+
+  // Going to a tool leaves the group open so you can see where you are.
+  await page.getByRole("button", { name: "Audit Log", exact: true }).click();
+  await expect(page).toHaveURL(/\/cto-roster\/audit/);
+  await expect(
+    page.getByRole("button", { name: "Roster tools", exact: true })
+  ).toHaveAttribute("aria-expanded", "true");
+
+  // The CTO Roster entry itself opens the main roster page.
+  await page.getByRole("button", { name: "CTO Roster", exact: true }).click();
+  await expect(page).toHaveURL(/\/cto-roster$/);
+});
+
+test("Side menu: Weekly Activity (the Weekly Surveillance Report) keeps Op Manager open and does not open Procedures or Administration", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/reports/weekly-activity");
+  // Op Manager is open with Weekly Activity in it.
+  await expect(
+    page.getByRole("button", { name: "Weekly Activity", exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "CTO Weekly Tasking", exact: true })
+  ).toBeVisible();
+  // Procedures and Administration stay folded.
+  for (const name of [
+    "Vehicle Crash",
+    "UCO Guide",
+    "SMEAC Briefings",
+    "Archive",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
+      0
+    );
+});

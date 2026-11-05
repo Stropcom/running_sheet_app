@@ -4,12 +4,16 @@ import { readableOn } from "@shared/teamColours";
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -39,6 +43,12 @@ import {
   type DayCell,
   type TaskingCellInput,
 } from "@shared/taskingView";
+import {
+  SLIDE_STEP,
+  shiftLength,
+  shiftStart,
+  slideShift,
+} from "@shared/taskingTimeline";
 import "./taskingViews.css";
 
 export interface TaskingTeam {
@@ -49,7 +59,26 @@ export interface TaskingTeam {
   colour: string;
 }
 
+/** What an admin can do on the Timeline: slide a bar to another time and pick
+ * another operation. Absent (or `editable` false) it is read-only. */
+export interface TimelineEdit {
+  editable: boolean;
+  /** Operation names offered by the menu. */
+  ops: readonly string[];
+  /** A bar was slid; `shift` is the new "HHMM-HHMM". */
+  onSlide: (teamId: string, dayIndex: number, shift: string) => void;
+  /** An operation was picked from a bar's menu. "Other" comes with the typed
+   * description in `other`; "Admin" and the operations are plain names. */
+  onOp: (teamId: string, dayIndex: number, op: string, other?: string) => void;
+  /** Split a blended day back into Team 1 and Team 2. */
+  onSplit: (dayIndex: number) => void;
+  /** Cells (`team-day`) with a change not saved yet. */
+  changed: ReadonlySet<string>;
+}
+
 interface Ctx {
+  edit?: TimelineEdit;
+  counts?: Record<string, { onDuty: number; min: number } | undefined>;
   week: Record<string, DayCell[]>;
   days: ReturnType<typeof weekDays>;
   today: number;
@@ -339,14 +368,412 @@ function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
   );
 }
 
+/** Where a bar's operation menu opens. */
+interface BarMenuTarget {
+  teamId: string;
+  dayIndex: number;
+  /** "T1 · Mon", the menu's heading. */
+  label: string;
+  rect: DOMRect;
+}
+
+/**
+ * One bar on the Timeline. For an admin (`edit.editable`) it can be slid left
+ * or right to another time (the length is kept, steps of 30 minutes, a start
+ * from 05:00 to 23:00), clicked (or Enter) to pick another operation, and moved
+ * with the arrow keys. A press that barely moves is a click, not a slide. For
+ * everyone else it is a plain bar. While sliding the bar is moved directly in
+ * the page (not through React) and the new time is handed over on release.
+ */
+function TimelineBar({
+  className,
+  style,
+  title,
+  edit,
+  teamId,
+  dayIndex,
+  label,
+  cell,
+  span,
+  pct,
+  openMenu,
+  changed,
+  children,
+}: {
+  className: string;
+  style: CSSProperties;
+  title: string;
+  edit?: TimelineEdit;
+  teamId: string;
+  dayIndex: number;
+  label: string;
+  cell: DayCell;
+  span: [number, number];
+  pct: (m: number) => number;
+  openMenu: (t: BarMenuTarget) => void;
+  changed: boolean;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{
+    x0: number;
+    s0: number;
+    w: number;
+    moved: boolean;
+    next: string | null;
+    left: string;
+    width: string;
+    /** The start of the bar's current time, in minutes. */
+    start: number;
+  } | null>(null);
+  const start = shiftStart(cell.shift);
+  const len = shiftLength(cell.shift);
+  const canEdit = !!edit?.editable;
+  const canSlide = canEdit && start !== null && len !== null;
+  // Starts late enough to finish the next morning: the bar stops at midnight.
+  const overnight = start !== null && len !== null && start + len > 1440;
+
+  const open = () => {
+    const el = ref.current;
+    if (el)
+      openMenu({ teamId, dayIndex, label, rect: el.getBoundingClientRect() });
+  };
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = ref.current;
+    if (!canEdit || !el || e.button !== 0) return;
+    el.setPointerCapture(e.pointerId);
+    drag.current = {
+      x0: e.clientX,
+      s0: start ?? 0,
+      w: el.parentElement?.getBoundingClientRect().width || 1,
+      moved: false,
+      next: null,
+      left: el.style.left,
+      width: el.style.width,
+      start: start ?? 0,
+    };
+  };
+  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const el = ref.current;
+    if (!d || !el || !canSlide || start === null || len === null) return;
+    const dx = e.clientX - d.x0;
+    if (!d.moved && Math.abs(dx) < 5) return;
+    d.moved = true;
+    el.classList.add("sliding");
+    const next = slideShift(
+      cell.shift,
+      d.s0 + (dx / d.w) * (span[1] - span[0])
+    );
+    if (!next) return;
+    d.next = next;
+    const ns = shiftStart(next) ?? start;
+    // Moved with a transform (its own layer, no layout) rather than by
+    // changing `left` on every pointer move; the width only changes when the
+    // end reaches the edge of the axis.
+    el.style.transform = `translateX(${((ns - d.start) / (span[1] - span[0])) * d.w}px)`;
+    el.style.width = `${pct(Math.min(ns + len, span[1])) - pct(ns)}%`;
+    const t = el.querySelector(".t");
+    if (t) t.textContent = formatShiftText(next);
+  };
+  /** Puts the bar's own position and time back (a slide that changed nothing,
+   * or was cancelled). */
+  const restore = (el: HTMLDivElement, d: { left: string; width: string }) => {
+    el.classList.remove("sliding");
+    el.style.transform = "";
+    el.style.left = d.left;
+    el.style.width = d.width;
+    const t = el.querySelector(".t");
+    if (t) t.textContent = formatShiftText(cell.shift);
+  };
+  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const el = ref.current;
+    drag.current = null;
+    if (!d || !el) return;
+    try {
+      el.releasePointerCapture(e.pointerId);
+    } catch {
+      /* not captured */
+    }
+    if (!d.moved) {
+      restore(el, d);
+      open();
+    } else if (d.next && d.next !== cell.shift) {
+      // Land on the new place in one step, then hand it over (the page
+      // re-draws the bar at the same place).
+      const ns = shiftStart(d.next) ?? d.start;
+      el.classList.remove("sliding");
+      el.style.transform = "";
+      el.style.left = `${pct(ns)}%`;
+      edit?.onSlide(teamId, dayIndex, d.next);
+    } else {
+      restore(el, d);
+    }
+  };
+  const key = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!canEdit) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      open();
+    } else if (
+      canSlide &&
+      start !== null &&
+      (e.key === "ArrowLeft" || e.key === "ArrowRight")
+    ) {
+      e.preventDefault();
+      const next = slideShift(
+        cell.shift,
+        start + (e.key === "ArrowLeft" ? -SLIDE_STEP : SLIDE_STEP)
+      );
+      if (next && next !== cell.shift) edit?.onSlide(teamId, dayIndex, next);
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={`${className}${canEdit ? " tcv-edit" : ""}${changed ? " tcv-changed" : ""}`}
+      style={style}
+      title={title}
+      {...(canEdit
+        ? {
+            tabIndex: 0,
+            role: "button",
+            "aria-label": `${title}. ${canSlide ? "Slide to change the time. " : ""}Press Enter to change the operation.`,
+            onPointerDown: down,
+            onPointerMove: move,
+            onPointerUp: up,
+            onPointerCancel: () => {
+              const d = drag.current;
+              const el = ref.current;
+              drag.current = null;
+              if (d && el) restore(el, d);
+            },
+            // No browser text selection or drag image while sliding.
+            onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
+            onDragStart: (e: React.DragEvent) => e.preventDefault(),
+            onKeyDown: key,
+            // A click on the operation's name opens this menu, it does not
+            // also highlight the operation.
+            onClickCapture: (e: React.MouseEvent) => e.stopPropagation(),
+          }
+        : {})}
+    >
+      {canSlide && <span className="tcv-grip" aria-hidden />}
+      {children}
+      {overnight && (
+        <span className="tcv-more" title="Finishes the next morning">
+          ›
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Timeline bar height and the distance from one team lane to the next, in
+ * pixels. Keep taskingViews.css (.tcv-bar height, the lane minimum height) in
+ * step. */
+const BAR_H = 24;
+const BAR_PITCH = 28;
+
+/** The fixed choices the edit grid lists above the operations; here they sit
+ * under them. An operation that is itself called Admin or Training is not
+ * listed twice. */
+const FIXED_TASKS = ["admin", "training"];
+
+/** The operation menu of a clicked bar: the active operations, then Admin and
+ * Other (free text) as in the edit grid, and Split on a blended day. */
+function BarMenu({
+  target,
+  week,
+  edit,
+  onClose,
+}: {
+  target: BarMenuTarget;
+  week: Record<string, DayCell[]>;
+  edit: TimelineEdit;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const cell = week[target.teamId]?.[target.dayIndex];
+  const current = cell?.primary ?? "";
+  const blended =
+    isBlendTeam(target.teamId) && isBlendDay(week, target.dayIndex);
+  const opNames = edit.ops.filter(
+    o => !FIXED_TASKS.includes(o.trim().toLowerCase())
+  );
+  const isAdmin = current.trim().toLowerCase() === "admin";
+  // What is on the bar now but is not in the list (a free-text task, Training).
+  const custom =
+    current && !isAdmin && !opNames.includes(current) ? current : "";
+  const [typing, setTyping] = useState(false);
+  const [text, setText] = useState(custom);
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    // The page scrolling closes the menu (it would be left floating); the menu
+    // scrolling itself does not (it does when it lists many operations and
+    // focus moves to its text box).
+    const scrolled = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("pointerdown", down, true);
+    document.addEventListener("keydown", esc);
+    window.addEventListener("scroll", scrolled, true);
+    ref.current
+      ?.querySelector<HTMLButtonElement>('[aria-checked="true"], button')
+      ?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("keydown", esc);
+      window.removeEventListener("scroll", scrolled, true);
+    };
+  }, [onClose]);
+  const left = Math.max(
+    8,
+    Math.min(
+      window.innerWidth - 232,
+      target.rect.left + target.rect.width / 2 - 112
+    )
+  );
+  const below = target.rect.bottom + 6;
+  const top =
+    below + 340 > window.innerHeight
+      ? Math.max(8, target.rect.top - 340 - 6)
+      : below;
+  const pick = (op: string, other?: string) => {
+    edit.onOp(target.teamId, target.dayIndex, op, other);
+    onClose();
+  };
+  const item = (label: string, checked: boolean, onPick: () => void) => (
+    <button
+      key={label}
+      type="button"
+      role="menuitemradio"
+      aria-checked={checked}
+      onClick={onPick}
+    >
+      <span>{label}</span>
+      {checked && <span aria-hidden>✓</span>}
+    </button>
+  );
+  return createPortal(
+    <div
+      ref={ref}
+      className="tcv-menu"
+      role="menu"
+      aria-label={`Operation for ${target.label}`}
+      style={{ left, top }}
+    >
+      <div className="tcv-menu-h">Operation · {target.label}</div>
+      {opNames.length === 0 && !custom && (
+        <div className="tcv-menu-empty">No operations</div>
+      )}
+      {opNames.map(o => item(o, o === current, () => pick(o)))}
+      <hr />
+      {item("Admin", isAdmin, () => pick("Admin"))}
+      {custom && item(custom, true, onClose)}
+      {typing ? (
+        <form
+          className="tcv-menu-other"
+          onSubmit={e => {
+            e.preventDefault();
+            const v = text.trim();
+            if (v) pick("Other", v);
+          }}
+        >
+          <input
+            autoFocus
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="Describe task…"
+            aria-label="Describe the task"
+          />
+          <button type="submit" disabled={!text.trim()}>
+            Set
+          </button>
+        </form>
+      ) : (
+        <button type="button" role="menuitem" onClick={() => setTyping(true)}>
+          Other (free text)…
+        </button>
+      )}
+      {blended && (
+        <>
+          <hr />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              edit.onSplit(target.dayIndex);
+              onClose();
+            }}
+          >
+            Split into Team 1 and Team 2
+          </button>
+        </>
+      )}
+    </div>,
+    document.body
+  );
+}
+
+/** "4/5" at the end of a Timeline bar: the team's people rostered on duty that
+ * day (counted the way Outlook does) over its minimum; red below the minimum. */
+function TeamCount({
+  counts,
+  teamId,
+  dayIndex,
+  prefix = "",
+}: {
+  counts?: Ctx["counts"];
+  teamId: string;
+  dayIndex: number;
+  prefix?: string;
+}) {
+  const c = counts?.[`${teamId}-${dayIndex}`];
+  if (!c) return null;
+  return (
+    <span className={`tcv-count${c.onDuty < c.min ? " short" : ""}`}>
+      {prefix}
+      {c.onDuty}/{c.min}
+    </span>
+  );
+}
+
+/** The counts as words for a bar's tooltip. */
+function countTitle(
+  counts: Ctx["counts"],
+  teamIds: string[],
+  dayIndex: number
+): string {
+  const parts = teamIds
+    .map(id => {
+      const c = counts?.[`${id}-${dayIndex}`];
+      return c ? `${c.onDuty} of ${c.min} on duty` : "";
+    })
+    .filter(Boolean);
+  return parts.length ? `. ${parts.join(", ")}` : "";
+}
+
 /** Timeline (hours across, a lane for each team) */
-function Timeline({ week, days, today, teams, dim, warn }: Ctx) {
-  const [lo, hi] = timelineSpan(week);
+function Timeline({ week, days, today, teams, dim, warn, edit, counts }: Ctx) {
+  const [lo, hi0] = timelineSpan(week);
+  // Editable: always reach midnight, so a bar slid to a 23:00 start has room.
+  const hi = edit?.editable ? Math.max(hi0, 24 * 60) : hi0;
+  const [menu, setMenu] = useState<BarMenuTarget | null>(null);
   const ticks: number[] = [];
   for (let m = lo; m <= hi; m += 120) ticks.push(m);
   const pct = (m: number) => ((m - lo) / (hi - lo)) * 100;
   return (
-    <div className="tcv-card tcv-scroll">
+    <div
+      className={`tcv-card tcv-scroll${edit?.editable ? " tcv-editing" : ""}`}
+    >
       <div className="tcv-cb">
         <div className="tcv-cb-corner" />
         <div className="tcv-cb-axis">
@@ -377,11 +804,23 @@ function Timeline({ week, days, today, teams, dim, warn }: Ctx) {
             week={week}
             ticks={ticks}
             pct={pct}
+            span={[lo, hi]}
             dim={dim}
             warn={warn}
+            edit={edit}
+            counts={counts}
+            openMenu={setMenu}
           />
         ))}
       </div>
+      {edit?.editable && menu && (
+        <BarMenu
+          target={menu}
+          week={week}
+          edit={edit}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -394,9 +833,17 @@ function TimelineRow({
   week,
   ticks,
   pct,
+  span,
   dim,
   warn,
+  edit,
+  counts,
+  openMenu,
 }: {
+  counts?: Ctx["counts"];
+  span: [number, number];
+  edit?: TimelineEdit;
+  openMenu: (t: BarMenuTarget) => void;
   d: ReturnType<typeof weekDays>[number];
   i: number;
   today: number;
@@ -424,7 +871,7 @@ function TimelineRow({
         </div>
         {teams.map((t, li) => {
           const c = week[t.id][i];
-          const top = 8 + li * 21;
+          const top = 8 + li * BAR_PITCH;
           const bl = blendedFor(week, t.id, i) && !!c.range;
           // Blended: one tall bar across the Team 1 and Team 2 lanes.
           if (bl && t.id === "surv2") return null;
@@ -448,17 +895,29 @@ function TimelineRow({
             );
           }
           return (
-            <div
+            <TimelineBar
               key={t.id}
               className={`tcv-bar ${bl ? "tcv-blend merged" : "tcv-team"} ${dim(c)}`}
+              edit={edit}
+              teamId={t.id}
+              dayIndex={i}
+              label={`${bl ? "T1 + T2" : t.ab} · ${d.name}`}
+              cell={c}
+              span={span}
+              pct={pct}
+              openMenu={openMenu}
+              changed={
+                !!edit?.changed.has(`${t.id}-${i}`) ||
+                (bl && !!edit?.changed.has(`surv2-${i}`))
+              }
               style={{
                 ...(bl ? {} : teamStyle(t)),
-                ...(bl ? { height: 39 } : {}),
+                ...(bl ? { height: BAR_PITCH + BAR_H } : {}),
                 left: `${pct(c.range[0])}%`,
                 width: `${pct(c.range[1]) - pct(c.range[0])}%`,
                 top,
               }}
-              title={`${bl ? "Team 1 + Team 2" : t.label} ${formatShiftText(c.shift)}`}
+              title={`${bl ? "Team 1 + Team 2" : t.label} ${formatShiftText(c.shift)}${countTitle(counts, bl ? ["surv1", "surv2"] : [t.id], i)}`}
             >
               {bl ? (
                 <>
@@ -475,8 +934,20 @@ function TimelineRow({
                   <span className="t" style={{ marginLeft: 0 }}>
                     {formatShiftText(c.shift)}
                   </span>
-                  {warn("surv1", i, c.primary)}
-                  {warn("surv2", i, c.primary)}
+                  <span className="tcv-count-pair">
+                    <TeamCount
+                      counts={counts}
+                      teamId="surv1"
+                      dayIndex={i}
+                      prefix="T1 "
+                    />
+                    <TeamCount
+                      counts={counts}
+                      teamId="surv2"
+                      dayIndex={i}
+                      prefix="T2 "
+                    />
+                  </span>
                 </>
               ) : (
                 <>
@@ -489,10 +960,10 @@ function TimelineRow({
                     </>
                   ) : null}
                   <span className="t">{formatShiftText(c.shift)}</span>
-                  {warn(t.id, i, c.primary)}
+                  <TeamCount counts={counts} teamId={t.id} dayIndex={i} />
                 </>
               )}
-            </div>
+            </TimelineBar>
           );
         })}
       </div>
@@ -512,7 +983,14 @@ export function TaskingCalendarViews({
   grid,
   issueCount,
   renderWarning,
+  edit,
+  counts,
 }: {
+  /** Admin editing on the Timeline (slide a bar, pick an operation). */
+  edit?: TimelineEdit;
+  /** People rostered on duty against the team's minimum for each `team-day`
+   * (as Outlook counts them); the Timeline shows it at the end of each bar. */
+  counts?: Record<string, { onDuty: number; min: number } | undefined>;
   weekStart: string;
   teams: readonly TaskingTeam[];
   grid: Record<string, TaskingCellInput | undefined>;
@@ -543,6 +1021,8 @@ export function TaskingCalendarViews({
 
   const toggle = (name: string) => setFocus(f => (f === name ? null : name));
   const ctx: Ctx = {
+    edit,
+    counts,
     week,
     days,
     today,
@@ -641,6 +1121,13 @@ export function TaskingCalendarViews({
             P = primary task, S = secondary task, RDO = rostered day off
           </span>
         </div>
+      )}
+
+      {view === "cal-timeline" && edit?.editable && (
+        <p className="px-1 text-xs text-muted-foreground">
+          Slide a bar to change its time (steps of 30 minutes, a start from
+          05:00 to 23:00). Click a bar to change its operation.
+        </p>
       )}
 
       <ToggleOp.Provider value={toggle}>

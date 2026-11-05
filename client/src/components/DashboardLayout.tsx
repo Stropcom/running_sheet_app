@@ -1,4 +1,9 @@
 import { RosterCommandBar, isRosterPath } from "@/components/RosterCommandBar";
+import {
+  isOpManagerPath,
+  isProceduresPath,
+  isRosterToolsPath,
+} from "@shared/rosterMenu";
 import { RosterFullscreenBar } from "@/components/roster/RosterZoomControl";
 import { useRosterFullscreen } from "@/lib/rosterFullscreen";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -92,6 +97,7 @@ import {
   Image,
   Link2,
   FileEdit,
+  Wrench,
   Binoculars,
   RefreshCw,
   TrendingUp,
@@ -155,6 +161,8 @@ type SortableNavItemProps = {
   setOpManagerExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   ctoRosterSubExpanded: boolean;
   setCtoRosterSubExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  rosterToolsExpanded: boolean;
+  setRosterToolsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   reportsExpanded: boolean;
   setReportsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   courtExpanded: boolean;
@@ -201,6 +209,8 @@ function SortableNavItem({
   setOpManagerExpanded,
   ctoRosterSubExpanded,
   setCtoRosterSubExpanded,
+  rosterToolsExpanded,
+  setRosterToolsExpanded,
   reportsExpanded,
   setReportsExpanded,
   courtExpanded,
@@ -485,9 +495,7 @@ function SortableNavItem({
     );
 
   if (id === "operationManager") {
-    const opManagerActive =
-      location.startsWith("/operation-manager") ||
-      location.startsWith("/cto-roster");
+    const opManagerActive = isOpManagerPath(location);
     return (
       <SidebarMenuItem {...itemProps}>
         <SidebarMenuButton
@@ -518,49 +526,48 @@ function SortableNavItem({
         </SidebarMenuButton>
         {opManagerExpanded && !isCollapsed && (
           <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-            {features.tasking && (
-              <button
-                onClick={() => setLocation("/operation-manager")}
-                className={subItemClass(
-                  location.startsWith("/operation-manager")
-                )}
-              >
-                <ClipboardList className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                CTO Weekly Tasking
-              </button>
-            )}
             {features.roster && (
               <>
-                <button
-                  data-nav-toggle="cto-roster"
-                  onClick={e => {
-                    const willExpand = !ctoRosterSubExpanded;
-                    setCtoRosterSubExpanded(v => !v);
-                    if (willExpand)
-                      scrollToggleNearTop(
-                        sidebarScrollRef.current,
-                        e.currentTarget
-                      );
-                  }}
-                  className={subItemClass(location.startsWith("/cto-roster"))}
-                >
-                  <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  <span className="flex-1">CTO Roster</span>
-                  {ctoRosterSubExpanded ? (
-                    <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
-                  )}
-                </button>
+                {/* CTO Roster opens the main roster page; the arrow folds the
+                    pages under it. */}
+                <div className="flex items-stretch gap-0.5">
+                  <button
+                    data-nav-toggle="cto-roster"
+                    onClick={e => {
+                      setLocation("/cto-roster");
+                      if (!ctoRosterSubExpanded) {
+                        setCtoRosterSubExpanded(true);
+                        scrollToggleNearTop(
+                          sidebarScrollRef.current,
+                          e.currentTarget
+                        );
+                      }
+                    }}
+                    className={subItemClass(location === "/cto-roster")}
+                  >
+                    <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                    <span className="flex-1">CTO Roster</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={
+                      ctoRosterSubExpanded
+                        ? "Fold away CTO Roster pages"
+                        : "Show CTO Roster pages"
+                    }
+                    aria-expanded={ctoRosterSubExpanded}
+                    onClick={() => setCtoRosterSubExpanded(v => !v)}
+                    className="flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                  >
+                    {ctoRosterSubExpanded ? (
+                      <ChevronDown className="h-3 w-3" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
                 {ctoRosterSubExpanded && (
                   <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
-                    <button
-                      onClick={() => setLocation("/cto-roster")}
-                      className={subItemClass(location === "/cto-roster")}
-                    >
-                      <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                      Roster
-                    </button>
                     <button
                       onClick={() => setLocation("/cto-roster/my-shifts")}
                       className={subItemClass(
@@ -579,52 +586,88 @@ function SortableNavItem({
                       <Binoculars className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                       Outlook
                     </button>
+                    {/* Roster tools: folded away unless you are on one of them */}
                     <button
-                      onClick={() => setLocation("/cto-roster/drafts")}
-                      className={subItemClass(
-                        location.startsWith("/cto-roster/draft")
+                      type="button"
+                      aria-expanded={rosterToolsExpanded}
+                      onClick={() => setRosterToolsExpanded(v => !v)}
+                      className={subItemClass(false)}
+                    >
+                      <Wrench className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      <span className="flex-1">Roster tools</span>
+                      {rosterToolsExpanded ? (
+                        <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
                       )}
-                    >
-                      <FileEdit className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                      Drafts
                     </button>
-                    <button
-                      onClick={() => setLocation("/cto-roster/saved-rosters")}
-                      className={subItemClass(
-                        location.startsWith("/cto-roster/saved-roster")
-                      )}
-                    >
-                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                      Saved Rosters
-                    </button>
-                    <button
-                      onClick={() => setLocation("/cto-roster/ea-compliance")}
-                      className={subItemClass(
-                        location === "/cto-roster/ea-compliance"
-                      )}
-                    >
-                      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                      EA Compliance
-                    </button>
-                    <button
-                      onClick={() => setLocation("/cto-roster/audit")}
-                      className={subItemClass(location === "/cto-roster/audit")}
-                    >
-                      <ScrollText className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                      Audit Log
-                    </button>
-                    <button
-                      onClick={() => setLocation("/cto-roster/members")}
-                      className={subItemClass(
-                        location === "/cto-roster/members"
-                      )}
-                    >
-                      <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                      Members
-                    </button>
+                    {rosterToolsExpanded && (
+                      <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+                        <button
+                          onClick={() => setLocation("/cto-roster/drafts")}
+                          className={subItemClass(
+                            location.startsWith("/cto-roster/draft")
+                          )}
+                        >
+                          <FileEdit className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                          Drafts
+                        </button>
+                        <button
+                          onClick={() =>
+                            setLocation("/cto-roster/saved-rosters")
+                          }
+                          className={subItemClass(
+                            location.startsWith("/cto-roster/saved-roster")
+                          )}
+                        >
+                          <BookOpen className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                          Saved Rosters
+                        </button>
+                        <button
+                          onClick={() =>
+                            setLocation("/cto-roster/ea-compliance")
+                          }
+                          className={subItemClass(
+                            location === "/cto-roster/ea-compliance"
+                          )}
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                          EA Compliance
+                        </button>
+                        <button
+                          onClick={() => setLocation("/cto-roster/audit")}
+                          className={subItemClass(
+                            location === "/cto-roster/audit"
+                          )}
+                        >
+                          <ScrollText className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                          Audit Log
+                        </button>
+                        <button
+                          onClick={() => setLocation("/cto-roster/members")}
+                          className={subItemClass(
+                            location === "/cto-roster/members"
+                          )}
+                        >
+                          <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                          Members
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
+            )}
+            {features.tasking && (
+              <button
+                onClick={() => setLocation("/operation-manager")}
+                className={subItemClass(
+                  location.startsWith("/operation-manager")
+                )}
+              >
+                <ClipboardList className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                CTO Weekly Tasking
+              </button>
             )}
             <button
               onClick={() => setLocation("/reports/weekly-activity")}
@@ -648,10 +691,7 @@ function SortableNavItem({
     // is used in Outstanding Actions/Weekly Activity's move to Op Manager
     // above, and Vehicle Crash/UCO Guide/SMEAC Briefings' move from
     // Administration below, for the rest of this folder's rename.
-    const isActive =
-      location.startsWith("/administration/vehicle-crash") ||
-      location.startsWith("/administration/uco-guide") ||
-      location.startsWith("/administration/smeac");
+    const isActive = isProceduresPath(location);
     return (
       <SidebarMenuItem {...itemProps}>
         <SidebarMenuButton
@@ -1068,9 +1108,7 @@ function SortableNavTile({
   }
 
   if (id === "operationManager") {
-    const isActive =
-      location.startsWith("/operation-manager") ||
-      location.startsWith("/cto-roster");
+    const isActive = isOpManagerPath(location);
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -1088,12 +1126,6 @@ function SortableNavTile({
           </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
-          {features.tasking && (
-            <DropdownMenuItem onClick={() => setLocation("/operation-manager")}>
-              <ClipboardList className="h-4 w-4 mr-2 text-purple-500" />
-              CTO Weekly Tasking
-            </DropdownMenuItem>
-          )}
           {features.roster && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -1103,7 +1135,7 @@ function SortableNavTile({
               <DropdownMenuSubContent>
                 <DropdownMenuItem onClick={() => setLocation("/cto-roster")}>
                   <Users className="h-4 w-4 mr-2 text-purple-500" />
-                  Roster
+                  Main roster
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setLocation("/cto-roster/my-shifts")}
@@ -1117,32 +1149,52 @@ function SortableNavTile({
                   <Binoculars className="h-4 w-4 mr-2 text-purple-500" />
                   Outlook
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setLocation("/cto-roster/drafts")}
-                >
-                  <FileEdit className="h-4 w-4 mr-2 text-purple-500" />
-                  Drafts
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setLocation("/cto-roster/saved-rosters")}
-                >
-                  <BookOpen className="h-4 w-4 mr-2 text-purple-500" />
-                  Saved Rosters
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setLocation("/cto-roster/ea-compliance")}
-                >
-                  <ShieldCheck className="h-4 w-4 mr-2 text-purple-500" />
-                  EA Compliance
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setLocation("/cto-roster/audit")}
-                >
-                  <ScrollText className="h-4 w-4 mr-2 text-purple-500" />
-                  Audit Log
-                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Wrench className="h-4 w-4 mr-2 text-purple-500" />
+                    Roster tools
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem
+                      onClick={() => setLocation("/cto-roster/drafts")}
+                    >
+                      <FileEdit className="h-4 w-4 mr-2 text-purple-500" />
+                      Drafts
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setLocation("/cto-roster/saved-rosters")}
+                    >
+                      <BookOpen className="h-4 w-4 mr-2 text-purple-500" />
+                      Saved Rosters
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setLocation("/cto-roster/ea-compliance")}
+                    >
+                      <ShieldCheck className="h-4 w-4 mr-2 text-purple-500" />
+                      EA Compliance
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setLocation("/cto-roster/audit")}
+                    >
+                      <ScrollText className="h-4 w-4 mr-2 text-purple-500" />
+                      Audit Log
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setLocation("/cto-roster/members")}
+                    >
+                      <Users className="h-4 w-4 mr-2 text-purple-500" />
+                      Members
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+          )}
+          {features.tasking && (
+            <DropdownMenuItem onClick={() => setLocation("/operation-manager")}>
+              <ClipboardList className="h-4 w-4 mr-2 text-purple-500" />
+              CTO Weekly Tasking
+            </DropdownMenuItem>
           )}
           <DropdownMenuItem
             onClick={() => setLocation("/reports/weekly-activity")}
@@ -1681,7 +1733,7 @@ function DashboardLayoutContent({
     if (!container) return;
     const toggleSelector = location.startsWith("/cto-roster")
       ? '[data-nav-toggle="cto-roster"]'
-      : location.startsWith("/operation-manager")
+      : isOpManagerPath(location)
         ? '[data-nav-toggle="op-manager"]'
         : null;
     const toggleBtn = toggleSelector
@@ -1748,7 +1800,7 @@ function DashboardLayoutContent({
     location.startsWith("/court")
   );
   const [reportsExpanded, setReportsExpanded] = useState(() =>
-    location.startsWith("/reports")
+    isProceduresPath(location)
   );
   const [todoExpanded, setTodoExpanded] = useState(
     () =>
@@ -1756,13 +1808,16 @@ function DashboardLayoutContent({
       location === "/todo/images" ||
       location === "/todo/governance"
   );
-  const [opManagerExpanded, setOpManagerExpanded] = useState(
-    () =>
-      location.startsWith("/operation-manager") ||
-      location.startsWith("/cto-roster")
+  const [opManagerExpanded, setOpManagerExpanded] = useState(() =>
+    isOpManagerPath(location)
   );
   const [ctoRosterSubExpanded, setCtoRosterSubExpanded] = useState(() =>
     location.startsWith("/cto-roster")
+  );
+  // Roster tools (Drafts, Saved Rosters, EA Compliance, Audit Log, Members) is
+  // folded away unless you are on one of its pages.
+  const [rosterToolsExpanded, setRosterToolsExpanded] = useState(() =>
+    isRosterToolsPath(location)
   );
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
@@ -1919,11 +1974,7 @@ function DashboardLayoutContent({
       "/recycle-bin",
       "/help",
       "/shortcuts",
-      "/reports",
-      "/administration/smeac",
       "/administration/intel-export",
-      "/administration/vehicle-crash",
-      "/administration/uco-guide",
     ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
@@ -2179,6 +2230,8 @@ function DashboardLayoutContent({
                           setOpManagerExpanded={setOpManagerExpanded}
                           ctoRosterSubExpanded={ctoRosterSubExpanded}
                           setCtoRosterSubExpanded={setCtoRosterSubExpanded}
+                          rosterToolsExpanded={rosterToolsExpanded}
+                          setRosterToolsExpanded={setRosterToolsExpanded}
                           reportsExpanded={reportsExpanded}
                           setReportsExpanded={setReportsExpanded}
                           courtExpanded={courtExpanded}

@@ -73,7 +73,7 @@ export const VIEWS_PRINT_CSS = `
 .tp-tl.merged > i { background:linear-gradient(180deg,var(--b1) 50%,var(--b2) 50%) !important; }
 .tp-tl.merged .tp-tl-b { background:var(--bflat) !important; }
 .tp-tl.merged .tp-tl-team { color:#1e3a8a !important; }
-.tp-bar.merged { background:var(--bflat) !important; border:1px solid #cbd5e1; border-left-width:1px; flex-direction:column; align-items:flex-start; justify-content:center; padding-left:10px; gap:0; line-height:1.15; }
+.tp-bar.merged { background:linear-gradient(180deg,var(--b1tint) 50%,var(--b2tint) 50%) !important; border:1px solid #cbd5e1; border-left-width:1px; flex-direction:column; align-items:flex-start; justify-content:center; padding-left:10px; gap:0; line-height:1.15; }
 .tp-bar.merged::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,var(--b1) 50%,var(--b2) 50%) !important; }
 .tp-bar.merged .ab { color:#1e3a8a !important; }
 
@@ -275,6 +275,6 @@ export function printViewHtml(
   // The pink-and-blue of a blended day are Team 1's and Team 2's own colours.
   const b1 = w.teams.find(t => t.id === "surv1")?.colour ?? "#ec4899";
   const b2 = w.teams.find(t => t.id === "surv2")?.colour ?? "#1976d2";
-  const blendVars = `--b1:${b1};--b2:${b2};--b1t:${readableOn(b1)};--b2t:${readableOn(b2)};--bflat:${tintOf(mixHex(b1, b2), 0.9)}`;
+  const blendVars = `--b1:${b1};--b2:${b2};--b1t:${readableOn(b1)};--b2t:${readableOn(b2)};--bflat:${tintOf(mixHex(b1, b2), 0.9)};--b1tint:${tintOf(b1, 0.9)};--b2tint:${tintOf(b2, 0.9)}`;
   return `<div class="section tp" style="${blendVars}"><div class="section-title">Weekly Tasking Calendar · ${esc(label)}${weekLabel ? ` · ${esc(weekLabel)}` : ""}</div><div class="tp-key">${key}<span>P = primary task, S = secondary task, RDO = rostered day off</span></div>${body}</div>`;
 }

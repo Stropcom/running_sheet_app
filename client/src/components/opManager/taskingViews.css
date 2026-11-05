@@ -84,17 +84,17 @@
 .tcv-cb-axis { position: relative; height: 34px; border-bottom: 1px solid var(--border); background: var(--muted); }
 .tcv-cb-axis span { position: absolute; top: 9px; font-size: 11.5px; font-weight: 600; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 .tcv-cb-corner { border-bottom: 1px solid var(--border); background: var(--muted); border-right: 1px solid var(--border); }
-.tcv-cb-day { padding: 8px 12px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); font-weight: 700; font-size: 13px; display: flex; flex-direction: column; justify-content: center; min-height: 92px; }
+.tcv-cb-day { padding: 8px 12px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); font-weight: 700; font-size: 13px; display: flex; flex-direction: column; justify-content: center; min-height: 124px; }
 .tcv-cb-day small { color: var(--muted-foreground); font-weight: 600; }
 .tcv-cb-day.today small { color: var(--primary); }
-.tcv-cb-lane { position: relative; border-bottom: 1px solid var(--border); min-height: 92px; }
+.tcv-cb-lane { position: relative; border-bottom: 1px solid var(--border); min-height: 124px; }
 .tcv-cb-lane.wk, .tcv-cb-day.wk { background: var(--tcv-weekend); }
 .tcv-cb-grid { position: absolute; inset: 0; pointer-events: none; }
 .tcv-cb-grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); opacity: 0.6; }
-.tcv-bar { position: absolute; height: 18px; border-radius: 5px; background: var(--tint); border: 1px solid var(--tc); border-left-width: 4px; display: flex; align-items: center; padding: 0 7px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcv-bar { position: absolute; height: 24px; border-radius: 5px; background: var(--tint); border: 1px solid var(--tc); border-left-width: 4px; display: flex; align-items: center; padding: 0 7px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tcv-bar .ab { font-size: 10.5px; font-weight: 700; color: var(--ink); margin-right: 7px; }
 .tcv-bar .t { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 500; color: var(--muted-foreground); margin-left: 8px; font-size: 11.5px; }
-.tcv-offtag { position: absolute; left: 8px; font-size: 11.5px; color: var(--muted-foreground); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.tcv-offtag { position: absolute; left: 8px; height: 24px; font-size: 11.5px; color: var(--muted-foreground); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 
 /* Highlight row and legend */
 .tcv-focus { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -132,5 +132,39 @@
 .tcv-tl.merged { min-height: 112px; }
 .tcv-tl.merged > i { background: linear-gradient(180deg, var(--b1) 50%, var(--b2) 50%); }
 .tcv-tl.merged .tcv-tl-body { background: var(--tcv-blend-flat); display: flex; flex-direction: column; justify-content: center; }
-.tcv-bar.merged { background: var(--tcv-blend-flat); border: 1px solid var(--border); border-left-width: 1px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding-left: 12px; }
+/* The combined bar is split 50/50 across its height: Team 1's tint on top, Team 2's underneath, like the two team bars joined. */
+.tcv-bar.merged { background: linear-gradient(180deg, color-mix(in srgb, var(--b1) 13%, var(--card)) 50%, color-mix(in srgb, var(--b2) 13%, var(--card)) 50%); border: 1px solid var(--border); border-left-width: 1px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding-left: 12px; }
 .tcv-bar.merged::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: linear-gradient(180deg, var(--b1) 50%, var(--b2) 50%); }
+
+/* Timeline bars: team tag in a fixed slot so the operation names line up, the time in the middle of the bar. */
+.tcv-bar { position: absolute; }
+.tcv-bar .ab { display: inline-block; flex: none; min-width: 34px; margin-right: 4px; }
+.tcv-bar.merged .ab { min-width: 0; }
+.tcv-bar .tcv-op { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(50% - 76px); }
+.tcv-bar .t { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); margin: 0; text-align: center; pointer-events: none; }
+.tcv-bar.merged .t { color: inherit; }
+/* Slidable bars (admin only) */
+.tcv-bar.tcv-edit { cursor: grab; user-select: none; touch-action: pan-y; }
+.tcv-bar.tcv-edit:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tcv-bar.tcv-edit.sliding { cursor: grabbing; z-index: 5; will-change: transform; outline: 2px solid var(--ring); outline-offset: 1px; }
+.tcv-editing { -webkit-user-select: none; user-select: none; }
+.tcv-bar.tcv-changed { outline: 2px dashed #d97706; outline-offset: 1px; }
+.tcv-grip { position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 4px; height: 12px; border-left: 2px dotted currentColor; border-right: 2px dotted currentColor; opacity: 0.55; pointer-events: none; }
+.tcv-more { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: 800; pointer-events: none; }
+.tcv-menu { position: fixed; z-index: 70; min-width: 220px; max-height: 340px; overflow-y: auto; background: var(--card); color: var(--foreground); border: 1px solid var(--border); border-radius: 12px; padding: 8px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28); }
+.tcv-menu-h { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: color-mix(in srgb, var(--foreground) 70%, transparent); padding: 2px 8px 6px; }
+.tcv-menu-empty { font-size: 13px; padding: 6px 8px; color: var(--muted-foreground); }
+.tcv-menu button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 0; background: transparent; border-radius: 8px; text-align: left; font-size: 14px; }
+.tcv-menu button:hover, .tcv-menu button:focus-visible { background: var(--muted); outline: none; }
+.tcv-menu button[aria-checked="true"] { font-weight: 700; color: var(--primary); }
+.tcv-menu hr { border: 0; border-top: 1px solid var(--border); margin: 6px 0; }
+.tcv-menu .tcv-menu-other { display: flex; gap: 6px; padding: 4px 4px 2px; }
+.tcv-menu .tcv-menu-other input { flex: 1; min-width: 0; height: 34px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--foreground); font-size: 14px; }
+.tcv-menu .tcv-menu-other input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tcv-menu .tcv-menu-other button { width: auto; flex: none; height: 34px; padding: 0 12px; justify-content: center; background: var(--primary); color: var(--primary-foreground); font-weight: 600; }
+.tcv-menu .tcv-menu-other button:disabled { opacity: 0.5; cursor: default; }
+/* The on-duty count ("4/5") at the right end of a Timeline bar. */
+.tcv-count { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; font-weight: 700; color: var(--ink, var(--foreground)); pointer-events: none; }
+.tcv-count.short { color: #dc2626; }
+.tcv-count-pair { position: absolute; right: 14px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: space-around; align-items: flex-end; padding: 2px 0; pointer-events: none; }
+.tcv-count-pair .tcv-count { position: static; transform: none; }

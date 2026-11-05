@@ -590,16 +590,22 @@ function BarMenu({
     const esc = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+    // The page scrolling closes the menu (it would be left floating); the menu
+    // scrolling itself does not (it does when it lists many operations and
+    // focus moves to its text box).
+    const scrolled = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
     document.addEventListener("pointerdown", down, true);
     document.addEventListener("keydown", esc);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("scroll", scrolled, true);
     ref.current
       ?.querySelector<HTMLButtonElement>('[aria-checked="true"], button')
       ?.focus();
     return () => {
       document.removeEventListener("pointerdown", down, true);
       document.removeEventListener("keydown", esc);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("scroll", scrolled, true);
     };
   }, [onClose]);
   const left = Math.max(

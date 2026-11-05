@@ -2941,6 +2941,12 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
       data: { "0": { json: input } },
     });
   await call("opManager.deleteWeek", { weekStart: W });
+  // Plenty of operations, so the operation menu is long enough to scroll
+  // inside itself (it used to close when it did, which hung this test on a
+  // database that already had operations).
+  const stamp = Date.now();
+  for (let n = 1; n <= 14; n++)
+    await call("operation.create", { name: `E2E MENU OP ${stamp} ${n}` });
   try {
     await call("opManager.saveTaskingCell", {
       weekStart: W,

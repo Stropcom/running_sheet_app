@@ -1,5 +1,9 @@
 import { RosterCommandBar, isRosterPath } from "@/components/RosterCommandBar";
-import { isRosterToolsPath } from "@shared/rosterMenu";
+import {
+  isOpManagerPath,
+  isProceduresPath,
+  isRosterToolsPath,
+} from "@shared/rosterMenu";
 import { RosterFullscreenBar } from "@/components/roster/RosterZoomControl";
 import { useRosterFullscreen } from "@/lib/rosterFullscreen";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -491,9 +495,7 @@ function SortableNavItem({
     );
 
   if (id === "operationManager") {
-    const opManagerActive =
-      location.startsWith("/operation-manager") ||
-      location.startsWith("/cto-roster");
+    const opManagerActive = isOpManagerPath(location);
     return (
       <SidebarMenuItem {...itemProps}>
         <SidebarMenuButton
@@ -689,10 +691,7 @@ function SortableNavItem({
     // is used in Outstanding Actions/Weekly Activity's move to Op Manager
     // above, and Vehicle Crash/UCO Guide/SMEAC Briefings' move from
     // Administration below, for the rest of this folder's rename.
-    const isActive =
-      location.startsWith("/administration/vehicle-crash") ||
-      location.startsWith("/administration/uco-guide") ||
-      location.startsWith("/administration/smeac");
+    const isActive = isProceduresPath(location);
     return (
       <SidebarMenuItem {...itemProps}>
         <SidebarMenuButton
@@ -1109,9 +1108,7 @@ function SortableNavTile({
   }
 
   if (id === "operationManager") {
-    const isActive =
-      location.startsWith("/operation-manager") ||
-      location.startsWith("/cto-roster");
+    const isActive = isOpManagerPath(location);
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -1736,7 +1733,7 @@ function DashboardLayoutContent({
     if (!container) return;
     const toggleSelector = location.startsWith("/cto-roster")
       ? '[data-nav-toggle="cto-roster"]'
-      : location.startsWith("/operation-manager")
+      : isOpManagerPath(location)
         ? '[data-nav-toggle="op-manager"]'
         : null;
     const toggleBtn = toggleSelector
@@ -1803,7 +1800,7 @@ function DashboardLayoutContent({
     location.startsWith("/court")
   );
   const [reportsExpanded, setReportsExpanded] = useState(() =>
-    location.startsWith("/reports")
+    isProceduresPath(location)
   );
   const [todoExpanded, setTodoExpanded] = useState(
     () =>
@@ -1811,10 +1808,8 @@ function DashboardLayoutContent({
       location === "/todo/images" ||
       location === "/todo/governance"
   );
-  const [opManagerExpanded, setOpManagerExpanded] = useState(
-    () =>
-      location.startsWith("/operation-manager") ||
-      location.startsWith("/cto-roster")
+  const [opManagerExpanded, setOpManagerExpanded] = useState(() =>
+    isOpManagerPath(location)
   );
   const [ctoRosterSubExpanded, setCtoRosterSubExpanded] = useState(() =>
     location.startsWith("/cto-roster")
@@ -1979,11 +1974,7 @@ function DashboardLayoutContent({
       "/recycle-bin",
       "/help",
       "/shortcuts",
-      "/reports",
-      "/administration/smeac",
       "/administration/intel-export",
-      "/administration/vehicle-crash",
-      "/administration/uco-guide",
     ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);

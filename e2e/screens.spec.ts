@@ -3095,3 +3095,27 @@ test("Side menu: CTO Roster opens the roster, and its tools are grouped under Ro
   await page.getByRole("button", { name: "CTO Roster", exact: true }).click();
   await expect(page).toHaveURL(/\/cto-roster$/);
 });
+
+test("Side menu: Weekly Activity (the Weekly Surveillance Report) keeps Op Manager open and does not open Procedures or Administration", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/reports/weekly-activity");
+  // Op Manager is open with Weekly Activity in it.
+  await expect(
+    page.getByRole("button", { name: "Weekly Activity", exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "CTO Weekly Tasking", exact: true })
+  ).toBeVisible();
+  // Procedures and Administration stay folded.
+  for (const name of [
+    "Vehicle Crash",
+    "UCO Guide",
+    "SMEAC Briefings",
+    "Archive",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
+      0
+    );
+});

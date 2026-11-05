@@ -20,3 +20,25 @@ export const ROSTER_TOOL_PREFIXES = [
 export function isRosterToolsPath(path: string): boolean {
   return ROSTER_TOOL_PREFIXES.some(p => path.startsWith(p));
 }
+
+/** Every page that belongs to the Op Manager folder of the side menu. Weekly
+ * Activity and the Weekly Tasking Report have a /reports address but live under
+ * Op Manager, so opening one keeps Op Manager open (and highlighted) and must
+ * not open the Procedures or Administration folders. */
+export function isOpManagerPath(path: string): boolean {
+  return (
+    path.startsWith("/operation-manager") ||
+    path.startsWith("/cto-roster") ||
+    path === "/reports/weekly-activity" ||
+    path === "/reports/weekly-tasking"
+  );
+}
+
+/** The pages inside the Procedures folder. */
+export function isProceduresPath(path: string): boolean {
+  return (
+    path.startsWith("/administration/vehicle-crash") ||
+    path.startsWith("/administration/uco-guide") ||
+    path.startsWith("/administration/smeac")
+  );
+}

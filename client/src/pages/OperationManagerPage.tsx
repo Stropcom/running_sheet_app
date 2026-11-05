@@ -62,6 +62,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
+import {
+  SHIFT_PRESETS,
+  changedCellKeys,
+  describeTimelineChanges,
+  shiftToCellFields,
+} from "@shared/taskingTimeline";
 import { useTeamColour } from "@/lib/teams";
 import { blendGradients, teamShades } from "@shared/teamColours";
 import {
@@ -115,14 +121,7 @@ const TASKING_AB: Record<TeamRow, string> = {
   ptt: "PTT",
   cap: "CAP",
 };
-const SHIFT_OPTIONS = [
-  "RDO",
-  "0600-1400",
-  "0700-1500",
-  "1000-1800",
-  "1400-2200",
-  "Custom",
-];
+const SHIFT_OPTIONS: string[] = ["RDO", ...SHIFT_PRESETS, "Custom"];
 const CATEGORIES = ["A-TACC 1", "A-TACC 2", "WC", "Other"];
 const REQUEST_TYPES = ["Surv", "PTT", "Capability"];
 const SUPERVISOR_ROLES = ["CTO Inspector", "Team 1", "Team 2", "PTT"];
@@ -376,6 +375,9 @@ export default function OperationManagerPage() {
   const [taskingGrid, setTaskingGrid] = useState<Record<string, TaskingCell>>(
     {}
   );
+  // The grid as last saved or loaded, to tell what an admin has slid on the
+  // Timeline and not saved yet.
+  const [savedGrid, setSavedGrid] = useState<Record<string, TaskingCell>>({});
   const [contacts, setContacts] = useState<ContactEntry[]>([]);
   const [onCallEntries, setOnCallEntries] = useState<OnCallEntry[]>([]);
   const [activeTab, setActiveTab] = useState("contacts");
@@ -426,6 +428,7 @@ export default function OperationManagerPage() {
       });
     }
     setTaskingGrid(grid);
+    setSavedGrid(grid);
   }, [taskingQuery.data, weekStart]);
 
   // ── Roster coverage check ────────────────────────────────────────────────────
@@ -723,41 +726,101 @@ export default function OperationManagerPage() {
     );
   };
 
+  /** One cell as the server stores it (a Custom shift is its own text, an Other
+   * task is its typed text). */
+  const cellToSave = (teamRow: TeamRow, dayIndex: number) => {
+    const cell = taskingGrid[`${teamRow}-${dayIndex}`] ?? {};
+    const shiftTime =
+      cell.shiftTime === "Custom"
+        ? (cell.customTime ?? null)
+        : (cell.shiftTime ?? null);
+    const primaryTask =
+      cell.primaryTask === "Other"
+        ? (cell.primaryOther ?? null)
+        : (cell.primaryTask ?? null);
+    const secondaryTask =
+      cell.secondaryTask === "Other"
+        ? (cell.secondaryOther ?? null)
+        : (cell.secondaryTask ?? null);
+    return {
+      weekStart,
+      dayIndex,
+      teamRow,
+      shiftTime,
+      primaryTask,
+      secondaryTask,
+      blended: cell.blended === true,
+    };
+  };
+
   const saveAllTaskingCells = async () => {
     setIsSavingTasking(true);
     try {
       const mutations = TEAM_ROWS.flatMap(teamRow =>
-        DAYS.map((_, dayIndex) => {
-          const key = `${teamRow}-${dayIndex}`;
-          const cell = taskingGrid[key] ?? {};
-          const shiftTime =
-            cell.shiftTime === "Custom"
-              ? (cell.customTime ?? null)
-              : (cell.shiftTime ?? null);
-          const primaryTask =
-            cell.primaryTask === "Other"
-              ? (cell.primaryOther ?? null)
-              : (cell.primaryTask ?? null);
-          const secondaryTask =
-            cell.secondaryTask === "Other"
-              ? (cell.secondaryOther ?? null)
-              : (cell.secondaryTask ?? null);
-          return saveTaskingCellMut.mutateAsync({
-            weekStart,
-            dayIndex,
-            teamRow,
-            shiftTime,
-            primaryTask,
-            secondaryTask,
-            blended: cell.blended === true,
-          });
-        })
+        DAYS.map((_, dayIndex) =>
+          saveTaskingCellMut.mutateAsync(cellToSave(teamRow, dayIndex))
+        )
       );
       await Promise.all(mutations);
       await utils.opManager.getTaskingCalendar.invalidate();
+      setSavedGrid(taskingGrid);
       toast.success("Tasking calendar saved.");
     } catch {
       toast.error("Failed to save tasking calendar.");
+    }
+    setIsSavingTasking(false);
+  };
+
+  // ── Timeline edits (admin: slide a bar, pick an operation) ───────────────────
+  const dayLabelOf = (i: number) => {
+    const d = weekDays(weekStart)[i];
+    return `${d.name} ${String(d.day).padStart(2, "0")} ${d.month}`;
+  };
+  const timelineChanges = useMemo(
+    () =>
+      describeTimelineChanges(
+        savedGrid,
+        taskingGrid,
+        TEAM_ROWS,
+        id => TEAM_LABELS[id as TeamRow],
+        dayLabelOf
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [savedGrid, taskingGrid, weekStart]
+  );
+  const slideTeamShift = (teamId: string, dayIndex: number, shift: string) =>
+    updateCell(teamId as TeamRow, dayIndex, shiftToCellFields(shift));
+  const pickTeamOp = (teamId: string, dayIndex: number, op: string) =>
+    updateCell(teamId as TeamRow, dayIndex, {
+      primaryTask: op,
+      primaryOther: "",
+    });
+  const discardTimelineChanges = () => {
+    setTaskingGrid(savedGrid);
+    setDeclinedBlend({});
+  };
+  /** Saves only the cells that changed; with `repost` it then opens the same
+   * "Select who to notify" dialog as Re-post & Notify. */
+  const saveTimelineChanges = async (repost: boolean) => {
+    const keys = changedCellKeys(timelineChanges);
+    setIsSavingTasking(true);
+    try {
+      await Promise.all(
+        keys.map(key => {
+          const [teamRow, day] = key.split("-");
+          return saveTaskingCellMut.mutateAsync(
+            cellToSave(teamRow as TeamRow, Number(day))
+          );
+        })
+      );
+      await utils.opManager.getTaskingCalendar.invalidate();
+      setSavedGrid(taskingGrid);
+      toast.success(
+        keys.length === 1 ? "Saved 1 change." : `Saved ${keys.length} changes.`
+      );
+      if (repost) openNotifyDialog();
+    } catch {
+      toast.error("Failed to save the changes.");
     }
     setIsSavingTasking(false);
   };
@@ -1509,6 +1572,18 @@ export default function OperationManagerPage() {
                 teams={taskingTeams}
                 grid={taskingGrid}
                 issueCount={taskingIssueCount}
+                edit={
+                  isAdmin
+                    ? {
+                        editable: true,
+                        ops: activeOps.map(o => o.name),
+                        onSlide: slideTeamShift,
+                        onOp: pickTeamOp,
+                        onSplit: splitDay,
+                        changed: new Set(changedCellKeys(timelineChanges)),
+                      }
+                    : undefined
+                }
                 renderWarning={(teamId, dayIndex, primary) => {
                   const cv = taskingCoverage[`${teamId}-${dayIndex}`];
                   return cv?.short ? (
@@ -1525,6 +1600,62 @@ export default function OperationManagerPage() {
             </div>
           )}
         </div>
+        {isAdmin && timelineChanges.length > 0 && (
+          <div
+            role="region"
+            aria-label="Unsaved timeline changes"
+            className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-amber-500 bg-card px-4 py-3 shadow-[0_-6px_20px_rgba(0,0,0,0.18)] print:hidden"
+          >
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1 basis-80">
+                <p className="text-sm font-semibold">
+                  {timelineChanges.length === 1
+                    ? "1 change"
+                    : `${timelineChanges.length} changes`}{" "}
+                  (not saved yet)
+                </p>
+                <p
+                  className="line-clamp-2 text-xs text-muted-foreground"
+                  title={timelineChanges.map(c => c.text).join("\n")}
+                >
+                  {timelineChanges.map(c => c.text).join("  •  ")}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  disabled={isSavingTasking}
+                  onClick={discardTimelineChanges}
+                >
+                  Discard
+                </Button>
+                <Button
+                  variant={postedQuery.data?.posted ? "outline" : "default"}
+                  size="sm"
+                  className="h-9"
+                  disabled={isSavingTasking}
+                  onClick={() => void saveTimelineChanges(false)}
+                >
+                  Save
+                </Button>
+                {postedQuery.data?.posted && (
+                  <Button
+                    size="sm"
+                    className="h-9 gap-1"
+                    disabled={isSavingTasking}
+                    onClick={() => void saveTimelineChanges(true)}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Save and re-post
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        {blendDialog}
         {notifyDialog}
         <ExportTaskingDialog
           open={exportDialogOpen}

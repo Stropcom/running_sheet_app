@@ -2930,3 +2930,102 @@ test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit
       .getByRole("button", { name: "Exit full screen" })
   ).toBeVisible();
 });
+
+test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post, and the change is saved", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const W = "2040-05-14";
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0700-1500",
+      primaryTask: "RAVEN",
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv2",
+      shiftTime: "1400-2200",
+      primaryTask: "AURORA",
+    });
+    // Posted already, so the bar offers Save and re-post.
+    await call("opManager.postWeek", { weekStart: W, userIds: [] });
+    await page.addInitScript(() =>
+      localStorage.setItem("runlog.taskingView", "cal-timeline")
+    );
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 14 May/).click();
+
+    const bar = page.locator(".tcv-bar", { hasText: "RAVEN" }).first();
+    await expect(bar).toContainText("0700–1500");
+    await expect(
+      page.getByRole("region", { name: "Unsaved timeline changes" })
+    ).toHaveCount(0);
+
+    // Slide it later in the day: the bar shows its new time, the save bar appears.
+    const box = (await bar.boundingBox())!;
+    const lane = (await bar.locator("xpath=..").boundingBox())!;
+    const hours = lane.width / 19; // 05:00 to 24:00 while editing
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      box.x + box.width / 2 + hours,
+      box.y + box.height / 2,
+      { steps: 5 }
+    );
+    await page.mouse.move(
+      box.x + box.width / 2 + 2 * hours,
+      box.y + box.height / 2,
+      { steps: 5 }
+    );
+    await page.mouse.up();
+    await expect(bar).toContainText("0900–1700");
+    const saveBar = page.getByRole("region", {
+      name: "Unsaved timeline changes",
+    });
+    await expect(saveBar).toContainText("1 change");
+    await expect(saveBar).toContainText("0700–1500 to 0900–1700");
+    await expect(
+      saveBar.getByRole("button", { name: "Save and re-post" })
+    ).toBeVisible();
+
+    // Discard puts it back.
+    await saveBar.getByRole("button", { name: "Discard" }).click();
+    await expect(saveBar).toHaveCount(0);
+    await expect(bar).toContainText("0700–1500");
+
+    // A click (no slide) opens the operation menu.
+    await bar.click();
+    const menu = page.getByRole("menu", { name: /Operation for/ });
+    await expect(
+      menu.getByRole("menuitemradio", { name: /RAVEN/ })
+    ).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    // Slide again and Save: it is stored and still there after a reload.
+    await bar.focus();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(bar).toContainText("0800–1600");
+    await saveBar.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved 1 change.")).toBeVisible();
+    await expect(saveBar).toHaveCount(0);
+    await page.reload();
+    await page.getByText(/CTO Weekly Tasking — 14 May/).click();
+    await expect(
+      page.locator(".tcv-bar", { hasText: "RAVEN" }).first()
+    ).toContainText("0800–1600");
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});

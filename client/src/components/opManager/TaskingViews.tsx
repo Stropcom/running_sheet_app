@@ -4,12 +4,16 @@ import { readableOn } from "@shared/teamColours";
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -39,6 +43,12 @@ import {
   type DayCell,
   type TaskingCellInput,
 } from "@shared/taskingView";
+import {
+  SLIDE_STEP,
+  shiftLength,
+  shiftStart,
+  slideShift,
+} from "@shared/taskingTimeline";
 import "./taskingViews.css";
 
 export interface TaskingTeam {
@@ -49,7 +59,24 @@ export interface TaskingTeam {
   colour: string;
 }
 
+/** What an admin can do on the Timeline: slide a bar to another time and pick
+ * another operation. Absent (or `editable` false) it is read-only. */
+export interface TimelineEdit {
+  editable: boolean;
+  /** Operation names offered by the menu. */
+  ops: readonly string[];
+  /** A bar was slid; `shift` is the new "HHMM-HHMM". */
+  onSlide: (teamId: string, dayIndex: number, shift: string) => void;
+  /** An operation was picked from a bar's menu. */
+  onOp: (teamId: string, dayIndex: number, op: string) => void;
+  /** Split a blended day back into Team 1 and Team 2. */
+  onSplit: (dayIndex: number) => void;
+  /** Cells (`team-day`) with a change not saved yet. */
+  changed: ReadonlySet<string>;
+}
+
 interface Ctx {
+  edit?: TimelineEdit;
   week: Record<string, DayCell[]>;
   days: ReturnType<typeof weekDays>;
   today: number;
@@ -339,9 +366,284 @@ function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
   );
 }
 
+/** Where a bar's operation menu opens. */
+interface BarMenuTarget {
+  teamId: string;
+  dayIndex: number;
+  /** "T1 · Mon", the menu's heading. */
+  label: string;
+  rect: DOMRect;
+}
+
+/**
+ * One bar on the Timeline. For an admin (`edit.editable`) it can be slid left
+ * or right to another time (the length is kept, steps of 30 minutes, a start
+ * from 05:00 to 23:00), clicked (or Enter) to pick another operation, and moved
+ * with the arrow keys. A press that barely moves is a click, not a slide. For
+ * everyone else it is a plain bar. While sliding the bar is moved directly in
+ * the page (not through React) and the new time is handed over on release.
+ */
+function TimelineBar({
+  className,
+  style,
+  title,
+  edit,
+  teamId,
+  dayIndex,
+  label,
+  cell,
+  span,
+  pct,
+  openMenu,
+  changed,
+  children,
+}: {
+  className: string;
+  style: CSSProperties;
+  title: string;
+  edit?: TimelineEdit;
+  teamId: string;
+  dayIndex: number;
+  label: string;
+  cell: DayCell;
+  span: [number, number];
+  pct: (m: number) => number;
+  openMenu: (t: BarMenuTarget) => void;
+  changed: boolean;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{
+    x0: number;
+    s0: number;
+    w: number;
+    moved: boolean;
+    next: string | null;
+    left: string;
+    width: string;
+  } | null>(null);
+  const start = shiftStart(cell.shift);
+  const len = shiftLength(cell.shift);
+  const canEdit = !!edit?.editable;
+  const canSlide = canEdit && start !== null && len !== null;
+  // Starts late enough to finish the next morning: the bar stops at midnight.
+  const overnight = start !== null && len !== null && start + len > 1440;
+
+  const open = () => {
+    const el = ref.current;
+    if (el)
+      openMenu({ teamId, dayIndex, label, rect: el.getBoundingClientRect() });
+  };
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = ref.current;
+    if (!canEdit || !el || e.button !== 0) return;
+    el.setPointerCapture(e.pointerId);
+    drag.current = {
+      x0: e.clientX,
+      s0: start ?? 0,
+      w: el.parentElement?.getBoundingClientRect().width || 1,
+      moved: false,
+      next: null,
+      left: el.style.left,
+      width: el.style.width,
+    };
+  };
+  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const el = ref.current;
+    if (!d || !el || !canSlide || start === null || len === null) return;
+    const dx = e.clientX - d.x0;
+    if (!d.moved && Math.abs(dx) < 5) return;
+    d.moved = true;
+    el.classList.add("sliding");
+    const next = slideShift(
+      cell.shift,
+      d.s0 + (dx / d.w) * (span[1] - span[0])
+    );
+    if (!next) return;
+    d.next = next;
+    const ns = shiftStart(next) ?? start;
+    el.style.left = `${pct(ns)}%`;
+    el.style.width = `${pct(Math.min(ns + len, span[1])) - pct(ns)}%`;
+    const t = el.querySelector(".t");
+    if (t) t.textContent = formatShiftText(next);
+  };
+  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const el = ref.current;
+    drag.current = null;
+    if (!d || !el) return;
+    try {
+      el.releasePointerCapture(e.pointerId);
+    } catch {
+      /* not captured */
+    }
+    el.classList.remove("sliding");
+    if (!d.moved) {
+      open();
+    } else if (d.next && d.next !== cell.shift) {
+      edit?.onSlide(teamId, dayIndex, d.next);
+    } else {
+      el.style.left = d.left;
+      el.style.width = d.width;
+      const t = el.querySelector(".t");
+      if (t) t.textContent = formatShiftText(cell.shift);
+    }
+  };
+  const key = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!canEdit) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      open();
+    } else if (
+      canSlide &&
+      start !== null &&
+      (e.key === "ArrowLeft" || e.key === "ArrowRight")
+    ) {
+      e.preventDefault();
+      const next = slideShift(
+        cell.shift,
+        start + (e.key === "ArrowLeft" ? -SLIDE_STEP : SLIDE_STEP)
+      );
+      if (next && next !== cell.shift) edit?.onSlide(teamId, dayIndex, next);
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={`${className}${canEdit ? " tcv-edit" : ""}${changed ? " tcv-changed" : ""}`}
+      style={style}
+      title={title}
+      {...(canEdit
+        ? {
+            tabIndex: 0,
+            role: "button",
+            "aria-label": `${title}. ${canSlide ? "Slide to change the time. " : ""}Press Enter to change the operation.`,
+            onPointerDown: down,
+            onPointerMove: move,
+            onPointerUp: up,
+            onPointerCancel: () => {
+              drag.current = null;
+            },
+            onKeyDown: key,
+            // A click on the operation's name opens this menu, it does not
+            // also highlight the operation.
+            onClickCapture: (e: React.MouseEvent) => e.stopPropagation(),
+          }
+        : {})}
+    >
+      {canSlide && <span className="tcv-grip" aria-hidden />}
+      {children}
+      {overnight && (
+        <span className="tcv-more" title="Finishes the next morning">
+          ›
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** The operation menu of a clicked bar (and Split, for a blended day). */
+function BarMenu({
+  target,
+  week,
+  edit,
+  onClose,
+}: {
+  target: BarMenuTarget;
+  week: Record<string, DayCell[]>;
+  edit: TimelineEdit;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const cell = week[target.teamId]?.[target.dayIndex];
+  const current = cell?.primary ?? "";
+  const blended =
+    isBlendTeam(target.teamId) && isBlendDay(week, target.dayIndex);
+  const ops = Array.from(new Set([...(current ? [current] : []), ...edit.ops]));
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", down, true);
+    document.addEventListener("keydown", esc);
+    window.addEventListener("scroll", onClose, true);
+    ref.current
+      ?.querySelector<HTMLButtonElement>('[aria-checked="true"], button')
+      ?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("keydown", esc);
+      window.removeEventListener("scroll", onClose, true);
+    };
+  }, [onClose]);
+  const left = Math.max(
+    8,
+    Math.min(
+      window.innerWidth - 232,
+      target.rect.left + target.rect.width / 2 - 112
+    )
+  );
+  const below = target.rect.bottom + 6;
+  const top =
+    below + 280 > window.innerHeight
+      ? Math.max(8, target.rect.top - 280 - 6)
+      : below;
+  return createPortal(
+    <div
+      ref={ref}
+      className="tcv-menu"
+      role="menu"
+      aria-label={`Operation for ${target.label}`}
+      style={{ left, top }}
+    >
+      <div className="tcv-menu-h">Operation · {target.label}</div>
+      {ops.length === 0 && <div className="tcv-menu-empty">No operations</div>}
+      {ops.map(o => (
+        <button
+          key={o}
+          type="button"
+          role="menuitemradio"
+          aria-checked={o === current}
+          onClick={() => {
+            if (o !== current) edit.onOp(target.teamId, target.dayIndex, o);
+            onClose();
+          }}
+        >
+          <span>{o}</span>
+          {o === current && <span aria-hidden>✓</span>}
+        </button>
+      ))}
+      {blended && (
+        <>
+          <hr />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              edit.onSplit(target.dayIndex);
+              onClose();
+            }}
+          >
+            Split into Team 1 and Team 2
+          </button>
+        </>
+      )}
+    </div>,
+    document.body
+  );
+}
+
 /** Timeline (hours across, a lane for each team) */
-function Timeline({ week, days, today, teams, dim, warn }: Ctx) {
-  const [lo, hi] = timelineSpan(week);
+function Timeline({ week, days, today, teams, dim, warn, edit }: Ctx) {
+  const [lo, hi0] = timelineSpan(week);
+  // Editable: always reach midnight, so a bar slid to a 23:00 start has room.
+  const hi = edit?.editable ? Math.max(hi0, 24 * 60) : hi0;
+  const [menu, setMenu] = useState<BarMenuTarget | null>(null);
   const ticks: number[] = [];
   for (let m = lo; m <= hi; m += 120) ticks.push(m);
   const pct = (m: number) => ((m - lo) / (hi - lo)) * 100;
@@ -377,11 +679,22 @@ function Timeline({ week, days, today, teams, dim, warn }: Ctx) {
             week={week}
             ticks={ticks}
             pct={pct}
+            span={[lo, hi]}
             dim={dim}
             warn={warn}
+            edit={edit}
+            openMenu={setMenu}
           />
         ))}
       </div>
+      {edit?.editable && menu && (
+        <BarMenu
+          target={menu}
+          week={week}
+          edit={edit}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -394,9 +707,15 @@ function TimelineRow({
   week,
   ticks,
   pct,
+  span,
   dim,
   warn,
+  edit,
+  openMenu,
 }: {
+  span: [number, number];
+  edit?: TimelineEdit;
+  openMenu: (t: BarMenuTarget) => void;
   d: ReturnType<typeof weekDays>[number];
   i: number;
   today: number;
@@ -448,9 +767,21 @@ function TimelineRow({
             );
           }
           return (
-            <div
+            <TimelineBar
               key={t.id}
               className={`tcv-bar ${bl ? "tcv-blend merged" : "tcv-team"} ${dim(c)}`}
+              edit={edit}
+              teamId={t.id}
+              dayIndex={i}
+              label={`${bl ? "T1 + T2" : t.ab} · ${d.name}`}
+              cell={c}
+              span={span}
+              pct={pct}
+              openMenu={openMenu}
+              changed={
+                !!edit?.changed.has(`${t.id}-${i}`) ||
+                (bl && !!edit?.changed.has(`surv2-${i}`))
+              }
               style={{
                 ...(bl ? {} : teamStyle(t)),
                 ...(bl ? { height: 39 } : {}),
@@ -492,7 +823,7 @@ function TimelineRow({
                   {warn(t.id, i, c.primary)}
                 </>
               )}
-            </div>
+            </TimelineBar>
           );
         })}
       </div>
@@ -512,7 +843,10 @@ export function TaskingCalendarViews({
   grid,
   issueCount,
   renderWarning,
+  edit,
 }: {
+  /** Admin editing on the Timeline (slide a bar, pick an operation). */
+  edit?: TimelineEdit;
   weekStart: string;
   teams: readonly TaskingTeam[];
   grid: Record<string, TaskingCellInput | undefined>;
@@ -543,6 +877,7 @@ export function TaskingCalendarViews({
 
   const toggle = (name: string) => setFocus(f => (f === name ? null : name));
   const ctx: Ctx = {
+    edit,
     week,
     days,
     today,
@@ -641,6 +976,13 @@ export function TaskingCalendarViews({
             P = primary task, S = secondary task, RDO = rostered day off
           </span>
         </div>
+      )}
+
+      {view === "cal-timeline" && edit?.editable && (
+        <p className="px-1 text-xs text-muted-foreground">
+          Slide a bar to change its time (steps of 30 minutes, a start from
+          05:00 to 23:00). Click a bar to change its operation.
+        </p>
       )}
 
       <ToggleOp.Provider value={toggle}>

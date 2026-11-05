@@ -3135,7 +3135,7 @@ test("Side menu: Weekly Activity (the Weekly Surveillance Report) keeps Op Manag
     );
 });
 
-test("CTO Weekly Tasking: Post asks whether to carry a different start time to the roster; No is not asked again, Yes updates the on-duty members", async ({
+test("CTO Weekly Tasking: Post asks whether to carry a different start time to the roster, again each time while they differ; Yes updates the on-duty members", async ({
   page,
 }) => {
   test.setTimeout(150_000);
@@ -3200,6 +3200,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
       memberId: member.id,
       shiftDate: W,
       shiftCode: "d",
+      shiftTime: null,
       memberName: "E2E Officer",
     });
     await call("opManager.saveTaskingCell", {
@@ -3235,13 +3236,14 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     expect(await rosterShift()).toMatchObject({ shiftCode: "d" });
     await whoToNotify.getByRole("button", { name: "Cancel" }).click();
 
-    // Asked again? Not for the same start this visit.
+    // A No is not remembered: the next Post asks again while they differ.
     await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "No" }).click();
     await expect(whoToNotify).toBeVisible();
-    await expect(question).toHaveCount(0);
     await whoToNotify.getByRole("button", { name: "Cancel" }).click();
 
-    // A fresh visit asks again; Yes updates the roster: an Arvo from 14:00.
+    // Yes updates the roster: an Arvo from 14:00.
     await openWeek();
     await page.getByRole("button", { name: /Post & Notify/ }).click();
     await expect(question).toBeVisible();
@@ -3265,6 +3267,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
       memberId: member.id,
       shiftDate: W,
       shiftCode: "",
+      shiftTime: null,
       memberName: "E2E Officer",
     });
     await call("opManager.deleteWeek", { weekStart: W });
@@ -3326,6 +3329,7 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
       memberId: member.id,
       shiftDate: W,
       shiftCode: "d",
+      shiftTime: null,
       memberName: "E2E Officer",
     });
     await call("opManager.saveTaskingCell", {
@@ -3385,11 +3389,47 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
       shiftCode: "d",
       shiftTime: "09:00",
     });
+
+    // Every save asks again: slide on, Save, No; slide on, Save, No; and then
+    // back to a start already answered No to, which asks as well.
+    const slideLater = async (hours: number) => {
+      const b = (await bar.boundingBox())!;
+      const l = (await bar.locator("xpath=..").boundingBox())!;
+      const h = l.width / 19;
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(
+        b.x + b.width / 2 + (h * hours) / 2,
+        b.y + b.height / 2,
+        { steps: 4 }
+      );
+      await page.mouse.move(b.x + b.width / 2 + h * hours, b.y + b.height / 2, {
+        steps: 4,
+      });
+      await page.mouse.up();
+      await page
+        .getByRole("region", { name: "Unsaved timeline changes" })
+        .getByRole("button", { name: "Save", exact: true })
+        .click();
+    };
+    await slideLater(1); // 10:00
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "No" }).click();
+    await expect(question).toHaveCount(0); // closed, the bar is free again
+    await slideLater(1); // 11:00
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "No" }).click();
+    await expect(question).toHaveCount(0);
+    await slideLater(-1); // 10:00 again, answered No before
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "No" }).click();
+    await expect(question).toHaveCount(0);
   } finally {
     await call("ctoRoster.roster.updateShift", {
       memberId: member.id,
       shiftDate: W,
       shiftCode: "",
+      shiftTime: null,
       memberName: "E2E Officer",
     });
     await call("opManager.deleteWeek", { weekStart: W });

@@ -394,14 +394,13 @@ export default function OperationManagerPage() {
   const [declinedBlend, setDeclinedBlend] = useState<Record<number, string>>(
     {}
   );
-  // "Update the roster too?": the question being asked (and how to answer the
-  // step waiting on it), and the starts already answered No this visit.
+  // "Update the roster too?": the question being asked, and how to answer the
+  // step (Save, Post) that is waiting on it.
   const [rosterAsk, setRosterAsk] = useState<{
     groups: SyncGroup[];
     members: number;
     answer: (yes: boolean) => void;
   } | null>(null);
-  const declinedRoster = useRef(new Set<string>());
   const applyRosterSyncMut =
     trpc.ctoRoster.roster.applyTaskingSync.useMutation();
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
@@ -791,17 +790,14 @@ export default function OperationManagerPage() {
   /**
    * If the on-duty members' roster start times differ from the tasking's (today
    * and later), asks whether to update the roster; Yes updates it and notifies
-   * them. Resolves when the question is answered (or there was nothing to ask),
-   * so Save and Re-post can carry on after it. A No is not asked again for the
-   * same start this visit.
+   * them. Asked after every Save and before every Post / Re-post while they
+   * differ (a No is not remembered, so changing the times again and saving asks
+   * again). Resolves when the question is answered (or there was nothing to
+   * ask), so Save and Re-post can carry on after it.
    */
   const checkRosterAgainstTasking = async () => {
     if (!isAdmin) return;
-    const keyOf = (t: { teamName: string; date: string; start: string }) =>
-      `${t.teamName}|${t.date}|${t.start}`;
-    const targets = rosterTargets().filter(
-      t => !declinedRoster.current.has(keyOf(t))
-    );
+    const targets = rosterTargets();
     if (targets.length === 0) return;
     try {
       const plan = await utils.ctoRoster.roster.previewTaskingSync.fetch(
@@ -816,13 +812,7 @@ export default function OperationManagerPage() {
           answer: resolve,
         })
       );
-      if (!yes) {
-        const asked = new Set(plan.groups.map(g => `${g.teamName}|${g.date}`));
-        for (const t of targets)
-          if (asked.has(`${t.teamName}|${t.date}`))
-            declinedRoster.current.add(keyOf(t));
-        return;
-      }
+      if (!yes) return;
       const done = await applyRosterSyncMut.mutateAsync({ targets });
       await utils.ctoRoster.roster.getRange.invalidate();
       await utils.ctoRoster.eba.liveFindings.invalidate();

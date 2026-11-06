@@ -82,7 +82,7 @@ import {
   shiftToCellFields,
 } from "@shared/taskingTimeline";
 import { useTeamColour } from "@/lib/teams";
-import { blendGradients, teamShades } from "@shared/teamColours";
+import { teamShades } from "@shared/teamColours";
 import {
   blendFields,
   blendPartner,
@@ -373,10 +373,6 @@ export default function OperationManagerPage() {
     ab: TASKING_AB[id],
     colour: TEAM_COLOURS[id].border,
   }));
-  const blendLook = blendGradients(
-    TEAM_COLOURS.surv1.border,
-    TEAM_COLOURS.surv2.border
-  );
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const savePriorityMut = trpc.opManager.savePriorityBoard.useMutation();
@@ -658,9 +654,10 @@ export default function OperationManagerPage() {
         })),
       });
       await utils.opManager.getPriorityBoard.invalidate();
-      toast.success("Priority board saved.");
+      return true;
     } catch {
       toast.error("Failed to save priority board.");
+      return false;
     }
   };
 
@@ -752,65 +749,6 @@ export default function OperationManagerPage() {
     }));
   };
 
-  /** Day `dayIndex` is blended (Team 1 and Team 2 both flagged). */
-  const isBlendedDay = (dayIndex: number) =>
-    !!taskingGrid[`surv1-${dayIndex}`]?.blended &&
-    !!taskingGrid[`surv2-${dayIndex}`]?.blended;
-
-  /** The editor of one team-day: the normal one, or for a blended day one
-   * combined editor under Team 1 (with Split) and a pointer under Team 2. */
-  const renderCellBody = (teamRow: TeamRow, dayIndex: number) => {
-    const cell = taskingGrid[`${teamRow}-${dayIndex}`] ?? {};
-    const editor = (
-      <TaskingCellEditor
-        cell={cell}
-        onChange={patch => updateCell(teamRow, dayIndex, patch)}
-        opOptions={activeOps}
-        onCreateOp={handleCreateOp}
-      />
-    );
-    if (!isBlendTeam(teamRow) || !isBlendedDay(dayIndex)) return editor;
-    if (teamRow === "surv2")
-      return (
-        <div
-          className="flex min-h-24 items-center justify-center rounded-md border border-dashed px-2 py-3 text-center text-xs text-muted-foreground"
-          style={{
-            background:
-              "repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--border)) 6px 7px)",
-          }}
-        >
-          Combined with Team 1. Edit it in the Team 1 panel.
-        </div>
-      );
-    return (
-      <div className="overflow-hidden rounded-md border bg-card">
-        <div
-          className="flex items-center gap-2 px-2 py-1.5 text-xs font-bold text-blue-950"
-          style={{ background: blendLook.band }}
-        >
-          <span
-            aria-hidden
-            className="inline-block h-3.5 w-5 rounded-[3px]"
-            style={{ background: blendLook.swatch }}
-          />
-          T1 + T2 combined
-        </div>
-        <div className="space-y-2 p-2">
-          {editor}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full text-xs"
-            onClick={() => splitDay(dayIndex)}
-          >
-            Split into two teams
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
   /** One cell as the server stores it (a Custom shift is its own text, an Other
    * task is its typed text). */
   const cellToSave = (teamRow: TeamRow, dayIndex: number) => {
@@ -897,25 +835,6 @@ export default function OperationManagerPage() {
   const postWithRosterCheck = async () => {
     await checkRosterAgainstTasking();
     openNotifyDialog();
-  };
-
-  const saveAllTaskingCells = async () => {
-    setIsSavingTasking(true);
-    try {
-      const mutations = TEAM_ROWS.flatMap(teamRow =>
-        DAYS.map((_, dayIndex) =>
-          saveTaskingCellMut.mutateAsync(cellToSave(teamRow, dayIndex))
-        )
-      );
-      await Promise.all(mutations);
-      await utils.opManager.getTaskingCalendar.invalidate();
-      setSavedGrid(taskingGrid);
-      toast.success("Tasking calendar saved.");
-      await checkRosterAgainstTasking();
-    } catch {
-      toast.error("Failed to save tasking calendar.");
-    }
-    setIsSavingTasking(false);
   };
 
   // ── Timeline edits (admin: slide a bar, pick an operation) ───────────────────
@@ -1036,9 +955,20 @@ export default function OperationManagerPage() {
     try {
       await saveContactsMut.mutateAsync({ weekStart, contacts: all });
       await utils.opManager.getSupervisorContacts.invalidate();
-      toast.success("Contacts saved.");
+      return true;
     } catch {
       toast.error("Failed to save contacts.");
+      return false;
+    }
+  };
+  /** Save on-call, contacts and the priority board together, then show the
+   * full view (the tasking is edited there). */
+  const saveDetails = async () => {
+    const a = await saveContacts();
+    const b = await savePriorityBoard();
+    if (a && b) {
+      toast.success("Saved.");
+      setViewMode("view");
     }
   };
 
@@ -1723,16 +1653,16 @@ export default function OperationManagerPage() {
                         onClick={() => setEditingCal(true)}
                         className="gap-1"
                       >
-                        <Edit2 className="h-3.5 w-3.5" /> Edit
+                        <Edit2 className="h-3.5 w-3.5" /> Edit Tasking
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setViewMode("edit")}
                         className="gap-1"
-                        title="Open the edit page for the on-call, contacts and priority board"
+                        title="On-call, contacts and the priority board"
                       >
-                        On-call, contacts &amp; priority
+                        Edit Contacts &amp; Details
                       </Button>
                       <Button
                         variant="outline"
@@ -1741,14 +1671,6 @@ export default function OperationManagerPage() {
                         className="gap-1"
                       >
                         <Download className="h-3.5 w-3.5" /> Export PDF
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setDeleteWeekFor(weekStart)}
-                        className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Delete
                       </Button>
                       <Button
                         size="sm"
@@ -2010,11 +1932,10 @@ export default function OperationManagerPage() {
 
         <div className="p-4">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4 w-full grid grid-cols-4">
+            <TabsList className="mb-4 w-full grid grid-cols-3">
               <TabsTrigger value="oncall">On-Call</TabsTrigger>
               <TabsTrigger value="contacts">Contacts</TabsTrigger>
               <TabsTrigger value="priority">Priority</TabsTrigger>
-              <TabsTrigger value="tasking">Tasking</TabsTrigger>
             </TabsList>
 
             {/* ── Contacts ──────────────────────────────────────────────────── */}
@@ -2023,8 +1944,10 @@ export default function OperationManagerPage() {
                 <h2 className="text-base font-semibold">Supervisor Contacts</h2>
                 <Button
                   size="sm"
-                  onClick={saveContacts}
-                  disabled={saveContactsMut.isPending}
+                  onClick={saveDetails}
+                  disabled={
+                    saveContactsMut.isPending || savePriorityMut.isPending
+                  }
                   className="gap-1"
                 >
                   <Save className="h-3.5 w-3.5" /> Save
@@ -2083,8 +2006,10 @@ export default function OperationManagerPage() {
                   </Button>
                   <Button
                     size="sm"
-                    onClick={saveContacts}
-                    disabled={saveContactsMut.isPending}
+                    onClick={saveDetails}
+                    disabled={
+                      saveContactsMut.isPending || savePriorityMut.isPending
+                    }
                     className="gap-1"
                   >
                     <Save className="h-3.5 w-3.5" /> Save
@@ -2138,176 +2063,6 @@ export default function OperationManagerPage() {
               )}
             </TabsContent>
 
-            {/* ── Tasking ───────────────────────────────────────────────────── */}
-            <TabsContent value="tasking" className="space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold">
-                    Weekly Tasking Calendar
-                  </h2>
-                  {taskingIssueCount > 0 && (
-                    <Badge
-                      variant="outline"
-                      className="gap-1 text-amber-600 border-amber-500/40 bg-amber-500/5"
-                    >
-                      <AlertTriangle className="h-3 w-3" />
-                      {taskingIssueCount} tasking issue
-                      {taskingIssueCount !== 1 ? "s" : ""}
-                    </Badge>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  onClick={saveAllTaskingCells}
-                  disabled={isSavingTasking}
-                  className="gap-1"
-                >
-                  <Save className="h-3.5 w-3.5" />{" "}
-                  {isSavingTasking ? "Saving…" : "Save"}
-                </Button>
-              </div>
-              {/* Mobile: one card per team row */}
-              <div className="block sm:hidden space-y-4">
-                {TEAM_ROWS.map(teamRow => {
-                  const tc = TEAM_COLOURS[teamRow];
-                  return (
-                    <div
-                      key={teamRow}
-                      className="rounded-xl overflow-hidden"
-                      style={{ border: `2px solid ${tc.border}` }}
-                    >
-                      <div
-                        className="px-4 py-2.5 border-b"
-                        style={{ background: tc.bg, borderColor: tc.border }}
-                      >
-                        <p
-                          className="text-xs font-bold tracking-wide"
-                          style={{ color: tc.text }}
-                        >
-                          {TEAM_LABELS[teamRow]}
-                        </p>
-                      </div>
-                      <div className="divide-y divide-border">
-                        {DAYS.map((day, dayIndex) => {
-                          const key = `${teamRow}-${dayIndex}`;
-                          const cell = taskingGrid[key] ?? {};
-                          const cov = taskingCoverage[key];
-                          return (
-                            <div key={dayIndex} className="px-3 py-2.5">
-                              <div className="flex items-center justify-between gap-2 mb-1.5">
-                                <p className="text-[11px] font-semibold text-muted-foreground">
-                                  {day}
-                                </p>
-                                {cov?.short && (
-                                  <CoverageWarningBadge
-                                    teamName={TEAM_LABELS[teamRow]}
-                                    day={day}
-                                    onDuty={cov.onDuty}
-                                    min={cov.min}
-                                    primaryTask={
-                                      cell.primaryTask === "Other"
-                                        ? cell.primaryOther
-                                        : cell.primaryTask
-                                    }
-                                  />
-                                )}
-                              </div>
-                              {renderCellBody(teamRow, dayIndex)}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Desktop: full table */}
-              <div className="hidden sm:block space-y-3">
-                {TEAM_ROWS.map(teamRowEdit => {
-                  const tcEdit = TEAM_COLOURS[teamRowEdit];
-                  return (
-                    <div
-                      key={teamRowEdit}
-                      className="rounded-xl overflow-hidden bg-card"
-                      style={{ border: `2px solid ${tcEdit.border}` }}
-                    >
-                      <div
-                        className="px-4 py-2.5"
-                        style={{ borderBottom: `1px solid ${tcEdit.border}20` }}
-                      >
-                        <p
-                          className="text-sm font-bold tracking-wide"
-                          style={{ color: tcEdit.border }}
-                        >
-                          {TEAM_LABELS[teamRowEdit]}
-                        </p>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs border-collapse">
-                          <thead>
-                            <tr className="bg-muted/20">
-                              <th className="text-left px-3 py-2.5 font-semibold border-b border-r border-border w-32 text-foreground hidden">
-                                Team
-                              </th>
-                              {DAYS.map(d => (
-                                <th
-                                  key={d}
-                                  className="text-center px-2 py-2.5 font-semibold border-b border-r border-border last:border-r-0 text-foreground"
-                                  style={{
-                                    minWidth: 130,
-                                    width: `${100 / 7}%`,
-                                  }}
-                                >
-                                  {d}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            <tr>
-                              <td className="hidden" />
-                              {DAYS.map((_, dayIndex) => {
-                                const key = `${teamRowEdit}-${dayIndex}`;
-                                const cell = taskingGrid[key] ?? {};
-                                const cov = taskingCoverage[key];
-                                return (
-                                  <td
-                                    key={dayIndex}
-                                    className="px-2 py-2 border-r border-border last:border-r-0 align-top"
-                                    style={{
-                                      minWidth: 130,
-                                      width: `${100 / 7}%`,
-                                    }}
-                                  >
-                                    {cov?.short && (
-                                      <div className="mb-1">
-                                        <CoverageWarningBadge
-                                          teamName={TEAM_LABELS[teamRowEdit]}
-                                          day={DAYS[dayIndex]}
-                                          onDuty={cov.onDuty}
-                                          min={cov.min}
-                                          primaryTask={
-                                            cell.primaryTask === "Other"
-                                              ? cell.primaryOther
-                                              : cell.primaryTask
-                                          }
-                                        />
-                                      </div>
-                                    )}
-                                    {renderCellBody(teamRowEdit, dayIndex)}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </TabsContent>
-
             {/* ── Priority Board ────────────────────────────────────────────── */}
             <TabsContent value="priority" className="space-y-4">
               <div className="flex items-center justify-between">
@@ -2323,8 +2078,10 @@ export default function OperationManagerPage() {
                   </Button>
                   <Button
                     size="sm"
-                    onClick={savePriorityBoard}
-                    disabled={savePriorityMut.isPending}
+                    onClick={saveDetails}
+                    disabled={
+                      saveContactsMut.isPending || savePriorityMut.isPending
+                    }
                     className="gap-1"
                   >
                     <Save className="h-3.5 w-3.5" /> Save
@@ -2546,181 +2303,6 @@ function CoverageWarningBadge({
         </p>
       </PopoverContent>
     </Popover>
-  );
-}
-
-// ─── TaskingCellEditor ────────────────────────────────────────────────────────
-function TaskingCellEditor({
-  cell,
-  onChange,
-  opOptions,
-  onCreateOp,
-}: {
-  cell: TaskingCell;
-  onChange: (patch: Partial<TaskingCell>) => void;
-  opOptions: { id: number; name: string }[];
-  onCreateOp: (
-    name: string,
-    onCreated: (id: number, name: string) => void
-  ) => void;
-}) {
-  const shiftVal = cell.shiftTime ?? "";
-  const isCustom = shiftVal === "Custom";
-
-  // Fixed choices first (Training, Admin, Other), then the active operations.
-  // An operation that happens to be called Admin or Training is not listed a
-  // second time (two options with one value).
-  const FIXED_TASKS = ["training", "admin"];
-  const taskOpts = [
-    { value: "Training", label: "📋 Training" },
-    { value: "Admin", label: "🗂️ Admin" },
-    { value: "Other", label: "✏️ Other (free text)" },
-    ...opOptions
-      .filter(op => !FIXED_TASKS.includes(op.name.trim().toLowerCase()))
-      .map(op => ({ value: op.name, label: op.name })),
-  ];
-
-  return (
-    <div className="space-y-1">
-      {/* Shift */}
-      <Select
-        value={shiftVal || "__none__"}
-        onValueChange={v => {
-          if (v === "__none__") onChange({ shiftTime: null, customTime: "" });
-          else onChange({ shiftTime: v, customTime: "" });
-        }}
-      >
-        <SelectTrigger className="h-7 text-[11px] w-full">
-          <SelectValue placeholder="Shift…" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__none__">— None —</SelectItem>
-          {SHIFT_OPTIONS.map(s => (
-            <SelectItem key={s} value={s}>
-              {s}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {isCustom && (
-        <Input
-          className="h-7 text-[11px]"
-          placeholder="e.g. 0800-1600"
-          value={cell.customTime ?? ""}
-          onChange={e => onChange({ customTime: e.target.value })}
-        />
-      )}
-      {/* Primary task */}
-      <TaskSelect
-        placeholder="Primary…"
-        value={cell.primaryTask ?? ""}
-        otherValue={cell.primaryOther ?? ""}
-        onChange={(v, other) =>
-          onChange({ primaryTask: v, primaryOther: other })
-        }
-        taskOpts={taskOpts}
-        onCreateOp={name =>
-          onCreateOp(name, (_, opName) =>
-            onChange({ primaryTask: opName, primaryOther: "" })
-          )
-        }
-      />
-      {/* Secondary task */}
-      <TaskSelect
-        placeholder="Secondary…"
-        value={cell.secondaryTask ?? ""}
-        otherValue={cell.secondaryOther ?? ""}
-        onChange={(v, other) =>
-          onChange({ secondaryTask: v, secondaryOther: other })
-        }
-        taskOpts={taskOpts}
-        onCreateOp={name =>
-          onCreateOp(name, (_, opName) =>
-            onChange({ secondaryTask: opName, secondaryOther: "" })
-          )
-        }
-      />
-    </div>
-  );
-}
-
-function TaskSelect({
-  placeholder,
-  value,
-  otherValue,
-  onChange,
-  taskOpts,
-  onCreateOp,
-}: {
-  placeholder: string;
-  value: string;
-  otherValue: string;
-  onChange: (v: string, other: string) => void;
-  taskOpts: { value: string; label: string }[];
-  onCreateOp: (name: string) => void;
-}) {
-  const [addingOp, setAddingOp] = useState(false);
-  const [newName, setNewName] = useState("");
-
-  return (
-    <div className="space-y-1">
-      <Select
-        value={value || "__none__"}
-        onValueChange={v => {
-          if (v === "__add__") {
-            setAddingOp(true);
-            return;
-          }
-          if (v === "__none__") onChange("", "");
-          else onChange(v, "");
-        }}
-      >
-        <SelectTrigger className="h-7 text-[11px] w-full">
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__none__">— None —</SelectItem>
-          {taskOpts.map(o => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-          <SelectItem value="__add__" className="text-primary">
-            + Add Operation
-          </SelectItem>
-        </SelectContent>
-      </Select>
-      {value === "Other" && (
-        <Input
-          className="h-7 text-[11px]"
-          placeholder="Describe task…"
-          value={otherValue}
-          onChange={e => onChange("Other", e.target.value)}
-        />
-      )}
-      {addingOp && (
-        <div className="flex gap-1">
-          <Input
-            className="h-7 text-[11px] flex-1"
-            placeholder="Op name…"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            autoFocus
-          />
-          <Button
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => {
-              onCreateOp(newName);
-              setNewName("");
-              setAddingOp(false);
-            }}
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        </div>
-      )}
-    </div>
   );
 }
 

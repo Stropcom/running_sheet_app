@@ -298,3 +298,11 @@ The full-view page edits the calendar **in place, in whichever layout is chosen*
 - **The editor** (`BarMenu`, `full`): the shift (RDO, presets, custom with an Apply button), then **Operation** and **Second operation** tabs over the one operation list (+ Create operation…, the operations, Admin, Other (free text), None), then Split for a combined day and Done. Choosing Admin or an operation changes the length (8 / 9 hours) as before.
 - **Everything else is shared with the edit page:** the same `updateCell` (so the "Combine Team 1 and Team 2?" question appears when both teams get the same shift, and a combined day edits both), the same roster question, notify step, audit and operation-name-on-the-roster-tile rules. Changed cells have a dashed amber outline in every layout.
 - Checks: `e2e/screens.spec.ts` "…Edit makes every layout editable in place, Cancel puts it back, Save keeps the changes and leaves edit mode" and the Timeline tests (now press Edit first; Discard became Cancel). The "browser scrolls just after a menu opens" effect (the menu closes on a page scroll) is why those tests scroll an item into view and wait before clicking.
+
+## Weekly Tasking: Edit Tasking and Edit Contacts & Details (v2.72.1)
+
+The full view's buttons are now **Edit Tasking** (edits the calendar in place, see v2.72.0) and **Edit Contacts & Details** (the on-call, contacts and priority board page), then Export PDF and Post & Notify. **Delete is gone from the full view**; it stays on the Contacts & Details page and in the week folder.
+
+The Contacts & Details page (the old edit page) **no longer has a Tasking tab**: the tasking is edited only from the full view. Its three tabs (On-Call, Contacts, Priority) now save together: **Save on any tab saves all three and shows the full view**. A new week still opens on this page. The page's old tasking-grid code (the per-cell editor, its drop-downs and its own Save) was removed; the calendar editing in `TaskingViews.tsx` replaces it, and the combine-Team-1-and-Team-2 question, the roster question and the Admin / operation length rule are the same code as before (`updateCell`).
+
+Checks: e2e "…the full view has Edit Tasking and Edit Contacts & Details and no Delete…" and the combine / split test, now done through Edit Tasking in the Banded layout.

@@ -3904,3 +3904,82 @@ test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar 
     }
   }
 });
+
+test("CTO Weekly Tasking Timeline on a phone: the time sits at the right by the team count and never prints over long or two operation names", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-11-12"; // a Monday, a made-up week
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    const cells: [number, string, string, string, string | null][] = [
+      [0, "surv1", "1300-2200", "RAVEN", "GREYFIN"],
+      [1, "surv1", "1100-2000", "OPERATION PINNACLE", "GREYFIN"],
+      [2, "surv1", "0600-1500", "RAVEN", null],
+    ];
+    for (const [
+      dayIndex,
+      teamRow,
+      shiftTime,
+      primaryTask,
+      secondaryTask,
+    ] of cells)
+      await call("opManager.saveTaskingCell", {
+        weekStart: W,
+        dayIndex,
+        teamRow,
+        shiftTime,
+        primaryTask,
+        secondaryTask,
+      });
+    for (const teamRow of ["surv1", "surv2"])
+      await call("opManager.saveTaskingCell", {
+        weekStart: W,
+        dayIndex: 4,
+        teamRow,
+        shiftTime: "0600-1500",
+        primaryTask: "RAVEN",
+        secondaryTask: "GREYFIN",
+        blended: true,
+      });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 12 Nov/).click();
+    await page.getByRole("combobox", { name: "Calendar view" }).click();
+    await page.getByRole("option", { name: "Timeline" }).click();
+    await expect(page.locator(".tcv-bar")).toHaveCount(4);
+    const clashes = await page.evaluate(() => {
+      const out: string[] = [];
+      for (const bar of Array.from(document.querySelectorAll(".tcv-bar"))) {
+        const t = bar.querySelector(".t");
+        if (!t) continue;
+        const tb = t.getBoundingClientRect();
+        const count = bar.querySelector(".tcv-count, .tcv-count-pair");
+        // The time is at the right, after the operations and before the count.
+        for (const e of Array.from(
+          bar.querySelectorAll(".tcv-op, .ab, .tcv-count, .tcv-count-pair")
+        )) {
+          const r = e.getBoundingClientRect();
+          const apart =
+            r.right <= tb.left + 0.5 ||
+            r.left >= tb.right - 0.5 ||
+            r.bottom <= tb.top ||
+            r.top >= tb.bottom;
+          if (!apart) out.push(`${bar.textContent} / ${e.className}`);
+        }
+        const bb = bar.getBoundingClientRect();
+        if (count && tb.right > count.getBoundingClientRect().left + 0.5)
+          out.push(`${bar.textContent}: time is not before the count`);
+        if (tb.left < bb.left) out.push(`${bar.textContent}: time outside bar`);
+      }
+      return out;
+    });
+    expect(clashes).toEqual([]);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});

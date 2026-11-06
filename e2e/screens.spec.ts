@@ -906,7 +906,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await expect(page.getByText("Weekly Tasking Calendar")).toBeVisible();
 
     // Its edit page is not blank: it offers to copy the earlier week in.
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("button", { name: /On-call, contacts/ }).click();
     await expect(
       page.getByText(/This week has no contacts or priority board yet/)
     ).toBeVisible();
@@ -2578,7 +2578,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
 
     await page.goto("/operation-manager");
     await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("button", { name: /On-call, contacts/ }).click();
     await page.getByRole("tab", { name: "Tasking" }).click();
     const team2 = page.locator(".rounded-xl:visible", {
       has: page.getByText("Team 2", { exact: true }),
@@ -2667,7 +2667,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     // Split puts the day back to two teams.
     await page.goto("/operation-manager");
     await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("button", { name: /On-call, contacts/ }).click();
     await page.getByRole("tab", { name: "Tasking" }).click();
     await team1.getByRole("button", { name: "Split into two teams" }).click();
     await expect(team2.getByText(/Combined with Team 1/)).toHaveCount(0);
@@ -2984,6 +2984,10 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await expect(
       page.getByRole("region", { name: "Unsaved timeline changes" })
     ).toHaveCount(0);
+    // Not editable until Edit is pressed.
+    await expect(page.locator(".tcv-bar.tcv-edit")).toHaveCount(0);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(page.locator(".tcv-bar.tcv-edit").first()).toBeVisible();
 
     // Slide it later in the day: the bar shows its new time, the save bar appears.
     const box = (await bar.boundingBox())!;
@@ -3009,13 +3013,15 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await expect(saveBar).toContainText("1 change");
     await expect(saveBar).toContainText("0700–1500 to 0900–1700");
     await expect(
-      saveBar.getByRole("button", { name: "Save and re-post" })
+      page.getByRole("button", { name: "Save and re-post" })
     ).toBeVisible();
 
-    // Discard puts it back.
-    await saveBar.getByRole("button", { name: "Discard" }).click();
+    // Cancel puts it back and leaves edit mode.
+    await page.getByRole("button", { name: "Cancel" }).click();
     await expect(saveBar).toHaveCount(0);
     await expect(bar).toContainText("0700–1500");
+    await expect(page.locator(".tcv-bar.tcv-edit")).toHaveCount(0);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
 
     // A click (no slide) opens the operation menu.
     await bar.click();
@@ -3038,8 +3044,9 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await expect(
       page.locator(".tcv-bar", { hasText: "Training day" })
     ).toHaveCount(1);
-    await savebar2.getByRole("button", { name: "Discard" }).click();
+    await page.getByRole("button", { name: "Cancel" }).click();
     await expect(bar).toContainText("RAVEN");
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     // Escape closes the menu without changing anything.
     await bar.click();
     await page.keyboard.press("Escape");
@@ -3050,9 +3057,14 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect(bar).toContainText("0800–1600");
-    await saveBar.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Saved 1 change.")).toBeVisible();
     await expect(saveBar).toHaveCount(0);
+    // Save leaves edit mode.
+    await expect(
+      page.getByRole("button", { name: "Edit", exact: true })
+    ).toBeVisible();
+    await expect(page.locator(".tcv-bar.tcv-edit")).toHaveCount(0);
     await page.reload();
     await page.getByText(/CTO Weekly Tasking — 14 May/).click();
     await expect(
@@ -3345,6 +3357,8 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.goto("/operation-manager");
     await page.getByText(/CTO Weekly Tasking — 11 Jun/).click();
+    const editBtn = page.getByRole("button", { name: "Edit", exact: true });
+    await editBtn.click();
 
     // Slide Team 1's bar two hours later, then Save.
     const bar = page.locator(".tcv-bar", { hasText: "RAVEN" }).first();
@@ -3365,10 +3379,7 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
     );
     await page.mouse.up();
     await expect(bar).toContainText("0800–1700");
-    await page
-      .getByRole("region", { name: "Unsaved timeline changes" })
-      .getByRole("button", { name: "Save", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     const question = page.getByRole("dialog", {
       name: "Update the roster too?",
@@ -3393,6 +3404,7 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
     // Every save asks again: slide on, Save, No; slide on, Save, No; and then
     // back to a start already answered No to, which asks as well.
     const slideLater = async (hours: number) => {
+      await editBtn.click(); // Save leaves edit mode: Edit again
       const b = (await bar.boundingBox())!;
       const l = (await bar.locator("xpath=..").boundingBox())!;
       const h = l.width / 19;
@@ -3407,10 +3419,7 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
         steps: 4,
       });
       await page.mouse.up();
-      await page
-        .getByRole("region", { name: "Unsaved timeline changes" })
-        .getByRole("button", { name: "Save", exact: true })
-        .click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
     };
     await slideLater(1); // 09:00
     await expect(question).toBeVisible();
@@ -3607,6 +3616,7 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
     await page.getByText(/CTO Weekly Tasking — 03 Sep/).click();
     await page.getByRole("combobox", { name: "Calendar view" }).click();
     await page.getByRole("option", { name: "Timeline" }).click();
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     const monday = page.locator(".tcv-bar", { hasText: "0600–1500" });
     const tuesday = page.locator(".tcv-bar", { hasText: "1300–2200" });
     await expect(monday).toHaveCount(1);
@@ -3850,13 +3860,14 @@ test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar 
       await page.getByText(/CTO Weekly Tasking — 05 Nov/).click();
       await page.getByRole("combobox", { name: "Calendar view" }).click();
       await page.getByRole("option", { name: "Timeline" }).click();
+      await page.getByRole("button", { name: "Edit", exact: true }).click();
       // Some browsers (iOS Safari) do not honour touch-action on the bar: the
       // slide must work without it.
       await page.addStyleTag({
         content: ".tcv-bar.tcv-edit{touch-action:auto !important}",
       });
       const bar = page.locator(".tcv-bar", { hasText: "RAVEN" }).first();
-      await bar.scrollIntoViewIfNeeded();
+      await bar.evaluate(el => el.scrollIntoView({ block: "center" }));
       await page.waitForTimeout(500);
       const mid = async () => {
         const b = (await bar.boundingBox())!;
@@ -3871,8 +3882,12 @@ test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar 
       await drag(p.x, p.y, 80, 12);
       await expect(bar, view.name).toContainText("0800–1700");
       await expect(saveBar, view.name).toContainText("1 change");
-      await saveBar.getByRole("button", { name: "Discard" }).click();
+      await page.getByRole("button", { name: "Cancel" }).click();
       await expect(bar, view.name).toContainText("0600–1500");
+      await page.getByRole("button", { name: "Edit", exact: true }).click();
+      await page.addStyleTag({
+        content: ".tcv-bar.tcv-edit{touch-action:auto !important}",
+      });
 
       // Up or down: the page scrolls, the bar stays.
       const scrolled = () =>
@@ -3881,6 +3896,8 @@ test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar 
             window.scrollY +
             (document.querySelector(".app-canvas")?.scrollTop ?? 0)
         );
+      await bar.evaluate(el => el.scrollIntoView({ block: "center" }));
+      await page.waitForTimeout(300);
       const before = await scrolled();
       p = await mid();
       await drag(p.x, p.y, 0, -70);
@@ -3889,7 +3906,7 @@ test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar 
       expect(await scrolled(), view.name).toBeGreaterThan(before);
 
       // A tap opens the operation menu.
-      await bar.scrollIntoViewIfNeeded();
+      await bar.evaluate(el => el.scrollIntoView({ block: "center" }));
       await page.waitForTimeout(300);
       p = await mid();
       await touch("touchStart", p.x, p.y);
@@ -3981,5 +3998,140 @@ test("CTO Weekly Tasking Timeline on a phone: the time sits at the right by the 
     expect(clashes).toEqual([]);
   } finally {
     await call("opManager.deleteWeek", { weekStart: W });
+  }
+});
+
+test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts it back, Save keeps the changes and leaves edit mode", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const W = "2040-10-08"; // a Monday, a made-up week
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  const opName = `E2E EDIT ${Date.now()}`;
+  const made = (
+    await (await call("operation.create", { name: opName })).json()
+  )[0].result.data.json;
+  const opId = typeof made === "number" ? made : (made.id ?? made.operationId);
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+      primaryTask: opName,
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 1,
+      teamRow: "ptt",
+      shiftTime: "0600-1500",
+      primaryTask: opName,
+    });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 08 Oct/).click();
+    const picker = page.getByRole("combobox", { name: "Calendar view" });
+    const choose = async (layout: string) => {
+      await picker.click();
+      await page.getByRole("option", { name: layout }).click();
+    };
+    const edit = page.getByRole("button", { name: "Edit", exact: true });
+    const summary = page.getByRole("region", {
+      name: "Unsaved timeline changes",
+    });
+    const menu = page.getByRole("menu", { name: /Operation for/ });
+
+    // Read only until Edit: no drop-downs.
+    await choose("Banded columns");
+    await expect(page.locator(".tcv-sel")).toHaveCount(0);
+    await edit.click();
+    await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("0600-1500");
+    await expect(
+      page.getByRole("button", { name: "Save", exact: true })
+    ).toBeDisabled();
+
+    // Banded: a shift from the drop-down, and an operation from the menu.
+    await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
+    await expect(summary).toContainText("1 change");
+    await expect(summary).toContainText("0600–1500 to 1300–2200");
+    await page
+      .getByRole("button", { name: "Primary operation T1 · Mon" })
+      .click();
+    await menu.getByRole("menuitemradio", { name: "None" }).click();
+    await expect(summary).toContainText(`operation ${opName} to none`);
+
+    // Schedule tables: the same changes are there, and a second one is made.
+    await choose("Schedule tables");
+    await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("1300-2200");
+    await page.getByLabel("Shift T2 · Wed").selectOption("0600-1500");
+    await expect(summary).toContainText("3 changes");
+
+    // Day tiles: tap a team line for the editor; the shift chips change it.
+    await choose("Day tiles");
+    await page.getByRole("button", { name: "Edit Team 2 Thu" }).click();
+    await page.getByRole("button", { name: /^1000–1800/ }).click();
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(summary).toContainText("4 changes");
+
+    // Timeline: its bars are editable too.
+    await choose("Timeline");
+    await expect(page.locator(".tcv-bar.tcv-edit").first()).toBeVisible();
+
+    // A new operation can be made from the menu and set in one step.
+    await choose("Banded columns");
+    const wedOp = page.getByRole("button", {
+      name: "Primary operation T2 · Wed",
+    });
+    // Scroll to it first and let that settle: a scroll that lands after the
+    // click would close the menu again.
+    await wedOp.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await wedOp.click();
+    await menu.getByRole("menuitem", { name: /Create operation/ }).click();
+    const created = `E2E EDIT NEW ${Date.now()}`;
+    await menu.getByLabel("New operation name").fill(created);
+    await menu.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Primary operation T2 · Wed" })
+    ).toContainText(created);
+
+    // Cancel: every change goes and edit mode ends.
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(summary).toHaveCount(0);
+    await expect(page.locator(".tcv-sel")).toHaveCount(0);
+    await edit.click();
+    await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("0600-1500");
+    await expect(page.getByLabel("Shift T2 · Wed")).toHaveValue("");
+
+    // Save: kept, and edit mode ends.
+    await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved 1 change.")).toBeVisible();
+    await expect(edit).toBeVisible();
+    await expect(page.locator(".tcv-sel")).toHaveCount(0);
+    await page.reload();
+    await page.getByText(/CTO Weekly Tasking — 08 Oct/).click();
+    await choose("Banded columns");
+    await expect(
+      page.locator(".tcv-pa-col", { hasText: "1300–2200" }).first()
+    ).toBeVisible();
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+    await call("operation.delete", { id: opId });
+    const all = await (
+      await page.request.get(
+        `/api/trpc/operation.list?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: null } }))}`
+      )
+    ).json();
+    const rows = (all[0]?.result?.data?.json ?? []) as {
+      id: number;
+      name: string;
+    }[];
+    for (const r of rows.filter(r => r.name.startsWith("E2E EDIT NEW")))
+      await call("operation.delete", { id: r.id });
   }
 });

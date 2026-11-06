@@ -292,6 +292,12 @@ export default function OperationManagerPage() {
     // Non-admins can only be in folder or view mode
     if (!isAdmin && viewMode === "edit") setViewMode("folder");
   }, [isAdmin, viewMode]);
+  // Editing the calendar in place, in whichever layout is chosen (admin). It
+  // ends when the week or the screen changes.
+  const [editingCal, setEditingCal] = useState(false);
+  useEffect(() => {
+    setEditingCal(false);
+  }, [weekStart, viewMode]);
 
   // ── New-week dialog state ─────────────────────────────────────────────────────
   const [newWeekDialogOpen, setNewWeekDialogOpen] = useState(false);
@@ -945,9 +951,39 @@ export default function OperationManagerPage() {
         ? { primaryTask: "Other", primaryOther: other }
         : { primaryTask: op, primaryOther: "" }
     );
+  /** A shift picked in a layout: none, RDO or a range. */
+  const setTeamShift = (teamId: string, dayIndex: number, shift: string) =>
+    updateCell(
+      teamId as TeamRow,
+      dayIndex,
+      shift === ""
+        ? { shiftTime: null, customTime: "" }
+        : shift === "RDO"
+          ? { shiftTime: "RDO", customTime: "" }
+          : shiftToCellFields(shift)
+    );
+  /** The second (S) operation, the same values as the first. */
+  const pickSecondOp = (
+    teamId: string,
+    dayIndex: number,
+    op: string,
+    other?: string
+  ) =>
+    updateCell(
+      teamId as TeamRow,
+      dayIndex,
+      other !== undefined
+        ? { secondaryTask: "Other", secondaryOther: other }
+        : { secondaryTask: op, secondaryOther: "" }
+    );
   const discardTimelineChanges = () => {
     setTaskingGrid(savedGrid);
     setDeclinedBlend({});
+  };
+  /** Cancel: drop the changes and leave edit mode. */
+  const cancelEditing = () => {
+    discardTimelineChanges();
+    setEditingCal(false);
   };
   /** Saves only the cells that changed; with `repost` it then opens the same
    * "Select who to notify" dialog as Re-post & Notify. */
@@ -965,6 +1001,7 @@ export default function OperationManagerPage() {
       );
       await utils.opManager.getTaskingCalendar.invalidate();
       setSavedGrid(taskingGrid);
+      setEditingCal(false); // Save leaves edit mode
       toast.success(
         keys.length === 1 ? "Saved 1 change." : `Saved ${keys.length} changes.`
       );
@@ -1624,7 +1661,9 @@ export default function OperationManagerPage() {
   if (viewMode === "view") {
     return (
       <DashboardLayout>
-        <div className="min-h-full bg-background text-foreground">
+        <div
+          className={`min-h-full bg-background text-foreground ${editingCal ? "pb-24" : ""}`}
+        >
           <div className="no-print">
             <PageHeader
               weekStart={weekStart}
@@ -1637,15 +1676,63 @@ export default function OperationManagerPage() {
               onBack={() => setViewMode("folder")}
               rightSlot={
                 <div className="flex flex-wrap items-center justify-center gap-2">
-                  {isAdmin && (
+                  {isAdmin && editingCal && (
                     <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="hidden md:inline-flex"
+                        disabled={isSavingTasking}
+                        onClick={cancelEditing}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={
+                          postedQuery.data?.posted ? "outline" : "default"
+                        }
+                        disabled={
+                          isSavingTasking || timelineChanges.length === 0
+                        }
+                        onClick={() => void saveTimelineChanges(false)}
+                        className="hidden gap-1 md:inline-flex"
+                      >
+                        <Save className="h-3.5 w-3.5" /> Save
+                      </Button>
+                      {postedQuery.data?.posted && (
+                        <Button
+                          size="sm"
+                          disabled={
+                            isSavingTasking || timelineChanges.length === 0
+                          }
+                          onClick={() => void saveTimelineChanges(true)}
+                          className="hidden gap-1 md:inline-flex"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Save and re-post
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {isAdmin && !editingCal && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingCal(true)}
+                        className="gap-1"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" /> Edit
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setViewMode("edit")}
                         className="gap-1"
+                        title="Open the edit page for the on-call, contacts and priority board"
                       >
-                        <Edit2 className="h-3.5 w-3.5" /> Edit
+                        On-call, contacts &amp; priority
                       </Button>
                       <Button
                         variant="outline"
@@ -1746,11 +1833,13 @@ export default function OperationManagerPage() {
                   navigate(`/cto-roster?date=${addDaysUTC(weekStart, i)}`)
                 }
                 edit={
-                  isAdmin
+                  isAdmin && editingCal
                     ? {
                         editable: true,
                         ops: activeOps.map(o => o.name),
                         onSlide: slideTeamShift,
+                        onShift: setTeamShift,
+                        onSecond: pickSecondOp,
                         onOp: pickTeamOp,
                         onCreateOp: name =>
                           new Promise<string | null>(resolve => {
@@ -1779,14 +1868,14 @@ export default function OperationManagerPage() {
             </div>
           )}
         </div>
-        {isAdmin && timelineChanges.length > 0 && (
+        {isAdmin && editingCal && timelineChanges.length > 0 && (
           <div
             role="region"
             aria-label="Unsaved timeline changes"
             className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-amber-500 bg-card px-4 py-3 shadow-[0_-6px_20px_rgba(0,0,0,0.18)] print:hidden"
           >
             <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
-              <div className="min-w-0 flex-1 basis-80">
+              <div className="min-w-0 flex-1 basis-60">
                 <p className="text-sm font-semibold">
                   {timelineChanges.length === 1
                     ? "1 change"
@@ -1800,15 +1889,17 @@ export default function OperationManagerPage() {
                   {timelineChanges.map(c => c.text).join("  •  ")}
                 </p>
               </div>
-              <div className="flex gap-2">
+              {/* On a phone the buttons are down here, within reach; on a
+                  laptop or tablet they are at the top of the page. */}
+              <div className="flex gap-2 md:hidden">
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-9"
                   disabled={isSavingTasking}
-                  onClick={discardTimelineChanges}
+                  onClick={cancelEditing}
                 >
-                  Discard
+                  Cancel
                 </Button>
                 <Button
                   variant={postedQuery.data?.posted ? "outline" : "default"}
@@ -1831,6 +1922,23 @@ export default function OperationManagerPage() {
                   </Button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+        {isAdmin && editingCal && timelineChanges.length === 0 && (
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card px-4 py-3 print:hidden md:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                Editing. No changes yet.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={cancelEditing}
+              >
+                Cancel
+              </Button>
             </div>
           </div>
         )}

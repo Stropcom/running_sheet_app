@@ -3,6 +3,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import { readableOn } from "@shared/teamColours";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -10,6 +11,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -50,6 +52,7 @@ import {
   type TaskingCellInput,
 } from "@shared/taskingView";
 import {
+  SHIFT_PRESETS,
   SLIDE_STEP,
   shiftLength,
   shiftStart,
@@ -65,10 +68,20 @@ export interface TaskingTeam {
   colour: string;
 }
 
-/** What an admin can do on the Timeline: slide a bar to another time and pick
- * another operation. Absent (or `editable` false) it is read-only. */
+/** What an admin can do in edit mode, in every layout: change a shift, pick the
+ * operations, combine or split Team 1 and Team 2, and (Timeline) slide a bar to
+ * another time. Absent (or `editable` false) the calendar is read-only. */
 export interface TimelineEdit {
   editable: boolean;
+  /** A shift was chosen: "" (none), "RDO" or a range "HHMM-HHMM". */
+  onShift: (teamId: string, dayIndex: number, shift: string) => void;
+  /** The second (S) operation was chosen; the same values as `onOp`. */
+  onSecond: (
+    teamId: string,
+    dayIndex: number,
+    op: string,
+    other?: string
+  ) => void;
   /** Operation names offered by the menu. */
   ops: readonly string[];
   /** A bar was slid; `shift` is the new "HHMM-HHMM". */
@@ -95,6 +108,8 @@ interface Ctx {
   focus: string | null;
   dim: (c: DayCell) => string;
   warn: (teamId: string, dayIndex: number, primary: string) => ReactNode;
+  /** Opens the editor for a team-day (edit mode only). */
+  openMenu: (t: BarMenuTarget) => void;
   /** The red EA-breach dot for a team-day, or null when there is none. */
   breach: (
     teamId: string,
@@ -243,8 +258,141 @@ function BreachDot({
   );
 }
 
+/** "0600-1500" whatever way it was typed (07:00-15:00, an en dash, spaces). */
+function canonShift(shift: string): string {
+  const a = shiftStart(shift);
+  const l = shiftLength(shift);
+  if (a === null || l === null) return shift.trim();
+  const hhmm = (m: number) =>
+    `${String(Math.floor(m / 60) % 24).padStart(2, "0")}${String(m % 60).padStart(2, "0")}`;
+  return `${hhmm(a)}-${hhmm(a + l)}`;
+}
+const hoursOf = (shift: string) => {
+  const l = shiftLength(shift);
+  return l === null ? "" : `${l / 60} h`;
+};
+const cellLabel = (t: TaskingTeam, days: Ctx["days"], i: number) =>
+  `${t.ab} · ${days[i].name}`;
+
+/** The shift as a drop-down, like the edit page's. "Custom…" opens the editor. */
+function ShiftSelect({
+  team,
+  i,
+  shift,
+  edit,
+  openMenu,
+  days,
+}: {
+  team: TaskingTeam;
+  i: number;
+  shift: string;
+  edit: TimelineEdit;
+  openMenu: Ctx["openMenu"];
+  days: Ctx["days"];
+}) {
+  const cur = canonShift(shift);
+  const presets = SHIFT_PRESETS as readonly string[];
+  const extra = cur && cur !== "RDO" && !presets.includes(cur) ? cur : "";
+  return (
+    <select
+      className="tcv-sel"
+      aria-label={`Shift ${cellLabel(team, days, i)}`}
+      value={cur}
+      onChange={e => {
+        const v = e.target.value;
+        if (v === "__custom") {
+          openMenu({
+            teamId: team.id,
+            dayIndex: i,
+            label: cellLabel(team, days, i),
+            rect: e.target.getBoundingClientRect(),
+            full: true,
+          });
+        } else edit.onShift(team.id, i, v);
+      }}
+    >
+      <option value="">— none —</option>
+      <option value="RDO">RDO</option>
+      {presets.map(p => (
+        <option key={p} value={p}>
+          {formatShiftText(p)} · {hoursOf(p)}
+        </option>
+      ))}
+      {extra && (
+        <option value={extra}>
+          {formatShiftText(extra)} · {hoursOf(extra)}
+        </option>
+      )}
+      <option value="__custom">Custom…</option>
+    </select>
+  );
+}
+
+/** P or S as a button that opens the operation menu. */
+function OpButton({
+  team,
+  i,
+  slot,
+  value,
+  days,
+  openMenu,
+}: {
+  team: TaskingTeam;
+  i: number;
+  slot: "p" | "s";
+  value: string;
+  days: Ctx["days"];
+  openMenu: Ctx["openMenu"];
+}) {
+  return (
+    <button
+      type="button"
+      className="tcv-opbtn"
+      aria-label={`${slot === "p" ? "Primary operation" : "Secondary operation"} ${cellLabel(team, days, i)}`}
+      onClick={e =>
+        openMenu({
+          teamId: team.id,
+          dayIndex: i,
+          label: cellLabel(team, days, i),
+          rect: e.currentTarget.getBoundingClientRect(),
+          slot,
+        })
+      }
+    >
+      <i className={`tcv-tag ${slot === "s" ? "s" : ""}`}>
+        {slot === "p" ? "P" : "S"}
+      </i>
+      <span className={value ? "" : "none"}>{value || "None"}</span>
+    </button>
+  );
+}
+
+/** Small "Split" for a combined day, in the layouts that show both teams. */
+function SplitBtn({ edit, i }: { edit: TimelineEdit; i: number }) {
+  return (
+    <button
+      type="button"
+      className="tcv-splitbtn"
+      onClick={() => edit.onSplit(i)}
+    >
+      Split
+    </button>
+  );
+}
+
 /** Banded columns */
-function PanelBanded({ week, days, today, teams, dim, warn, breach }: Ctx) {
+function PanelBanded({
+  week,
+  days,
+  today,
+  teams,
+  dim,
+  warn,
+  breach,
+  edit,
+  openMenu,
+}: Ctx) {
+  const ed = !!edit?.editable;
   return (
     <div className="tcv">
       {teams.map(t => (
@@ -261,7 +409,7 @@ function PanelBanded({ week, days, today, teams, dim, warn, breach }: Ctx) {
                 return (
                   <div
                     key={i}
-                    className={`tcv-pa-col ${i > 4 ? "wk" : ""} ${bl ? "bl" : ""} ${dim(c)}`}
+                    className={`tcv-pa-col ${i > 4 ? "wk" : ""} ${bl ? "bl" : ""} ${dim(c)} ${ed && edit!.changed.has(`${t.id}-${i}`) ? "tcv-changed-cell" : ""}`}
                   >
                     <div className={`tcv-pa-day ${i === today ? "today" : ""}`}>
                       {d.name}
@@ -270,7 +418,16 @@ function PanelBanded({ week, days, today, teams, dim, warn, breach }: Ctx) {
                       </small>
                     </div>
                     <div className="tcv-pa-shift">
-                      {c.shift ? (
+                      {ed ? (
+                        <ShiftSelect
+                          team={t}
+                          i={i}
+                          shift={c.shift}
+                          edit={edit!}
+                          openMenu={openMenu}
+                          days={days}
+                        />
+                      ) : c.shift ? (
                         <span className={`tcv-shift ${c.off ? "off" : ""}`}>
                           {formatShiftText(c.shift)}
                         </span>
@@ -278,29 +435,61 @@ function PanelBanded({ week, days, today, teams, dim, warn, breach }: Ctx) {
                         <span className="tcv-none">—</span>
                       )}
                       {bl && !c.off && <BlendTag />}
+                      {ed && bl && <SplitBtn edit={edit!} i={i} />}
                       {warn(t.id, i, c.primary)}
                       {breach(t.id, i)}
                     </div>
-                    <div className={`tcv-pa-task ${c.off ? "hide" : ""}`}>
-                      <i className="tcv-tag">P</i>
-                      <span className="v">
-                        {c.primary ? (
-                          <Op name={c.primary} />
-                        ) : (
-                          <span className="tcv-none">—</span>
-                        )}
-                      </span>
-                    </div>
-                    <div className={`tcv-pa-task sec ${c.off ? "hide" : ""}`}>
-                      <i className="tcv-tag s">S</i>
-                      <span className="v">
-                        {c.secondary ? (
-                          <Op name={c.secondary} />
-                        ) : (
-                          <span className="tcv-none">—</span>
-                        )}
-                      </span>
-                    </div>
+                    {ed ? (
+                      !c.off && (
+                        <>
+                          <div className="tcv-pa-task">
+                            <OpButton
+                              team={t}
+                              i={i}
+                              slot="p"
+                              value={c.primary}
+                              days={days}
+                              openMenu={openMenu}
+                            />
+                          </div>
+                          <div className="tcv-pa-task sec">
+                            <OpButton
+                              team={t}
+                              i={i}
+                              slot="s"
+                              value={c.secondary}
+                              days={days}
+                              openMenu={openMenu}
+                            />
+                          </div>
+                        </>
+                      )
+                    ) : (
+                      <>
+                        <div className={`tcv-pa-task ${c.off ? "hide" : ""}`}>
+                          <i className="tcv-tag">P</i>
+                          <span className="v">
+                            {c.primary ? (
+                              <Op name={c.primary} />
+                            ) : (
+                              <span className="tcv-none">—</span>
+                            )}
+                          </span>
+                        </div>
+                        <div
+                          className={`tcv-pa-task sec ${c.off ? "hide" : ""}`}
+                        >
+                          <i className="tcv-tag s">S</i>
+                          <span className="v">
+                            {c.secondary ? (
+                              <Op name={c.secondary} />
+                            ) : (
+                              <span className="tcv-none">—</span>
+                            )}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -313,7 +502,17 @@ function PanelBanded({ week, days, today, teams, dim, warn, breach }: Ctx) {
 }
 
 /** Schedule tables (two panels across) */
-function PanelTables({ week, days, teams, dim, warn, breach }: Ctx) {
+function PanelTables({
+  week,
+  days,
+  teams,
+  dim,
+  warn,
+  breach,
+  edit,
+  openMenu,
+}: Ctx) {
+  const ed = !!edit?.editable;
   return (
     <div className="tcv-pb">
       {teams.map(t => (
@@ -338,13 +537,54 @@ function PanelTables({ week, days, teams, dim, warn, breach }: Ctx) {
                 return (
                   <tr
                     key={i}
-                    className={`${i > 4 ? "wk" : ""} ${bl ? "bl" : ""} ${dim(c)}`}
+                    className={`${i > 4 ? "wk" : ""} ${bl ? "bl" : ""} ${dim(c)} ${ed && edit!.changed.has(`${t.id}-${i}`) ? "tcv-changed-cell" : ""}`}
                   >
                     <td className="d">
                       {d.name}
                       <small>{String(d.day).padStart(2, "0")}</small>
                     </td>
-                    {c.off ? (
+                    {ed ? (
+                      <>
+                        <td className="sh">
+                          <ShiftSelect
+                            team={t}
+                            i={i}
+                            shift={c.shift}
+                            edit={edit!}
+                            openMenu={openMenu}
+                            days={days}
+                          />
+                          {bl && <BlendTag />}
+                          {bl && <SplitBtn edit={edit!} i={i} />}
+                          {warn(t.id, i, c.primary)}
+                          {breach(t.id, i)}
+                        </td>
+                        <td>
+                          {!c.off && (
+                            <OpButton
+                              team={t}
+                              i={i}
+                              slot="p"
+                              value={c.primary}
+                              days={days}
+                              openMenu={openMenu}
+                            />
+                          )}
+                        </td>
+                        <td className="s">
+                          {!c.off && (
+                            <OpButton
+                              team={t}
+                              i={i}
+                              slot="s"
+                              value={c.secondary}
+                              days={days}
+                              openMenu={openMenu}
+                            />
+                          )}
+                        </td>
+                      </>
+                    ) : c.off ? (
                       <td colSpan={3} className="off">
                         Rostered day off
                         {breach(t.id, i)}
@@ -393,7 +633,18 @@ function PanelTables({ week, days, teams, dim, warn, breach }: Ctx) {
 }
 
 /** Day tiles (seven days and a week summary: four across, two rows) */
-function DayTiles({ week, days, today, teams, dim, warn, breach }: Ctx) {
+function DayTiles({
+  week,
+  days,
+  today,
+  teams,
+  dim,
+  warn,
+  breach,
+  edit,
+  openMenu,
+}: Ctx) {
+  const ed = !!edit?.editable;
   const sum = weekSummary(week);
   const ops = Object.keys(sum.primaryByOp);
   return (
@@ -414,8 +665,45 @@ function DayTiles({ week, days, today, teams, dim, warn, breach }: Ctx) {
             return (
               <div
                 key={t.id}
-                className={`tcv-tl ${bl ? "tcv-blend merged" : "tcv-team"} ${c.off ? "off" : ""} ${dim(c)}`}
+                className={`tcv-tl ${bl ? "tcv-blend merged" : "tcv-team"} ${c.off ? "off" : ""} ${dim(c)} ${ed ? "tcv-tl-edit" : ""} ${ed && (edit!.changed.has(`${t.id}-${i}`) || (bl && edit!.changed.has(`surv2-${i}`))) ? "tcv-changed-cell" : ""}`}
                 style={bl ? undefined : teamStyle(t)}
+                {...(ed
+                  ? {
+                      role: "button",
+                      tabIndex: 0,
+                      "aria-label": `Edit ${bl ? "Team 1 + Team 2" : t.label} ${d.name}`,
+                      // Capture: the tap opens the editor and does not also
+                      // highlight the operation whose name was under the finger.
+                      onClickCapture: (e: ReactMouseEvent<HTMLDivElement>) => {
+                        if ((e.target as HTMLElement).closest(".tcv-breach"))
+                          return;
+                        e.stopPropagation();
+                        openMenu({
+                          teamId: t.id,
+                          dayIndex: i,
+                          label: bl
+                            ? `T1 + T2 · ${d.name}`
+                            : cellLabel(t, days, i),
+                          rect: e.currentTarget.getBoundingClientRect(),
+                          full: true,
+                        });
+                      },
+                      onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openMenu({
+                            teamId: t.id,
+                            dayIndex: i,
+                            label: bl
+                              ? `T1 + T2 · ${d.name}`
+                              : cellLabel(t, days, i),
+                            rect: e.currentTarget.getBoundingClientRect(),
+                            full: true,
+                          });
+                        }
+                      },
+                    }
+                  : {})}
               >
                 <i />
                 <div className="tcv-tl-body">
@@ -490,6 +778,10 @@ interface BarMenuTarget {
   /** "T1 · Mon", the menu's heading. */
   label: string;
   rect: DOMRect;
+  /** Which operation list opens first (default the primary one). */
+  slot?: "p" | "s";
+  /** The whole editor (shift, both operations, split) rather than one list. */
+  full?: boolean;
 }
 
 /**
@@ -551,7 +843,13 @@ function TimelineBar({
   const open = () => {
     const el = ref.current;
     if (el)
-      openMenu({ teamId, dayIndex, label, rect: el.getBoundingClientRect() });
+      openMenu({
+        teamId,
+        dayIndex,
+        label,
+        rect: el.getBoundingClientRect(),
+        full: true,
+      });
   };
   /** A press starts at x. Shared by the mouse / pen (pointer events) and a
    * finger (touch events, below). */
@@ -798,8 +1096,10 @@ function BarMenu({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const full = !!target.full;
+  const [slot, setSlot] = useState<"p" | "s">(target.slot ?? "p");
   const cell = week[target.teamId]?.[target.dayIndex];
-  const current = cell?.primary ?? "";
+  const current = (slot === "p" ? cell?.primary : cell?.secondary) ?? "";
   const blended =
     isBlendTeam(target.teamId) && isBlendDay(week, target.dayIndex);
   const opNames = edit.ops.filter(
@@ -814,6 +1114,8 @@ function BarMenu({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [customShift, setCustomShift] = useState("");
+  const [badShift, setBadShift] = useState(false);
   useEffect(() => {
     const down = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -832,29 +1134,37 @@ function BarMenu({
     window.addEventListener("scroll", scrolled, true);
     ref.current
       ?.querySelector<HTMLButtonElement>('[aria-checked="true"], button')
-      ?.focus();
+      ?.focus({ preventScroll: true });
     return () => {
       document.removeEventListener("pointerdown", down, true);
       document.removeEventListener("keydown", esc);
       window.removeEventListener("scroll", scrolled, true);
     };
   }, [onClose]);
+  const width = full ? 300 : 232;
+  const height = full ? 520 : 340;
   const left = Math.max(
     8,
     Math.min(
-      window.innerWidth - 232,
-      target.rect.left + target.rect.width / 2 - 112
+      window.innerWidth - width - 8,
+      target.rect.left + target.rect.width / 2 - width / 2
     )
   );
   const below = target.rect.bottom + 6;
   const top =
-    below + 340 > window.innerHeight
-      ? Math.max(8, target.rect.top - 340 - 6)
+    below + height > window.innerHeight
+      ? Math.max(8, target.rect.top - height - 6)
       : below;
   const pick = (op: string, other?: string) => {
-    edit.onOp(target.teamId, target.dayIndex, op, other);
+    (slot === "p" ? edit.onOp : edit.onSecond)(
+      target.teamId,
+      target.dayIndex,
+      op,
+      other
+    );
     onClose();
   };
+  const shiftNow = canonShift(cell?.shift ?? "");
   const item = (label: string, checked: boolean, onPick: () => void) => (
     <button
       key={label}
@@ -870,12 +1180,87 @@ function BarMenu({
   return createPortal(
     <div
       ref={ref}
-      className="tcv-menu"
+      className={`tcv-menu${full ? " tcv-menu-full" : ""}`}
       role="menu"
       aria-label={`Operation for ${target.label}`}
-      style={{ left, top }}
+      style={{ left, top, maxHeight: `min(${height}px, calc(100vh - 16px))` }}
     >
-      <div className="tcv-menu-h">Operation · {target.label}</div>
+      <div className="tcv-menu-h">
+        {full ? target.label : `Operation · ${target.label}`}
+      </div>
+      {full && (
+        <div className="tcv-menu-sec" role="group" aria-label="Shift">
+          <div className="tcv-menu-lbl">
+            Shift
+            {hoursOf(shiftNow) && (
+              <span> · {hoursOf(shiftNow).replace(" h", " hours")}</span>
+            )}
+          </div>
+          <div className="tcv-chips">
+            {["RDO", ...(SHIFT_PRESETS as readonly string[])].map(v => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={shiftNow === v}
+                onClick={() => edit.onShift(target.teamId, target.dayIndex, v)}
+              >
+                {v === "RDO" ? "RDO" : formatShiftText(v)}
+                <small>{v === "RDO" ? "Day off" : hoursOf(v)}</small>
+              </button>
+            ))}
+          </div>
+          <form
+            className="tcv-menu-other"
+            onSubmit={e => {
+              e.preventDefault();
+              const v = customShift.trim();
+              if (shiftLength(v) === null) {
+                setBadShift(true);
+                return;
+              }
+              setBadShift(false);
+              edit.onShift(target.teamId, target.dayIndex, canonShift(v));
+              setCustomShift("");
+            }}
+          >
+            <input
+              value={customShift}
+              onChange={e => {
+                setCustomShift(e.target.value);
+                setBadShift(false);
+              }}
+              placeholder="Custom, e.g. 0800-1600"
+              aria-label="Custom shift"
+            />
+            <button type="submit">Apply</button>
+          </form>
+          {badShift && (
+            <p className="tcv-menu-bad">
+              Use a start and finish such as 0800-1600.
+            </p>
+          )}
+          <div
+            className="tcv-menu-tabs"
+            role="group"
+            aria-label="Which operation"
+          >
+            <button
+              type="button"
+              aria-pressed={slot === "p"}
+              onClick={() => setSlot("p")}
+            >
+              Operation
+            </button>
+            <button
+              type="button"
+              aria-pressed={slot === "s"}
+              onClick={() => setSlot("s")}
+            >
+              Second operation
+            </button>
+          </div>
+        </div>
+      )}
       {creating ? (
         <form
           className="tcv-menu-other"
@@ -969,6 +1354,14 @@ function BarMenu({
           </button>
         </>
       )}
+      {full && (
+        <>
+          <hr />
+          <button type="button" className="tcv-menu-done" onClick={onClose}>
+            Done
+          </button>
+        </>
+      )}
     </div>,
     document.body
   );
@@ -1023,11 +1416,11 @@ function Timeline({
   breach,
   edit,
   counts,
+  openMenu,
 }: Ctx) {
   const [lo, hi0] = timelineSpan(week);
   // Editable: always reach midnight, so a bar slid to a 23:00 start has room.
   const hi = edit?.editable ? Math.max(hi0, 24 * 60) : hi0;
-  const [menu, setMenu] = useState<BarMenuTarget | null>(null);
   const ticks: number[] = [];
   for (let m = lo; m <= hi; m += 120) ticks.push(m);
   const pct = (m: number) => ((m - lo) / (hi - lo)) * 100;
@@ -1071,18 +1464,10 @@ function Timeline({
             breach={breach}
             edit={edit}
             counts={counts}
-            openMenu={setMenu}
+            openMenu={openMenu}
           />
         ))}
       </div>
-      {edit?.editable && menu && (
-        <BarMenu
-          target={menu}
-          week={week}
-          edit={edit}
-          onClose={() => setMenu(null)}
-        />
-      )}
     </div>
   );
 }
@@ -1288,6 +1673,12 @@ export function TaskingCalendarViews({
     ? TASKING_VIEWS.filter(v => PHONE_VIEWS.includes(v.id))
     : TASKING_VIEWS;
   const [focusRaw, setFocus] = useState<string | null>(null);
+  const [menu, setMenu] = useState<BarMenuTarget | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const editable = !!edit?.editable;
+  useEffect(() => {
+    if (!editable) setMenu(null);
+  }, [editable]);
 
   const ids = useMemo(() => teams.map(t => t.id), [teams]);
   const week = useMemo(() => readWeek(grid, ids), [grid, ids]);
@@ -1299,6 +1690,7 @@ export function TaskingCalendarViews({
   const toggle = (name: string) => setFocus(f => (f === name ? null : name));
   const ctx: Ctx = {
     edit,
+    openMenu: setMenu,
     counts,
     week,
     days,
@@ -1428,7 +1820,8 @@ export function TaskingCalendarViews({
       {view === "cal-timeline" && edit?.editable && (
         <p className="px-1 text-xs text-muted-foreground">
           Slide a bar to change its time (steps of 30 minutes, a start from
-          05:00 to 23:00). Click a bar to change its operation.
+          05:00 to 23:00). Click a bar to change its shift, operations or
+          blending.
         </p>
       )}
 
@@ -1438,6 +1831,9 @@ export function TaskingCalendarViews({
         {view === "tile-days" && <DayTiles {...ctx} />}
         {view === "cal-timeline" && <Timeline {...ctx} />}
       </ToggleOp.Provider>
+      {edit?.editable && menu && (
+        <BarMenu target={menu} week={week} edit={edit} onClose={closeMenu} />
+      )}
     </section>
   );
 }

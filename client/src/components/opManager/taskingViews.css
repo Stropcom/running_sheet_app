@@ -144,7 +144,7 @@
 .tcv-bar .t { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); margin: 0; text-align: center; pointer-events: none; }
 .tcv-bar.merged .t { color: inherit; }
 /* Slidable bars (admin only) */
-.tcv-bar.tcv-edit { cursor: grab; user-select: none; touch-action: pan-y; }
+.tcv-bar.tcv-edit { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
 .tcv-bar.tcv-edit:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .tcv-bar.tcv-edit.sliding { cursor: grabbing; z-index: 5; will-change: transform; outline: 2px solid var(--ring); outline-offset: 1px; }
 .tcv-editing { -webkit-user-select: none; user-select: none; }
@@ -184,3 +184,49 @@
 .tcv-bar.merged > .tcv-breach.slot-bottom { top: 75%; }
 .tcv-bar.has-breach .tcv-count, .tcv-bar.has-breach .tcv-count-pair { right: 26px; }
 .tcv-menu button.tcv-menu-create { color: var(--primary); font-weight: 600; justify-content: flex-start; }
+
+/* On a phone the Timeline lane is wider than the screen, so a bar is long and
+   its name does not get cut; the time that sits across the middle of the bar
+   then lands on top of a long name or two operations. Here the time goes at the
+   right end instead, just before the team count (and the EA dot), and the
+   operations shrink with an ellipsis to make room. */
+@media (max-width: 767px) {
+  .tcv-bar { --tail: 52px; }
+  .tcv-bar.has-breach { --tail: 66px; }
+  .tcv-bar.merged { --tail: 78px; }
+  .tcv-bar.merged.has-breach { --tail: 92px; }
+  .tcv-bar:not(.merged) .tcv-op { flex: 0 1 auto; min-width: 0; max-width: none; }
+  .tcv-bar:not(.merged) .t { position: static; transform: none; left: auto; right: auto; top: auto; flex: none; margin: 0 var(--tail) 0 auto; padding-left: 8px; text-align: right; }
+  .tcv-bar.merged .t { left: auto; right: var(--tail); top: 50%; text-align: right; }
+}
+
+/* Editing in every layout: the shift drop-down, the operation buttons, the editor. */
+.tcv-sel { width: 100%; min-width: 0; min-height: 34px; border: 1px solid var(--border); background: var(--background); color: var(--foreground); border-radius: 8px; padding: 4px 4px; font-size: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.tcv-sel:hover { border-color: var(--ring); }
+.tcv-opbtn { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 34px; border: 1px solid var(--border); background: var(--background); border-radius: 8px; padding: 4px 8px; font-size: 13px; font-weight: 600; text-align: left; min-width: 0; }
+.tcv-opbtn:hover { border-color: var(--ring); }
+.tcv-opbtn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcv-opbtn span.none { color: var(--muted-foreground); font-weight: 400; }
+.tcv-splitbtn { border: 1px solid var(--border); background: var(--background); border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 600; min-height: 26px; }
+.tcv-changed-cell { outline: 2px dashed #d97706; outline-offset: -3px; }
+.tcv-tl.tcv-tl-edit { cursor: pointer; }
+.tcv-tl.tcv-tl-edit:hover { background: var(--muted); }
+.tcv-pa-task .tcv-opbtn { margin: 0; }
+.tcv-table td .tcv-sel + .tcv-btag, .tcv-table td .tcv-sel + .tcv-splitbtn { margin-top: 6px; }
+.tcv-menu.tcv-menu-full { width: 300px; min-width: 300px; }
+.tcv-menu-sec { display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.tcv-menu-lbl { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--foreground) 70%, transparent); }
+.tcv-menu-lbl span { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.tcv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tcv-menu .tcv-chips button { width: auto; flex: 1 1 auto; justify-content: center; flex-direction: column; align-items: center; gap: 0; border: 1px solid var(--border); padding: 5px 8px; min-height: 40px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+.tcv-menu .tcv-chips button small { font-family: inherit; font-size: 10.5px; font-weight: 500; opacity: 0.8; }
+.tcv-menu .tcv-chips button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+.tcv-menu-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--muted); border-radius: 8px; padding: 3px; }
+.tcv-menu .tcv-menu-tabs button { justify-content: center; padding: 6px 4px; min-height: 32px; font-size: 13px; font-weight: 600; }
+.tcv-menu .tcv-menu-tabs button[aria-pressed="true"] { background: var(--background); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+.tcv-menu-bad { margin: 0; font-size: 12px; color: #dc2626; }
+.tcv-menu .tcv-menu-done { justify-content: center; background: var(--primary); color: var(--primary-foreground); font-weight: 600; }
+.tcv-pa-task:has(> .tcv-opbtn) { display: block; }
+.tcv-pa-task > .tcv-opbtn, .tcv-table td > .tcv-opbtn { flex: 1 1 auto; width: 100%; grid-column: 1 / -1; }
+.tcv-opbtn .tcv-tag { flex: none; }
+.tcv-table td.sh:has(.tcv-sel) { width: 178px; }

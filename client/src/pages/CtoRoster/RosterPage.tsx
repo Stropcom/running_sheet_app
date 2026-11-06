@@ -1396,7 +1396,10 @@ export default function RosterPage() {
   const { data: shiftsData, isLoading } =
     trpc.ctoRoster.roster.getRange.useQuery(
       { startDate: ROSTER_START, endDate: ROSTER_END },
-      { staleTime: 60_000 }
+      // A roster left open (a wall screen, a second window) asks again every
+      // 30 seconds while it is visible, and when its tab is clicked back into,
+      // so a change made elsewhere shows within about half a minute.
+      { staleTime: 15_000, refetchInterval: 30_000 }
     );
   const { data: secondmentsData } = trpc.ctoRoster.secondments.list.useQuery();
 
@@ -1410,7 +1413,7 @@ export default function RosterPage() {
   // people on duty. Refused or off for this Command: no names, nothing else.
   const taskingOpsQuery = trpc.opManager.postedTaskingOps.useQuery(
     { startDate: ROSTER_START, endDate: ROSTER_END },
-    { staleTime: 5_000, retry: false }
+    { staleTime: 5_000, refetchInterval: 30_000, retry: false }
   );
   const teamOpsByName = useMemo(
     () => opsByTeam(taskingOpsQuery.data ?? []),

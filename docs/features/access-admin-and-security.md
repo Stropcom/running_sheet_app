@@ -306,3 +306,11 @@ The full view's buttons are now **Edit Tasking** (edits the calendar in place, s
 The Contacts & Details page (the old edit page) **no longer has a Tasking tab**: the tasking is edited only from the full view. Its three tabs (On-Call, Contacts, Priority) now save together: **Save on any tab saves all three and shows the full view**. A new week still opens on this page. The page's old tasking-grid code (the per-cell editor, its drop-downs and its own Save) was removed; the calendar editing in `TaskingViews.tsx` replaces it, and the combine-Team-1-and-Team-2 question, the roster question and the Admin / operation length rule are the same code as before (`updateCell`).
 
 Checks: e2e "…the full view has Edit Tasking and Edit Contacts & Details and no Delete…" and the combine / split test, now done through Edit Tasking in the Banded layout.
+
+## Roster keeps up with the tasking (v2.72.2)
+
+The roster does not get a push when the tasking changes; it pulls. Two things were slow: a roster open somewhere else kept its shifts for up to 60 seconds and never asked for the operation names again, and the tasking page did not mark the roster's data out of date when you saved.
+
+- **Same browser:** a Save (and Save and re-post), a Post, a Yes to the roster question and a deleted week now call `refreshRosterViews` (`OperationManagerPage.tsx`), which marks the posted operation names, the roster shifts and the EA findings as out of date, so the roster asks the server again as soon as it is shown.
+- **A roster left open** (a second window, a wall screen, another officer's device) now asks again **every 30 seconds while the tab is visible** (shifts `staleTime` 15 s, `refetchInterval` 30 s; the operation names also every 30 s), and when the tab is clicked back into. A change made elsewhere shows within about half a minute without a reload. This is polling, not a live push, so it costs each open roster two small requests every 30 seconds; a hidden tab does not poll.
+- Checked by the e2e test "…a roster that is already open picks up a tasking change by itself within about half a minute".

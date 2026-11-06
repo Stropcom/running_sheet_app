@@ -384,6 +384,17 @@ export default function OperationManagerPage() {
   });
   const copyWeekMut = trpc.opManager.copyWeek.useMutation();
   const utils = trpc.useUtils();
+  /** The roster (and the calendar's EA dots) read the tasking: after a save, a
+   * post or a roster change, mark what they hold as out of date so they ask
+   * again the next time they are shown, and a roster open on this screen asks
+   * at once. A roster open elsewhere catches up by itself within ~30 seconds. */
+  const refreshRosterViews = () =>
+    Promise.all([
+      utils.opManager.postedTaskingOps.invalidate(),
+      utils.ctoRoster.roster.getRange.invalidate(),
+      utils.ctoRoster.eba.liveFindings.invalidate(),
+      utils.ctoRoster.eba.taskingBreaches.invalidate(),
+    ]);
 
   // ── Local state ───────────────────────────────────────────────────────────────
   const [priorityRows, setPriorityRows] = useState<PriorityRow[]>([]);
@@ -822,8 +833,7 @@ export default function OperationManagerPage() {
       );
       if (!yes) return;
       const done = await applyRosterSyncMut.mutateAsync({ targets });
-      await utils.ctoRoster.roster.getRange.invalidate();
-      await utils.ctoRoster.eba.liveFindings.invalidate();
+      await refreshRosterViews();
       toast.success(
         `Roster updated: ${done.shifts} shift${done.shifts === 1 ? "" : "s"} for ${done.members} ${done.members === 1 ? "person" : "people"}. They have been notified in the app.`
       );
@@ -919,6 +929,7 @@ export default function OperationManagerPage() {
         })
       );
       await utils.opManager.getTaskingCalendar.invalidate();
+      await refreshRosterViews();
       setSavedGrid(taskingGrid);
       setEditingCal(false); // Save leaves edit mode
       toast.success(
@@ -1190,6 +1201,7 @@ export default function OperationManagerPage() {
         userIds: Array.from(selectedUserIds),
       });
       await utils.opManager.isWeekPosted.invalidate();
+      await refreshRosterViews();
       toast.success(
         selectedUserIds.size > 0
           ? `CTO Tasking posted. Notified ${selectedUserIds.size} user${selectedUserIds.size === 1 ? "" : "s"} (check their notification bell).`
@@ -1345,7 +1357,10 @@ export default function OperationManagerPage() {
       onOpenChange={open => {
         if (!open) setDeleteWeekFor(null);
       }}
-      onDeleted={() => setViewMode("folder")}
+      onDeleted={() => {
+        void refreshRosterViews();
+        setViewMode("folder");
+      }}
     />
   );
 

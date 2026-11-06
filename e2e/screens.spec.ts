@@ -4211,3 +4211,95 @@ test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Det
     await call("opManager.deleteWeek", { weekStart: W });
   }
 });
+
+test("Team Duty Roster: a roster that is already open picks up a tasking change by itself within about half a minute", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const W = "2026-12-14"; // a Monday inside the roster's dates
+  const call = async (proc: string, input: unknown) => {
+    const res = await page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+    return (await res.json())[0];
+  };
+  const get = async (proc: string, input: unknown = null) => {
+    const res = await page.request.get(
+      `/api/trpc/${proc}?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: input } }))}`
+    );
+    return (await res.json())[0].result.data.json;
+  };
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  let rosterTeams = (await get("ctoRoster.teams.list")) as {
+    id: number;
+    name: string;
+  }[];
+  let addedTeam = false;
+  if (!rosterTeams.some(t => t.name === "Team 1")) {
+    await call("ctoRoster.teams.add", { name: "Team 1" });
+    addedTeam = true;
+    rosterTeams = await get("ctoRoster.teams.list");
+  }
+  const rosterTeam = rosterTeams.find(t => t.name === "Team 1")!;
+  let members = (await get("ctoRoster.members.list")) as {
+    id: number;
+    cin: string;
+  }[];
+  let addedMemberId: number | null = null;
+  if (!members.some(m => m.cin === cin)) {
+    const r = await call("ctoRoster.members.add", {
+      cin,
+      teamId: rosterTeam.id,
+    });
+    addedMemberId = r.result?.data.json.memberId ?? null;
+    members = (await get("ctoRoster.members.list")) as typeof members;
+  }
+  const member = members.find(m => m.cin === cin)!;
+  const cell = (primaryTask: string) =>
+    call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+      primaryTask,
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "d",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await cell("FIRST");
+    await call("opManager.postWeek", { weekStart: W, userIds: [] });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto(`/cto-roster?date=${W}`);
+    await expect(
+      page.locator(".roster-cell-op", { hasText: "FIRST" }).first()
+    ).toBeVisible();
+
+    // The tasking changes somewhere else; this screen is left alone.
+    await cell("SECOND");
+    await expect(
+      page.locator(".roster-cell-op", { hasText: "SECOND" }).first()
+    ).toBeVisible({ timeout: 45_000 });
+    await expect(
+      page.locator(".roster-cell-op", { hasText: "FIRST" })
+    ).toHaveCount(0);
+  } finally {
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await call("opManager.deleteWeek", { weekStart: W });
+    if (addedMemberId !== null)
+      await call("ctoRoster.members.delete", { memberId: addedMemberId });
+    if (addedTeam)
+      await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
+  }
+});

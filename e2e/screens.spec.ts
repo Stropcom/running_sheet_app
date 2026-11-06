@@ -2893,6 +2893,27 @@ test("Calendar: month grid by default, List view is selectable and remembered", 
   );
 });
 
+test("Team Duty Roster on a phone: the month sits in the frozen corner, follows the scroll and stays in full screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/cto-roster");
+  const corner = page.getByTestId("roster-month-corner");
+  await expect(corner).toBeVisible();
+  await expect(corner).toHaveText(/^[A-Z][a-z]{2} \d{4}$/);
+  const before = (await corner.textContent()) ?? "";
+  // Scroll the grid a few weeks sideways: the corner month follows.
+  await page.evaluate(() => {
+    const el = document.querySelector(".overflow-auto.cursor-grab");
+    if (el) el.scrollLeft += 2400;
+  });
+  await expect(corner).not.toHaveText(before);
+  // Still there in Full screen, where the month picker is hidden.
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.getByText("Showing", { exact: true })).toHaveCount(0);
+  await expect(corner).toBeVisible();
+});
+
 test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit in the header, Esc and Exit put it back", async ({
   page,
 }) => {

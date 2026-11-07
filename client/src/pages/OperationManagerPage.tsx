@@ -295,6 +295,8 @@ export default function OperationManagerPage() {
     { weekStart },
     { staleTime: 5_000 }
   );
+  /** A week that has not been posted is a draft: Save draft only saves it. */
+  const isPosted = postedQuery.data?.posted === true;
   const postedWeeksQuery = trpc.opManager.getPostedWeeks.useQuery(undefined, {
     staleTime: 30_000,
   });
@@ -896,8 +898,9 @@ export default function OperationManagerPage() {
     discardTimelineChanges();
     setEditingCal(false);
   };
-  /** Saves only the cells that changed; with `repost` it then opens the same
-   * "Select who to notify" dialog as Re-post & Notify. */
+  /** Saves only the cells that changed. On a draft (not posted) that is all it
+   * does; on a posted week it then asks the roster question, and with `repost`
+   * it goes on to the same "Select who to notify" dialog as Re-post & Notify. */
   const saveTimelineChanges = async (repost: boolean) => {
     const keys = changedCellKeys(timelineChanges);
     setIsSavingTasking(true);
@@ -915,9 +918,16 @@ export default function OperationManagerPage() {
       setSavedGrid(taskingGrid);
       setEditingCal(false); // Save leaves edit mode
       toast.success(
-        keys.length === 1 ? "Saved 1 change." : `Saved ${keys.length} changes.`
+        isPosted
+          ? keys.length === 1
+            ? "Saved 1 change."
+            : `Saved ${keys.length} changes.`
+          : "Draft saved. Not posted yet, so the roster is unchanged."
       );
-      await checkRosterAgainstTasking();
+      // A draft only saves. Once posted, every Save asks whether to update
+      // the roster (start times and shifts), and Save and re-post then goes on
+      // to the notify step.
+      if (isPosted) await checkRosterAgainstTasking();
       if (repost) openNotifyDialog();
     } catch {
       toast.error("Failed to save the changes.");
@@ -1616,18 +1626,17 @@ export default function OperationManagerPage() {
                       </Button>
                       <Button
                         size="sm"
-                        variant={
-                          postedQuery.data?.posted ? "outline" : "default"
-                        }
+                        variant={isPosted ? "outline" : "default"}
                         disabled={
                           isSavingTasking || timelineChanges.length === 0
                         }
                         onClick={() => void saveTimelineChanges(false)}
                         className="hidden gap-1 md:inline-flex"
                       >
-                        <Save className="h-3.5 w-3.5" /> Save
+                        <Save className="h-3.5 w-3.5" />{" "}
+                        {isPosted ? "Save" : "Save draft"}
                       </Button>
-                      {postedQuery.data?.posted && (
+                      {isPosted && (
                         <Button
                           size="sm"
                           disabled={
@@ -1707,6 +1716,14 @@ export default function OperationManagerPage() {
                 <span className="text-sm text-blue-200">
                   {formatWeekLabel(weekStart)}
                 </span>
+                {postedQuery.data && !isPosted && (
+                  <span
+                    data-testid="week-draft-badge"
+                    className="rounded-full bg-amber-400 px-2.5 py-0.5 text-xs font-bold text-amber-950"
+                  >
+                    Draft, not posted
+                  </span>
+                )}
               </div>
               <div className="hidden sm:flex flex-col items-end gap-1">
                 <p className="text-xs text-blue-400">
@@ -1825,15 +1842,15 @@ export default function OperationManagerPage() {
                   Cancel
                 </Button>
                 <Button
-                  variant={postedQuery.data?.posted ? "outline" : "default"}
+                  variant={isPosted ? "outline" : "default"}
                   size="sm"
                   className="h-9"
                   disabled={isSavingTasking}
                   onClick={() => void saveTimelineChanges(false)}
                 >
-                  Save
+                  {isPosted ? "Save" : "Save draft"}
                 </Button>
-                {postedQuery.data?.posted && (
+                {isPosted && (
                   <Button
                     size="sm"
                     className="h-9 gap-1"

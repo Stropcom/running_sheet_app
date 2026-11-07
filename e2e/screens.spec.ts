@@ -2612,10 +2612,12 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     ).toBeVisible();
 
     await page
-      .getByRole("button", { name: "Save", exact: true })
+      .getByRole("button", { name: /^Save( draft)?$/ })
       .first()
       .click();
-    await expect(page.getByText(/Saved \d+ changes?\./)).toBeVisible();
+    await expect(
+      page.getByText(/Saved \d+ changes?\.|Draft saved/)
+    ).toBeVisible();
     // (If the roster has people in these teams it asks about their start times.)
     await page
       .getByRole("dialog", { name: "Update the roster too?" })
@@ -2679,10 +2681,12 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     await page.getByRole("button", { name: "Split" }).first().click();
     await expect(page.locator(".tcv-pa-col.bl")).toHaveCount(0);
     await page
-      .getByRole("button", { name: "Save", exact: true })
+      .getByRole("button", { name: /^Save( draft)?$/ })
       .first()
       .click();
-    await expect(page.getByText(/Saved \d+ changes?\./)).toBeVisible();
+    await expect(
+      page.getByText(/Saved \d+ changes?\.|Draft saved/)
+    ).toBeVisible();
     await page
       .getByRole("dialog", { name: "Update the roster too?" })
       .getByRole("button", { name: "No" })
@@ -3127,10 +3131,10 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await page.keyboard.press("ArrowRight");
     await expect(bar).toContainText("0800–1600");
     await page
-      .getByRole("button", { name: "Save", exact: true })
+      .getByRole("button", { name: /^Save( draft)?$/ })
       .first()
       .click();
-    await expect(page.getByText("Saved 1 change.")).toBeVisible();
+    await expect(page.getByText(/Saved 1 change\.|Draft saved/)).toBeVisible();
     await expect(saveBar).toHaveCount(0);
     // Save leaves edit mode.
     await expect(
@@ -3557,29 +3561,74 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
     );
     await page.mouse.up();
     await expect(bar).toContainText("0800–1700");
-    await page
-      .getByRole("button", { name: "Save", exact: true })
-      .first()
-      .click();
-
     const question = page.getByRole("dialog", {
       name: "Update the roster too?",
     });
+    const rosterRow = async () =>
+      (
+        (await get("ctoRoster.roster.getRange", {
+          startDate: W,
+          endDate: W,
+        })) as {
+          memberId: number;
+          shiftCode: string;
+          shiftTime: string | null;
+        }[]
+      ).find(r => r.memberId === member.id);
+
+    // The week is not posted, so it is a draft: the button says Save draft,
+    // and saving only saves. No roster question, no change to the roster.
+    await expect(page.getByTestId("week-draft-badge")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Save draft" }).first()
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Save draft" }).first().click();
+    await expect(page.getByText(/Draft saved/)).toBeVisible();
+    await expect(question).toHaveCount(0);
+    expect(await rosterRow()).toMatchObject({
+      shiftCode: "d",
+      shiftTime: null,
+    });
+
+    // Once posted, Save is a plain Save and asks the roster question.
+    await call("opManager.postWeek", { weekStart: W, userIds: [] });
+    await page.reload();
+    await page.getByText(/CTO Weekly Tasking — 11 Jun/).click();
+    await expect(page.getByTestId("week-draft-badge")).toHaveCount(0);
+    await editBtn.click();
+    {
+      const b = (await bar.boundingBox())!;
+      const l = (await bar.locator("xpath=..").boundingBox())!;
+      const h = l.width / 19;
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width / 2 + h / 2, b.y + b.height / 2, {
+        steps: 4,
+      });
+      await page.mouse.move(b.x + b.width / 2 + h, b.y + b.height / 2, {
+        steps: 4,
+      });
+      await page.mouse.up();
+    }
+    await expect(bar).toContainText("0900–1800");
+    await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(
+      0
+    );
+    await page
+      .getByRole("button", { name: /^Save( draft)?$/ })
+      .first()
+      .click();
     await expect(question).toBeVisible();
-    await expect(question).toContainText("06:00 to 08:00");
+    await expect(question).toContainText("06:00 to 09:00");
     await question
       .getByRole("button", { name: "Yes, update the roster" })
       .click();
     await expect(page.getByText(/Roster updated: 1 shift/)).toBeVisible();
 
-    // Still a Day shift (08:00 is before midday), now starting at 08:00.
-    const rows = (await get("ctoRoster.roster.getRange", {
-      startDate: W,
-      endDate: W,
-    })) as { memberId: number; shiftCode: string; shiftTime: string | null }[];
-    expect(rows.find(r => r.memberId === member.id)).toMatchObject({
+    // Still a Day shift (09:00 is before midday), now starting at 09:00.
+    expect(await rosterRow()).toMatchObject({
       shiftCode: "d",
-      shiftTime: "08:00",
+      shiftTime: "09:00",
     });
 
     // Every save asks again: slide on, Save, No; slide on, Save, No; and then
@@ -3601,19 +3650,19 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
       });
       await page.mouse.up();
       await page
-        .getByRole("button", { name: "Save", exact: true })
+        .getByRole("button", { name: /^Save( draft)?$/ })
         .first()
         .click();
     };
-    await slideLater(1); // 09:00
-    await expect(question).toBeVisible();
-    await question.getByRole("button", { name: "No" }).click();
-    await expect(question).toHaveCount(0); // closed, the bar is free again
     await slideLater(1); // 10:00
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
+    await expect(question).toHaveCount(0); // closed, the bar is free again
+    await slideLater(1); // 11:00
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "No" }).click();
     await expect(question).toHaveCount(0);
-    await slideLater(-1); // 09:00 again, answered No before
+    await slideLater(-1); // 10:00 again, answered No before
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
     await expect(question).toHaveCount(0);
@@ -4257,7 +4306,7 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await edit.click();
     await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("0600-1500");
     await expect(
-      page.getByRole("button", { name: "Save", exact: true }).first()
+      page.getByRole("button", { name: /^Save( draft)?$/ }).first()
     ).toBeDisabled();
 
     // Banded: a shift from the drop-down, and an operation from the menu.
@@ -4267,7 +4316,7 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     // The banner has its own Save (as well as the one at the top), on every
     // screen size, so an admin never has to scroll up to save.
     await expect(
-      summary.getByRole("button", { name: "Save", exact: true })
+      summary.getByRole("button", { name: /^Save( draft)?$/ })
     ).toBeVisible();
     await page
       .getByRole("button", { name: "Primary operation T1 · Mon" })
@@ -4321,10 +4370,10 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     // Save: kept, and edit mode ends.
     await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
     await page
-      .getByRole("button", { name: "Save", exact: true })
+      .getByRole("button", { name: /^Save( draft)?$/ })
       .first()
       .click();
-    await expect(page.getByText("Saved 1 change.")).toBeVisible();
+    await expect(page.getByText(/Saved 1 change\.|Draft saved/)).toBeVisible();
     await expect(edit).toBeVisible();
     await expect(page.locator(".tcv-sel")).toHaveCount(0);
     await page.reload();
@@ -4438,7 +4487,7 @@ test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Pri
 
     // Save (on any tab) saves on-call, contacts and priority, then shows the full view.
     await page
-      .getByRole("button", { name: "Save", exact: true })
+      .getByRole("button", { name: /^Save( draft)?$/ })
       .first()
       .first()
       .click();

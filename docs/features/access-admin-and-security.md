@@ -353,3 +353,12 @@ The banner that rises from the bottom once a tasking change is made ("1 change (
 ## Timeline: the shift time at the right end of the bar on every screen (v2.75.1)
 
 On the Timeline layout the shift time used to sit across the middle of each bar on a laptop (and at the right only on a phone, v2.72.2), so two operations or a long name ran into it ("GREYFIN + AURORA0600-1500"). The phone arrangement now applies at every width: the time is at the right end of the bar just before the team count (and the EA dot), and the operations shrink with an ellipsis to make room (`taskingViews.css`, the `--tail` rule, no longer inside a phone-only media query). The e2e test that checks the time never overlaps the operations, count or bar edge now runs at phone, tablet and laptop widths.
+
+## Weekly Tasking: a draft only saves; the roster changes once posted (v2.76.0)
+
+A week that has not been **posted** is a **draft**, and the full view says so ("Draft, not posted" beside the week, `data-testid="week-draft-badge"`; the week list already showed Draft / Posted).
+
+- **Draft:** the edit button is **Save draft** (header and the "changes not saved" banner). It saves the tasking only: **no roster question, no roster change, no notification** (toast: "Draft saved. Not posted yet, so the roster is unchanged."). Before this, Save on a draft also asked "Update the roster too?".
+- **Post & Notify:** unchanged: the roster question first (if anything differs; Yes updates the roster, and the operation names appear on the roster tiles because the week is now posted), then who to notify.
+- **Posted:** the button is **Save**. Every Save asks "Update the roster too?" if anything differs and updates the roster on Yes; it does not notify. **Save and re-post** stays as its own second button: it saves, asks the roster question, then opens the notify step. Save never notifies by itself.
+- Checks: e2e "Save after sliding a bar asks about the roster…" (draft Save asks nothing and leaves the roster, then after posting Save asks and Yes moves the start); the other tasking tests accept "Save" or "Save draft".

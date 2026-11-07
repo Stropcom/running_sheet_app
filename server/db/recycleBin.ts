@@ -217,6 +217,9 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
       type: "map_marker",
       label: m.label ?? `Marker at ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}`,
       sublabel: m.address ?? undefined,
+      // Which operation it belongs to, so a restricted operation's marker
+      // is not listed for other Commands' admins.
+      operationId: m.operationId,
       deletedAt: m.deletedAt!,
       deletedByCIN: m.deletedByCIN ?? null,
       expiresAt: m.deletedAt! + SEVEN_DAYS_MS,

@@ -50,6 +50,16 @@ import {
   guardActiveSheet,
 } from "./_helpers";
 
+/** The operation a sheet is moved or copied into has to exist and not be in the recycle bin. */
+async function requireLiveOperation(operationId: number) {
+  const op = await getOperationById(operationId);
+  if (!op || op.deletedAt)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "That operation was not found.",
+    });
+}
+
 export const sheetRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return filterByOperationAccess(
@@ -448,6 +458,7 @@ export const sheetRouter = router({
           message: "Sheet is already in that operation.",
         });
       }
+      await requireLiveOperation(input.targetOperationId);
       await moveRunningSheet(input.sheetId, input.targetOperationId);
       const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
       await createAuditLog({
@@ -482,6 +493,7 @@ export const sheetRouter = router({
           code: "NOT_FOUND",
           message: "Running sheet not found.",
         });
+      await requireLiveOperation(input.targetOperationId);
       const newSheetId = await copyRunningSheet(
         input.sheetId,
         input.targetOperationId,

@@ -202,6 +202,35 @@ export function hiddenIntelligenceOperationIds(
   return hidden;
 }
 
+// ─── Stored photos and documents ────────────────────────────────────────────
+/** Who a stored file belongs to: the operations it sits in, "open" for a file
+ * that is not tied to any (a briefing's map picture), or null when its owner
+ * could not be found. */
+export type StoredFileOwner = { ops: number[] } | { open: true } | null;
+
+/**
+ * May this person open a stored photo or document?
+ *
+ * The same line as Intelligence draws: another Command's Restricted operation
+ * (that they were not given) is closed to them, and everything else is open, so
+ * a person can follow a match across regions. A file that sits in several
+ * operations is open when any one of them is. A file with no owner (an old or
+ * unknown name) is open to members and admins only.
+ */
+export function canOpenStoredFile(
+  user: AccessUser,
+  owner: StoredFileOwner,
+  ops: AccessOperation[],
+  shares: AccessShare[]
+): boolean {
+  if (owner && "open" in owner) return true;
+  if (user.allRegions) return true;
+  if (!owner || owner.ops.length === 0)
+    return user.role === "member" || user.role === "admin";
+  const hidden = hiddenIntelligenceOperationIds(user, ops, shares);
+  return owner.ops.some(id => !hidden.has(id));
+}
+
 /** Restricted operations a person was given a share for — Region Search
  * lets them open those. */
 export function reachableOperationIds(

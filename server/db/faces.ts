@@ -310,8 +310,17 @@ async function notifySheetAuthorAndTeamLeader(
 
 export async function confirmFaceMatch(
   newLinkId: number,
-  matchedLinkId: number
-): Promise<{ applied: boolean; blockedRowLocked: boolean }> {
+  matchedLinkId: number,
+  /** Whether this person may change a given photo's label (they can log on its
+   * operation). Photos they may not change are left as they are. */
+  canChangePhoto?: (attachmentId: number) => Promise<boolean>
+): Promise<{
+  applied: boolean;
+  blockedRowLocked: boolean;
+  /** Photos in the same identity group that were NOT relabelled: on a
+   * certified row or closed sheet, or in an operation this person cannot log on. */
+  skippedPhotos: number;
+}> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [newLink] = await db
@@ -364,16 +373,38 @@ export async function confirmFaceMatch(
   // Certified rows are evidentiary — a Facial Recognition match must never
   // silently rewrite one. Skip the rename and fall through to the
   // "needs manual review" notification below instead.
+  let skippedPhotos = 0;
   if (!(isRealIdentification && loserRowLocked)) {
-    await db
-      .update(attachmentEntityLinks)
-      .set({
-        category: winner.category,
-        targetId: winner.targetId,
-        entityKey: winner.entityKey,
-        entityLabel: winner.entityLabel,
+    // Confirming "same person" relabels every photo that carries the losing
+    // identity — but not a photo on a certified row or closed sheet, and not a
+    // photo this person has no access to change.
+    const group = await db
+      .select({
+        id: attachmentEntityLinks.id,
+        attachmentId: attachmentEntityLinks.attachmentId,
       })
+      .from(attachmentEntityLinks)
       .where(loserGroupWhere);
+    const changeable: number[] = [];
+    for (const link of group) {
+      const info = await getAttachmentRowSheetInfo(link.attachmentId);
+      const frozen = !!info && (info.isRowLocked || info.isSheetClosed);
+      const allowed = canChangePhoto
+        ? await canChangePhoto(link.attachmentId)
+        : true;
+      if (!frozen && allowed) changeable.push(link.id);
+    }
+    skippedPhotos = group.length - changeable.length;
+    if (changeable.length > 0)
+      await db
+        .update(attachmentEntityLinks)
+        .set({
+          category: winner.category,
+          targetId: winner.targetId,
+          entityKey: winner.entityKey,
+          entityLabel: winner.entityLabel,
+        })
+        .where(inArray(attachmentEntityLinks.id, changeable));
   }
 
   if (isRealIdentification && loserRowInfo) {
@@ -400,6 +431,7 @@ export async function confirmFaceMatch(
   return {
     applied: !(isRealIdentification && loserRowLocked),
     blockedRowLocked: isRealIdentification && loserRowLocked,
+    skippedPhotos,
   };
 }
 

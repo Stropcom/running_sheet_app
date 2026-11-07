@@ -16,6 +16,7 @@ import {
   filterByIntelligenceScope,
   filterByOperationAccess,
   intelligenceOperationIds,
+  operationAccessFor,
   toAccessUser,
 } from "../operationAccess";
 import {
@@ -761,11 +762,30 @@ export const attachmentRouter = router({
   // wins the merge (see confirmFaceMatch in db.ts).
   confirmFaceMatch: protectedProcedure
     .input(z.object({ newLinkId: z.number(), matchedLinkId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const me = toAccessUser(ctx.user);
+      // Photos in the same identity group that this person cannot log on are
+      // left alone (the two links named in the request were checked already).
+      const canChangePhoto = async (attachmentId: number) => {
+        const photo = await getAttachmentById(attachmentId);
+        return !photo || (await operationAccessFor(me, photo.operationId)) >= 2;
+      };
       const result = await confirmFaceMatchDb(
         input.newLinkId,
-        input.matchedLinkId
+        input.matchedLinkId,
+        canChangePhoto
       );
+      if (result.applied && result.skippedPhotos > 0) {
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "face_group_relabelled",
+          details: `Face match confirmed (links ${input.newLinkId} and ${input.matchedLinkId}); ${result.skippedPhotos} other photo(s) with the same identity were left unchanged (certified, closed sheet, or no access).`,
+          createdAt: Date.now(),
+        });
+      }
       return { success: true, ...result };
     }),
 

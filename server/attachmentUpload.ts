@@ -3,6 +3,7 @@ import express from "express";
 import heicConvert from "heic-convert";
 import { sdk } from "./_core/sdk";
 import { storagePut } from "./storage";
+import { assertOperationAccess, toAccessUser } from "./operationAccess";
 import { detectFaceBoxes } from "./faceRecognition";
 import {
   autoLinkAttachmentToRowAddresses,
@@ -272,6 +273,24 @@ export async function processManualAttachmentUpload(params: {
 // failing on weak mobile connections with a cryptic browser error — raw
 // binary avoids both the ~33% base64 size inflation and the giant
 // in-memory JSON string that triggered it.
+/** Why this person may not add a photo to this row, or null when they may. */
+async function rawUploadAccessProblem(
+  user: Parameters<typeof toAccessUser>[0],
+  rowId: number
+): Promise<{ status: number; error: string } | null> {
+  const row = await getRowById(rowId);
+  if (!row) return { status: 404, error: "Running sheet row not found." };
+  const sheet = await getRunningSheetById(row.sheetId);
+  if (!sheet || sheet.deletedAt)
+    return { status: 404, error: "Running sheet not found." };
+  try {
+    await assertOperationAccess(toAccessUser(user), sheet.operationId, 2);
+  } catch {
+    return { status: 403, error: "You don't have access to that operation." };
+  }
+  return null;
+}
+
 export function registerRawAttachmentUploadRoute(app: Express) {
   app.post(
     "/api/attachments/upload-raw",
@@ -292,9 +311,30 @@ export function registerRawAttachmentUploadRoute(app: Express) {
           .json({ error: "Observers have view and export access only." });
       }
 
+      // The same gates every tRPC call goes through (requireUser in
+      // _core/trpc.ts); this route sits outside that stack, so it repeats them.
+      if (user.mustChangePassword) {
+        return res
+          .status(403)
+          .json({ error: "You must set a new password before continuing." });
+      }
+      if (user.role === "investigator") {
+        return res
+          .status(403)
+          .json({ error: "Investigator accounts have map-only access." });
+      }
+
       const rowId = Number(req.query.rowId);
-      if (!Number.isFinite(rowId)) {
+      if (!Number.isInteger(rowId) || rowId <= 0) {
         return res.status(400).json({ error: "Invalid rowId." });
+      }
+      // Adding a photo to a row is logging on its operation: the person needs
+      // Log access there, and the sheet must still exist.
+      const accessDenied = await rawUploadAccessProblem(user, rowId);
+      if (accessDenied) {
+        return res
+          .status(accessDenied.status)
+          .json({ error: accessDenied.error });
       }
       if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
         return res.status(400).json({ error: "Empty photo." });

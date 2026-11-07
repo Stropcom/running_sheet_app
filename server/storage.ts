@@ -14,7 +14,8 @@ import type { Express } from "express";
 import express from "express";
 import { ENV } from "./_core/env";
 import { sdk } from "./_core/sdk";
-import { UPLOAD_CACHE_CONTROL, requireSignedIn } from "./uploadAccess";
+import { UPLOAD_CACHE_CONTROL } from "./uploadAccess";
+import { requireFileAccess } from "./storedFileAccess";
 
 const LOCAL_UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
@@ -25,7 +26,11 @@ function isForgeConfigured(): boolean {
 export function registerLocalUploadsRoute(app: Express) {
   app.use(
     "/local-uploads",
-    requireSignedIn(req => sdk.authenticateRequest(req)),
+    // Signed in, and allowed to open this file (server/storedFileAccess.ts).
+    requireFileAccess(
+      req => sdk.authenticateRequest(req),
+      req => req.path
+    ),
     express.static(LOCAL_UPLOAD_DIR, {
       setHeaders: res => res.setHeader("Cache-Control", UPLOAD_CACHE_CONTROL),
     })

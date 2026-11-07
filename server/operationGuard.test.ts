@@ -311,6 +311,44 @@ describe("operation guard", () => {
     ).rejects.toThrow();
   });
 
+  it("a sheet cannot be moved or copied INTO an operation the person cannot log on", async () => {
+    // Sheet 10 is in Western operation 1 (theirs); operation 3 is Eastern.
+    for (const path of ["sheet.move", "sheet.copy"]) {
+      await expect(
+        run(west, path, "mutation", { sheetId: 10, targetOperationId: 3 })
+      ).rejects.toThrow();
+      // Into one of their own operations: allowed.
+      expect(
+        await run(west, path, "mutation", { sheetId: 10, targetOperationId: 2 })
+      ).toEqual({});
+    }
+    // A View share is not enough to put a sheet there: that needs Log.
+    const view: AccessShare[] = [
+      { operationId: 3, fromCommand: null, userId: 10, level: "view" },
+    ];
+    await expect(
+      run(
+        west,
+        "sheet.move",
+        "mutation",
+        { sheetId: 10, targetOperationId: 3 },
+        view
+      )
+    ).rejects.toThrow();
+    const log: AccessShare[] = [
+      { operationId: 3, fromCommand: null, userId: 10, level: "log" },
+    ];
+    expect(
+      await run(
+        west,
+        "sheet.move",
+        "mutation",
+        { sheetId: 10, targetOperationId: 3 },
+        log
+      )
+    ).toEqual({});
+  });
+
   it("recycle bin entries are traced by type", async () => {
     await expect(
       run(west, "recycleBin.reinstate", "mutation", {

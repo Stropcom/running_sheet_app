@@ -25,7 +25,7 @@ import {
 } from "../db";
 import { ENV } from "./env";
 import { sdk } from "./sdk";
-import { requireSignedIn } from "../uploadAccess";
+import { requireFileAccess } from "../storedFileAccess";
 import { registerHealthRoute } from "../healthz";
 
 // Fail fast rather than silently signing every session with an empty key.
@@ -118,7 +118,11 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.use(
     "/manus-storage",
-    requireSignedIn(req => sdk.authenticateRequest(req))
+    requireFileAccess(
+      req => sdk.authenticateRequest(req),
+      // The stored key is everything after /manus-storage/.
+      req => req.path
+    )
   );
   registerStorageProxy(app);
   registerLocalUploadsRoute(app);

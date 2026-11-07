@@ -867,9 +867,30 @@ export interface UserLocationHistoryPointDTO {
  * userId (not deviceId) since a single officer's trail should read as one
  * continuous line regardless of which device recorded which point.
  */
+/** A point tagged with operations, all of which are hidden from the viewer. */
+export function pointIsOnlyInHiddenOperations(
+  operationIdsJson: string | null,
+  hidden: ReadonlySet<number>
+): boolean {
+  try {
+    const ids = JSON.parse(operationIdsJson || "[]");
+    return (
+      Array.isArray(ids) &&
+      ids.length > 0 &&
+      ids.every(id => typeof id === "number" && hidden.has(id))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function getUserLocationHistories(
   userIds: number[],
-  sinceMs: number
+  sinceMs: number,
+  /** Operations this person cannot open (another Command's Restricted ones):
+   * an earlier point tagged only with those stays out, and so does the
+   * person's own trail never (it is theirs). */
+  scope?: { hiddenOperationIds: ReadonlySet<number>; ownUserId: number }
 ): Promise<Record<number, UserLocationHistoryPointDTO[]>> {
   const db = await getDb();
   const result: Record<number, UserLocationHistoryPointDTO[]> = {};
@@ -882,6 +903,7 @@ export async function getUserLocationHistories(
       lng: userLocationHistory.lng,
       speed: userLocationHistory.speed,
       recordedAt: userLocationHistory.recordedAt,
+      operationIds: userLocationHistory.operationIds,
     })
     .from(userLocationHistory)
     .where(
@@ -893,6 +915,13 @@ export async function getUserLocationHistories(
     .orderBy(asc(userLocationHistory.recordedAt));
 
   for (const r of rows) {
+    if (
+      scope &&
+      scope.hiddenOperationIds.size > 0 &&
+      r.userId !== scope.ownUserId &&
+      pointIsOnlyInHiddenOperations(r.operationIds, scope.hiddenOperationIds)
+    )
+      continue;
     if (!result[r.userId]) result[r.userId] = [];
     result[r.userId].push({
       lat: r.lat,

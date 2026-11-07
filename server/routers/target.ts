@@ -4,6 +4,7 @@ import { TARGET_BACKGROUND_MAX } from "@shared/targetBackground";
 import {
   filterByIntelligenceScope,
   filterByOperationAccess,
+  hiddenIntelligenceFor,
   scopeRegistryTargets,
   toAccessUser,
 } from "../operationAccess";
@@ -649,11 +650,22 @@ export const targetRouter = router({
       .input(
         z.object({ targetId: z.number(), operationId: z.number().optional() })
       )
-      .query(async ({ input }) => {
-        return listTargetDocumentImportsForTarget(
+      .query(async ({ input, ctx }) => {
+        const imports = await listTargetDocumentImportsForTarget(
           input.targetId,
           input.operationId
         );
+        // A target in two operations shows the readings from each, except from
+        // another Command's Restricted operation that this person was not given.
+        const hidden = await hiddenIntelligenceFor(
+          toAccessUser(ctx.user),
+          "profile"
+        );
+        return hidden.size === 0
+          ? imports
+          : imports.filter(
+              i => i.operationId == null || !hidden.has(i.operationId)
+            );
       }),
 
     /** Parses an uploaded .docx or .pdf target-profile document into a

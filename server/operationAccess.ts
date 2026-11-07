@@ -239,6 +239,19 @@ export interface Resolvers {
 const notNull = (xs: any[]): number[] =>
   xs.map(x => x.v).filter((x): x is number => x != null);
 
+/** The operations a stored file's owner (a running sheet or a target) sits in. */
+export async function operationsOfFileOwners(
+  kind: "sheet" | "target",
+  id: number
+): Promise<number[]> {
+  if (kind === "sheet") {
+    const m = await operationsOfSheets([id]);
+    return Array.from(m.values());
+  }
+  const m = await operationsOfTargets([id]);
+  return m.get(id) ?? [];
+}
+
 const dbResolvers: Resolvers = {
   operationsOfSheets,
   sheetsOfRows,
@@ -349,6 +362,10 @@ async function singleRefs(
   const ops = new Set<number>([
     ...num(raw.operationId),
     ...num(raw.linkToOperationId),
+    // Where a sheet is being moved or copied TO: needs the same access as the
+    // sheet it starts from, or a sheet could be pushed into an operation the
+    // person cannot open.
+    ...num(raw.targetOperationId),
   ]);
   const targetIds = new Set<number>([
     ...num(raw.targetId),
@@ -366,7 +383,10 @@ async function singleRefs(
     ...num(raw.newLinkId),
     ...num(raw.matchedEntityLinkId),
   ];
-  const associateIds = [...num(raw.existingAssociateId)];
+  const associateIds = [
+    ...num(raw.existingAssociateId),
+    ...num(raw.associateId),
+  ];
   // `id` means different things by namespace.
   const id = num(raw.id);
   if (path.startsWith("operation.")) id.forEach(i => ops.add(i));

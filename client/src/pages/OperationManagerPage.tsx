@@ -1829,13 +1829,14 @@ export default function OperationManagerPage() {
                   {timelineChanges.map(c => c.text).join("  •  ")}
                 </p>
               </div>
-              {/* On a phone the buttons are down here, within reach; on a
-                  laptop or tablet they are at the top of the page. */}
-              <div className="flex gap-2 md:hidden">
+              {/* Save and Save and re-post are here on every screen (in reach
+                  as the page scrolls) and also at the top of the page; Cancel
+                  is only down here on a phone. */}
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9"
+                  className="h-9 md:hidden"
                   disabled={isSavingTasking}
                   onClick={cancelEditing}
                 >

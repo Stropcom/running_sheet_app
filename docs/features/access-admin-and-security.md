@@ -326,3 +326,7 @@ In roster Full screen the zoom −/+, Today and Exit full screen sit in the RunL
 ## Weekly Tasking: Edit Tasking moves to the Highlight line; "Edit Contacts & Priorities" (v2.72.5)
 
 On the full view, **Edit Tasking** is no longer in the page header: it sits on the Highlight line of the calendar, on the right beside the view picker (Highlight chips on the left; Edit Tasking and the view picker on the right, both 36px high). On a phone the two share the line, the picker taking the width that is left. It is passed to `TaskingCalendarViews` as `toolbarAction`, shown to admins when not editing; while editing, the Cancel / Save buttons stay in the header as before. The header's second button is now **Edit Contacts & Priorities** (it opens the on-call, contacts and priority board page; the page itself is unchanged), followed by Export PDF and Post & Notify. The calendar's title row now holds just the title and the issue / EA chips.
+
+## Weekly Tasking: Save and Save and re-post in the "changes not saved" banner (v2.72.6)
+
+The banner that rises from the bottom once a tasking change is made ("1 change (not saved yet)" and what changed) now has **Save** and, for a posted week, **Save and re-post** on every screen size, so a long week never needs a scroll back up. The same two buttons stay in the page header. **Cancel** is still in the header on a laptop or tablet and in the banner only on a phone. Both places run the same `saveTimelineChanges`. The e2e tests that press Save take the first matching button (the header's), since two now exist.

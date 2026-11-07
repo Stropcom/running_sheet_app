@@ -2611,7 +2611,10 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
       page.getByRole("button", { name: "Split" }).first()
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Save", exact: true })
+      .first()
+      .click();
     await expect(page.getByText(/Saved \d+ changes?\./)).toBeVisible();
     // (If the roster has people in these teams it asks about their start times.)
     await page
@@ -2675,7 +2678,10 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
       .click();
     await page.getByRole("button", { name: "Split" }).first().click();
     await expect(page.locator(".tcv-pa-col.bl")).toHaveCount(0);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Save", exact: true })
+      .first()
+      .click();
     await expect(page.getByText(/Saved \d+ changes?\./)).toBeVisible();
     await page
       .getByRole("dialog", { name: "Update the roster too?" })
@@ -3075,7 +3081,7 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await expect(saveBar).toContainText("1 change");
     await expect(saveBar).toContainText("0700–1500 to 0900–1700");
     await expect(
-      page.getByRole("button", { name: "Save and re-post" })
+      page.getByRole("button", { name: "Save and re-post" }).first()
     ).toBeVisible();
 
     // Cancel puts it back and leaves edit mode.
@@ -3123,7 +3129,10 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect(bar).toContainText("0800–1600");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Save", exact: true })
+      .first()
+      .click();
     await expect(page.getByText("Saved 1 change.")).toBeVisible();
     await expect(saveBar).toHaveCount(0);
     // Save leaves edit mode.
@@ -3448,7 +3457,10 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
     );
     await page.mouse.up();
     await expect(bar).toContainText("0800–1700");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Save", exact: true })
+      .first()
+      .click();
 
     const question = page.getByRole("dialog", {
       name: "Update the roster too?",
@@ -3488,7 +3500,10 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
         steps: 4,
       });
       await page.mouse.up();
-      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Save", exact: true })
+        .first()
+        .click();
     };
     await slideLater(1); // 09:00
     await expect(question).toBeVisible();
@@ -4129,13 +4144,18 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await edit.click();
     await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("0600-1500");
     await expect(
-      page.getByRole("button", { name: "Save", exact: true })
+      page.getByRole("button", { name: "Save", exact: true }).first()
     ).toBeDisabled();
 
     // Banded: a shift from the drop-down, and an operation from the menu.
     await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
     await expect(summary).toContainText("1 change");
     await expect(summary).toContainText("0600–1500 to 1300–2200");
+    // The banner has its own Save (as well as the one at the top), on every
+    // screen size, so an admin never has to scroll up to save.
+    await expect(
+      summary.getByRole("button", { name: "Save", exact: true })
+    ).toBeVisible();
     await page
       .getByRole("button", { name: "Primary operation T1 · Mon" })
       .click();
@@ -4187,7 +4207,10 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
 
     // Save: kept, and edit mode ends.
     await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Save", exact: true })
+      .first()
+      .click();
     await expect(page.getByText("Saved 1 change.")).toBeVisible();
     await expect(edit).toBeVisible();
     await expect(page.locator(".tcv-sel")).toHaveCount(0);
@@ -4254,6 +4277,7 @@ test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Pri
     // Save (on any tab) saves on-call, contacts and priority, then shows the full view.
     await page
       .getByRole("button", { name: "Save", exact: true })
+      .first()
       .first()
       .click();
     await expect(

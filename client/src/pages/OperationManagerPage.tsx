@@ -1665,19 +1665,11 @@ export default function OperationManagerPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setEditingCal(true)}
-                        className="gap-1"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" /> Edit Tasking
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
                         onClick={() => setViewMode("edit")}
                         className="gap-1"
                         title="On-call, contacts and the priority board"
                       >
-                        Edit Contacts &amp; Details
+                        Edit Contacts &amp; Priorities
                       </Button>
                       <Button
                         variant="outline"
@@ -1768,6 +1760,17 @@ export default function OperationManagerPage() {
                 breachCount={taskingBreachCount}
                 onOpenRoster={i =>
                   navigate(`/cto-roster?date=${addDaysUTC(weekStart, i)}`)
+                }
+                toolbarAction={
+                  isAdmin && !editingCal ? (
+                    <Button
+                      variant="outline"
+                      className="h-9 shrink-0 gap-1"
+                      onClick={() => setEditingCal(true)}
+                    >
+                      <Edit2 className="h-3.5 w-3.5" /> Edit Tasking
+                    </Button>
+                  ) : undefined
                 }
                 edit={
                   isAdmin && editingCal

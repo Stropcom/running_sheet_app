@@ -4214,7 +4214,7 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
   }
 });
 
-test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Details and no Delete; the details page has no Tasking tab and Save takes you back to the full view", async ({
+test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Priorities and no Delete; the details page has no Tasking tab and Save takes you back to the full view", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -4238,11 +4238,13 @@ test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Det
       page.getByRole("button", { name: "Edit Tasking", exact: true })
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Edit Contacts & Details/ })
+      page.getByRole("button", { name: /Edit Contacts & Priorities/ })
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Delete" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: /Edit Contacts & Details/ }).click();
+    await page
+      .getByRole("button", { name: /Edit Contacts & Priorities/ })
+      .click();
     await expect(page.getByRole("tab", { name: "On-Call" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Priority" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Tasking" })).toHaveCount(0);

@@ -44,7 +44,8 @@ export function RosterSyncDialog({
           <DialogTitle>Update the roster too?</DialogTitle>
           <DialogDescription>
             The tasking has different start times from the roster for the people
-            on duty (today and later). Update the roster to match?
+            on duty, or has a team working on a day the roster has it off (today
+            and later). Update the roster to match?
           </DialogDescription>
         </DialogHeader>
         <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
@@ -57,12 +58,25 @@ export function RosterSyncDialog({
                 {g.teamName} · {dayLabel(g.date)}
               </div>
               <div className="text-muted-foreground">
-                {g.members} on duty: {g.fromTimes} to{" "}
-                <span className="font-semibold text-foreground">
-                  {g.toTime}
-                </span>
-                {g.typeChanges > 0 && (
-                  <> ({g.typeChanges} change between Day and Arvo)</>
+                {g.fromRest > 0 && (
+                  <>
+                    {g.fromRest} on a rest day to{" "}
+                    <span className="font-semibold text-foreground">
+                      {g.toTime}
+                    </span>
+                    {g.members > g.fromRest && "; "}
+                  </>
+                )}
+                {g.members > g.fromRest && (
+                  <>
+                    {g.members - g.fromRest} on duty: {g.fromTimes} to{" "}
+                    <span className="font-semibold text-foreground">
+                      {g.toTime}
+                    </span>
+                    {g.typeChanges > 0 && (
+                      <> ({g.typeChanges} change between Day and Arvo)</>
+                    )}
+                  </>
                 )}
               </div>
             </li>
@@ -72,7 +86,7 @@ export function RosterSyncDialog({
           Yes changes {members === 1 ? "1 person's" : `${members} people's`}{" "}
           shift start on the roster and sends each of them the in-app notice
           that their roster changed. A start at or after 12:00 becomes an Arvo
-          shift.
+          shift, and a rest day becomes a Day (or Arvo, or Admin) shift.
         </p>
         <DialogFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={onNo}>

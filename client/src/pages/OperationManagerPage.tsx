@@ -789,19 +789,24 @@ export default function OperationManagerPage() {
 
   // ── Carry the tasking's start times to the roster ───────────────────────────
   /** Each team's start time on the tasking, by day (a shift with no time, such
-   * as RDO, has none). */
+   * as RDO, has none), and whether its task is Admin. */
   const rosterTargets = () => {
-    const out: { teamName: string; date: string; start: string }[] = [];
+    const out: {
+      teamName: string;
+      date: string;
+      start: string;
+      admin: boolean;
+    }[] = [];
     for (const teamRow of TEAM_ROWS)
       DAYS.forEach((_, dayIndex) => {
-        const start = shiftStart(
-          cellShift(taskingGrid[`${teamRow}-${dayIndex}`])
-        );
+        const cell = taskingGrid[`${teamRow}-${dayIndex}`];
+        const start = shiftStart(cellShift(cell));
         if (start === null) return;
         out.push({
           teamName: TEAM_LABELS[teamRow],
           date: addDaysUTC(weekStart, dayIndex),
           start: toClock(start),
+          admin: cell?.primaryTask === "Admin",
         });
       });
     return out;

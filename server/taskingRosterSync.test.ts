@@ -170,7 +170,118 @@ describe("the question's summary", () => {
         toTime: "14:00",
         members: 2,
         fromTimes: "06:00, 13:00",
+        fromRest: 0,
         typeChanges: 1,
+      },
+    ]);
+  });
+});
+
+describe("a team's rest day that the tasking now has working", () => {
+  const base = { members, secondments: [], today: "2026-11-05" };
+
+  it("turns the whole team's Rest Days into a Day shift at the tasking start", () => {
+    const changes = planTaskingRosterSync({
+      ...base,
+      targets: [T1("2026-11-07", 6)],
+      shifts: [shift(1, "2026-11-07", "r"), shift(2, "2026-11-07", "r")],
+    });
+    expect(changes.map(c => c.memberId)).toEqual([1, 2]);
+    expect(changes[0]).toMatchObject({
+      fromCode: "r",
+      toCode: "d",
+      fromTime: "",
+      toTime: "06:00",
+      storeTime: null,
+      fromRest: true,
+    });
+  });
+
+  it("makes it an Arvo shift for a start at or after midday, with its time kept", () => {
+    const [c] = planTaskingRosterSync({
+      ...base,
+      targets: [T1("2026-11-07", 14)],
+      shifts: [shift(1, "2026-11-07", "r")],
+    });
+    expect(c).toMatchObject({
+      toCode: "a",
+      toTime: "14:00",
+      storeTime: "14:00",
+    });
+  });
+
+  it("makes it an Admin shift when the tasking's task is Admin", () => {
+    const [c] = planTaskingRosterSync({
+      ...base,
+      targets: [{ ...T1("2026-11-07", 7), admin: true }],
+      shifts: [shift(1, "2026-11-07", "r")],
+    });
+    expect(c).toMatchObject({
+      toCode: "ad",
+      toTime: "07:00",
+      storeTime: "07:00",
+    });
+  });
+
+  it("leaves one person's own rest day alone while others in the team are on duty", () => {
+    expect(
+      planTaskingRosterSync({
+        ...base,
+        targets: [T1("2026-11-07", 6)],
+        shifts: [shift(1, "2026-11-07", "d"), shift(2, "2026-11-07", "r")],
+      })
+    ).toEqual([]);
+  });
+
+  it("changes only the Rest Day members, not Leave, Court, Training, Deployment or On Call", () => {
+    const more = [
+      ...members,
+      { id: 5, name: "Eve", teamId: 10, excludedFromCounts: false },
+      { id: 6, name: "Fay", teamId: 10, excludedFromCounts: false },
+    ];
+    const changes = planTaskingRosterSync({
+      ...base,
+      members: more,
+      targets: [T1("2026-11-07", 6)],
+      shifts: [
+        shift(1, "2026-11-07", "r"),
+        shift(2, "2026-11-07", "l"),
+        shift(5, "2026-11-07", "c"),
+        shift(6, "2026-11-07", "o"),
+      ],
+    });
+    expect(changes.map(c => c.memberId)).toEqual([1]);
+  });
+
+  it("does not touch a person with no roster shift, a past day, someone excluded from counts or another team", () => {
+    expect(
+      planTaskingRosterSync({
+        ...base,
+        targets: [T1("2026-11-07", 6), T1("2026-11-04", 6)],
+        shifts: [
+          shift(1, "2026-11-04", "r"),
+          shift(3, "2026-11-07", "r"), // excluded from counts
+          shift(4, "2026-11-07", "r"), // Team 2
+        ],
+      })
+    ).toEqual([]);
+  });
+
+  it("is summarised as rest-day people, apart from those on duty", () => {
+    const changes = planTaskingRosterSync({
+      ...base,
+      targets: [T1("2026-11-07", 6)],
+      shifts: [shift(1, "2026-11-07", "r"), shift(2, "2026-11-07", "r")],
+    });
+    expect(groupSyncChanges(changes)).toEqual([
+      {
+        teamName: "Team 1",
+        date: "2026-11-07",
+        toTime: "06:00",
+        members: 2,
+        fromTimes: "",
+        fromRest: 2,
+        typeChanges: 0,
       },
     ]);
   });

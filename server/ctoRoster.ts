@@ -2718,6 +2718,8 @@ export interface TaskingSyncInput {
   date: string;
   /** "HH:MM" */
   start: string;
+  /** The task is Admin (so a rest day becomes an Admin shift). */
+  admin?: boolean;
 }
 
 /** Today in the unit's own time zone (the server runs on Perth time). */
@@ -2740,6 +2742,7 @@ export async function planTaskingSyncFor(
       teamName: team.name,
       date: i.date,
       startMinutes: h * 60 + m,
+      admin: i.admin === true,
     });
   }
   if (targets.length === 0) return [];
@@ -2792,7 +2795,7 @@ export async function applyTaskingSyncFor(
         shiftTime: c.fromTime,
       }),
       newValue: JSON.stringify({ shiftCode: c.toCode, shiftTime: c.storeTime }),
-      detail: `From the CTO Weekly Tasking: ${c.teamName} starts at ${c.toTime}`,
+      detail: `From the CTO Weekly Tasking: ${c.teamName} starts at ${c.toTime}${c.fromRest ? " (was a rest day)" : ""}`,
     });
   }
   const byMember = new Map<number, SyncChange[]>();

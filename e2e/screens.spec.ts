@@ -924,7 +924,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await expect(page.locator(".tcv-pa").first()).toBeVisible();
     for (const [label, marker] of [
       ["Schedule tables", ".tcv-table"],
-      ["Day tiles", ".tcv-ta"],
+      ["Calendar", ".tcv-ta"],
       ["Timeline", ".tcv-cb"],
     ] as const) {
       await picker.click();
@@ -962,7 +962,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     });
     const timeline = layouts.getByRole("checkbox", { name: "Timeline" });
     const banded = layouts.getByRole("checkbox", { name: "Banded columns" });
-    const tiles = layouts.getByRole("checkbox", { name: "Day tiles" });
+    const tiles = layouts.getByRole("checkbox", { name: "Calendar" });
     await expect(timeline).toBeChecked();
     await banded.click();
     await expect(banded).toBeChecked();
@@ -983,7 +983,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     expect(html).toContain("CTO Weekly Tasking");
     expect(html).toContain("Weekly Tasking Calendar · Banded columns");
     expect(html).toContain("Weekly Tasking Calendar · Timeline");
-    expect(html).not.toContain("Weekly Tasking Calendar · Day tiles");
+    expect(html).not.toContain("Weekly Tasking Calendar · Calendar");
     expect(html).toContain("02 Jan – 08 Jan 2040");
     expect(html).toContain("0400 111 222");
     expect(html).toContain("RAVEN");
@@ -2647,7 +2647,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     await page.getByRole("option", { name: "Schedule tables" }).click();
     await expect(page.locator(".tcv-table tr.bl")).toHaveCount(2);
     await picker.click();
-    await page.getByRole("option", { name: "Day tiles" }).click();
+    await page.getByRole("option", { name: "Calendar" }).click();
     await expect(page.locator(".tcv-tl.merged")).toHaveCount(1);
     await picker.click();
     await page.getByRole("option", { name: "Timeline" }).click();
@@ -2826,7 +2826,7 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
   }
 });
 
-test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or letter key", async ({
+test("CTO Weekly Tasking on a phone: only Calendar and Timeline, no colour or letter key", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -2844,7 +2844,7 @@ test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or l
       shiftTime: "0700-1500",
       primaryTask: "RAVEN",
     });
-    // A saved Banded columns choice (made on a laptop) shows as Day tiles on a phone.
+    // A saved Banded columns choice (made on a laptop) shows as Calendar on a phone.
     await page.addInitScript(() =>
       localStorage.setItem("runlog.taskingView", "panel-banded")
     );
@@ -2852,13 +2852,10 @@ test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or l
     await page.goto("/operation-manager");
     await page.getByText(/CTO Weekly Tasking — 07 May/).click();
     const picker = page.getByRole("combobox", { name: "Calendar view" });
-    await expect(picker).toContainText("Day tiles");
+    await expect(picker).toContainText("Calendar");
     await expect(page.locator(".tcv-legend")).toHaveCount(0);
     await picker.click();
-    await expect(page.getByRole("option")).toHaveText([
-      "Day tiles",
-      "Timeline",
-    ]);
+    await expect(page.getByRole("option")).toHaveText(["Calendar", "Timeline"]);
     await page.keyboard.press("Escape");
 
     // A laptop still has all four, and the key.
@@ -3349,6 +3346,31 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     await page.getByRole("button", { name: /Post & Notify/ }).click();
     await expect(whoToNotify).toBeVisible();
     await expect(question).toHaveCount(0);
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+
+    // A team's rest day on the roster that the tasking now has working: the
+    // question is asked too, and Yes makes it a working shift.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "r",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("on a rest day to 14:00");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(page.getByText(/Roster updated: 1 shift/)).toBeVisible();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "a",
+      shiftTime: "14:00",
+    });
   } finally {
     await call("ctoRoster.roster.updateShift", {
       memberId: member.id,
@@ -3615,7 +3637,7 @@ test("CTO Weekly Tasking: an EA breach on the roster shows as a red dot on the t
     for (const layout of [
       "Banded columns",
       "Schedule tables",
-      "Day tiles",
+      "Calendar",
       "Timeline",
     ]) {
       await picker.click();
@@ -4168,8 +4190,8 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await page.getByLabel("Shift T2 · Wed").selectOption("0600-1500");
     await expect(summary).toContainText("3 changes");
 
-    // Day tiles: tap a team line for the editor; the shift chips change it.
-    await choose("Day tiles");
+    // Calendar view: tap a team line for the editor; the shift chips change it.
+    await choose("Calendar");
     await page.getByRole("button", { name: "Edit Team 2 Thu" }).click();
     await page.getByRole("button", { name: /^1000–1800/ }).click();
     await page.getByRole("button", { name: "Done" }).click();

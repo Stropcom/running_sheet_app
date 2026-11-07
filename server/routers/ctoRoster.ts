@@ -87,6 +87,7 @@ const taskingSyncInput = z.object({
         teamName: z.string().min(1).max(60),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         start: z.string().regex(/^\d{2}:\d{2}$/),
+        admin: z.boolean().optional(),
       })
     )
     .max(60),

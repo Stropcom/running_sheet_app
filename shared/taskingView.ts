@@ -199,7 +199,7 @@ export const PHONE_VIEWS: readonly string[] = ["tile-days", "cal-timeline"];
 export const DEFAULT_PHONE_VIEW = "tile-days";
 
 /** The layout to show on a phone for a saved choice: the choice if a phone
- * offers it, otherwise Day tiles. The saved choice itself is not changed, so
+ * offers it, otherwise Calendar. The saved choice itself is not changed, so
  * the person's laptop still opens on the layout they picked there. */
 export function viewOnPhone(view: string): string {
   return PHONE_VIEWS.includes(view) ? view : DEFAULT_PHONE_VIEW;

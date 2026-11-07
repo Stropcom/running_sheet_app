@@ -6,7 +6,7 @@ import { useCallback, useState } from "react";
 export const TASKING_VIEWS = [
   { id: "panel-banded", label: "Banded columns" },
   { id: "panel-tables", label: "Schedule tables" },
-  { id: "tile-days", label: "Day tiles" },
+  { id: "tile-days", label: "Calendar" },
   { id: "cal-timeline", label: "Timeline" },
 ] as const;
 export type TaskingViewId = (typeof TASKING_VIEWS)[number]["id"];

@@ -632,7 +632,7 @@ function PanelTables({
   );
 }
 
-/** Day tiles (seven days and a week summary: four across, two rows) */
+/** Calendar (was "Day tiles"; seven days and a week summary: four across, two rows) */
 function DayTiles({
   week,
   days,
@@ -1669,7 +1669,7 @@ export function TaskingCalendarViews({
   ) => ReactNode;
 }) {
   const [savedView, setView] = useTaskingView();
-  // A phone offers only Day tiles and Timeline (and has no colour / letter key);
+  // A phone offers only Calendar and Timeline (and has no colour / letter key);
   // the saved choice is left alone for the laptop.
   const isMobile = useIsMobile();
   const view = isMobile ? (viewOnPhone(savedView) as TaskingViewId) : savedView;

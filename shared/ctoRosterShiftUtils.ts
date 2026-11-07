@@ -23,7 +23,7 @@ export const SHIFT_LABELS: Record<ShiftCode, string> = {
   d: "Day",
   a: "Arvo",
   r: "Rest Day",
-  o: "On Call",
+  o: "Rest on-call",
   l: "Leave",
   c: "Court",
   tt: "Training",

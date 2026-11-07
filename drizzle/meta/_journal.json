@@ -995,6 +995,13 @@
       "when": 1793879680176,
       "tag": "0141_nine_hour_leftover_8h_shifts",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "5",
+      "when": 1794053406582,
+      "tag": "0142_roster_tasking_revert",
+      "breakpoints": true
     }
   ]
 }

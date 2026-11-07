@@ -86,7 +86,11 @@ const taskingSyncInput = z.object({
       z.object({
         teamName: z.string().min(1).max(60),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        start: z.string().regex(/^\d{2}:\d{2}$/),
+        /** "HH:MM", or null when the tasking has no shift for the team that day (RDO or none). */
+        start: z
+          .string()
+          .regex(/^\d{2}:\d{2}$/)
+          .nullable(),
         admin: z.boolean().optional(),
       })
     )

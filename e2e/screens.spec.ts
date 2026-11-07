@@ -3371,6 +3371,84 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
       shiftCode: "a",
       shiftTime: "14:00",
     });
+
+    // The team's shift is taken off the tasking again (RDO): the roster goes
+    // back to the rest day it was, after the question.
+    const tasked = async (shiftTime: string) =>
+      call("opManager.saveTaskingCell", {
+        weekStart: W,
+        dayIndex: 0,
+        teamRow: "surv1",
+        shiftTime,
+        primaryTask: shiftTime === "RDO" ? null : "RAVEN",
+      });
+    await tasked("RDO");
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("back to a rest day");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(page.getByText(/Roster updated: 1 shift/)).toBeVisible();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "r",
+      shiftTime: null,
+    });
+
+    // A shift anyone set by hand is not touched: with the roster on a Day
+    // shift the team being RDO on the tasking asks nothing.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "d",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(whoToNotify).toBeVisible();
+    await expect(question).toHaveCount(0);
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+
+    // Rest on-call ("o") works the same way: it becomes Arvo on-call, and goes
+    // back to Rest on-call when the tasking has no shift again.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "o",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await tasked("1400-2200");
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("on Rest on-call to 14:00");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "aoc",
+      shiftTime: "14:00",
+    });
+    await tasked("RDO");
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toContainText("back to Rest on-call");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "o",
+      shiftTime: null,
+    });
   } finally {
     await call("ctoRoster.roster.updateShift", {
       memberId: member.id,

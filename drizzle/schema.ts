@@ -2013,6 +2013,8 @@ export const ctoRosterShifts = mysqlTable(
     shiftDurationHours: int("shiftDurationHours"),
     comment: text("comment"),
     isActing: boolean("isActing").default(false).notNull(),
+    /** Set only when the CTO Weekly Tasking turned a Rest Day ("r") or Rest on-call ("o") into a working shift: the code it was, so the roster goes back to it if the tasking later has no shift for that team and day. Any other write to the shift clears it. */
+    taskingRevert: varchar("taskingRevert", { length: 8 }),
     updatedBy: int("updatedBy"), // FK → users.id
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

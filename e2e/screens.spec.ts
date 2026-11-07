@@ -4115,7 +4115,7 @@ test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar 
   }
 });
 
-test("CTO Weekly Tasking Timeline on a phone: the time sits at the right by the team count and never prints over long or two operation names", async ({
+test("CTO Weekly Tasking Timeline: the time sits at the right by the team count on a phone, tablet and laptop, and never prints over long or two operation names", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -4163,33 +4163,42 @@ test("CTO Weekly Tasking Timeline on a phone: the time sits at the right by the 
     await page.getByRole("option", { name: "Timeline" }).click();
     // The four saved bars, and PTT and Capability's standard shift Monday to Friday.
     await expect(page.locator(".tcv-bar")).toHaveCount(14);
-    const clashes = await page.evaluate(() => {
-      const out: string[] = [];
-      for (const bar of Array.from(document.querySelectorAll(".tcv-bar"))) {
-        const t = bar.querySelector(".t");
-        if (!t) continue;
-        const tb = t.getBoundingClientRect();
-        const count = bar.querySelector(".tcv-count, .tcv-count-pair");
-        // The time is at the right, after the operations and before the count.
-        for (const e of Array.from(
-          bar.querySelectorAll(".tcv-op, .ab, .tcv-count, .tcv-count-pair")
-        )) {
-          const r = e.getBoundingClientRect();
-          const apart =
-            r.right <= tb.left + 0.5 ||
-            r.left >= tb.right - 0.5 ||
-            r.bottom <= tb.top ||
-            r.top >= tb.bottom;
-          if (!apart) out.push(`${bar.textContent} / ${e.className}`);
+    for (const [width, height] of [
+      [390, 844],
+      [820, 1180],
+      [1400, 900],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await expect(page.locator(".tcv-bar")).toHaveCount(14);
+      const clashes = await page.evaluate(() => {
+        const out: string[] = [];
+        for (const bar of Array.from(document.querySelectorAll(".tcv-bar"))) {
+          const t = bar.querySelector(".t");
+          if (!t) continue;
+          const tb = t.getBoundingClientRect();
+          const count = bar.querySelector(".tcv-count, .tcv-count-pair");
+          // The time is at the right, after the operations and before the count.
+          for (const e of Array.from(
+            bar.querySelectorAll(".tcv-op, .ab, .tcv-count, .tcv-count-pair")
+          )) {
+            const r = e.getBoundingClientRect();
+            const apart =
+              r.right <= tb.left + 0.5 ||
+              r.left >= tb.right - 0.5 ||
+              r.bottom <= tb.top ||
+              r.top >= tb.bottom;
+            if (!apart) out.push(`${bar.textContent} / ${e.className}`);
+          }
+          const bb = bar.getBoundingClientRect();
+          if (count && tb.right > count.getBoundingClientRect().left + 0.5)
+            out.push(`${bar.textContent}: time is not before the count`);
+          if (tb.left < bb.left)
+            out.push(`${bar.textContent}: time outside bar`);
         }
-        const bb = bar.getBoundingClientRect();
-        if (count && tb.right > count.getBoundingClientRect().left + 0.5)
-          out.push(`${bar.textContent}: time is not before the count`);
-        if (tb.left < bb.left) out.push(`${bar.textContent}: time outside bar`);
-      }
-      return out;
-    });
-    expect(clashes).toEqual([]);
+        return out;
+      });
+      expect(clashes, `at ${width}px`).toEqual([]);
+    }
   } finally {
     await call("opManager.deleteWeek", { weekStart: W });
   }

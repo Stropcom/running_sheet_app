@@ -185,20 +185,17 @@
 .tcv-bar.has-breach .tcv-count, .tcv-bar.has-breach .tcv-count-pair { right: 26px; }
 .tcv-menu button.tcv-menu-create { color: var(--primary); font-weight: 600; justify-content: flex-start; }
 
-/* On a phone the Timeline lane is wider than the screen, so a bar is long and
-   its name does not get cut; the time that sits across the middle of the bar
-   then lands on top of a long name or two operations. Here the time goes at the
-   right end instead, just before the team count (and the EA dot), and the
-   operations shrink with an ellipsis to make room. */
-@media (max-width: 767px) {
-  .tcv-bar { --tail: 52px; }
-  .tcv-bar.has-breach { --tail: 66px; }
-  .tcv-bar.merged { --tail: 78px; }
-  .tcv-bar.merged.has-breach { --tail: 92px; }
-  .tcv-bar:not(.merged) .tcv-op { flex: 0 1 auto; min-width: 0; max-width: none; }
-  .tcv-bar:not(.merged) .t { position: static; transform: none; left: auto; right: auto; top: auto; flex: none; margin: 0 var(--tail) 0 auto; padding-left: 8px; text-align: right; }
-  .tcv-bar.merged .t { left: auto; right: var(--tail); top: 50%; text-align: right; }
-}
+/* The time sits at the right end of a Timeline bar, just before the team count
+   (and the EA dot), on every screen size. Across the middle of the bar it
+   landed on top of a long name or two operations ("GREYFIN + AURORA0600-1500").
+   The operations shrink with an ellipsis to make room. */
+.tcv-bar { --tail: 52px; }
+.tcv-bar.has-breach { --tail: 66px; }
+.tcv-bar.merged { --tail: 78px; }
+.tcv-bar.merged.has-breach { --tail: 92px; }
+.tcv-bar:not(.merged) .tcv-op { flex: 0 1 auto; min-width: 0; max-width: none; }
+.tcv-bar:not(.merged) .t { position: static; transform: none; left: auto; right: auto; top: auto; flex: none; margin: 0 var(--tail) 0 auto; padding-left: 8px; text-align: right; }
+.tcv-bar.merged .t { left: auto; right: var(--tail); top: 50%; text-align: right; }
 
 /* Editing in every layout: the shift drop-down, the operation buttons, the editor. */
 .tcv-sel { width: 100%; min-width: 0; min-height: 34px; border: 1px solid var(--border); background: var(--background); color: var(--foreground); border-radius: 8px; padding: 4px 4px; font-size: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }

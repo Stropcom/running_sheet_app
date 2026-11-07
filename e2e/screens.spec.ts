@@ -3754,7 +3754,10 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
 
     // An 8-hour Admin shift at another start (0600-1400) gains its hour back
     // when changed to an operation.
-    const wed = page.locator(".tcv-bar", { hasText: "0600–1400" });
+    // (Team 1's Admin bar only: PTT and Capability's standard shift is 0600-1400.)
+    const wed = page
+      .locator(".tcv-bar", { hasText: "0600–1400" })
+      .filter({ hasText: "Admin" });
     await expect(wed).toHaveCount(1);
     // Scroll it into view first and let the scroll settle: a scroll that lands
     // after the click would close the menu again.
@@ -4080,7 +4083,8 @@ test("CTO Weekly Tasking Timeline on a phone: the time sits at the right by the 
     await page.getByText(/CTO Weekly Tasking — 12 Nov/).click();
     await page.getByRole("combobox", { name: "Calendar view" }).click();
     await page.getByRole("option", { name: "Timeline" }).click();
-    await expect(page.locator(".tcv-bar")).toHaveCount(4);
+    // The four saved bars, and PTT and Capability's standard shift Monday to Friday.
+    await expect(page.locator(".tcv-bar")).toHaveCount(14);
     const clashes = await page.evaluate(() => {
       const out: string[] = [];
       for (const bar of Array.from(document.querySelectorAll(".tcv-bar"))) {
@@ -4256,6 +4260,55 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     }[];
     for (const r of rows.filter(r => r.name.startsWith("E2E EDIT NEW")))
       await call("operation.delete", { id: r.id });
+  }
+});
+
+test("CTO Weekly Tasking: PTT and Capability start the week at 0600-1400 Monday to Friday and RDO at the weekend, even when only other cells were saved", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-12-03"; // a Monday, a made-up week
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    // Only one Team 1 cell is saved, so PTT and Capability have no saved cells.
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+    });
+    await call("opManager.savePriorityBoard", {
+      weekStart: W,
+      rows: [
+        { category: "WC", priority: 1, operationName: "RAVEN", sortOrder: 0 },
+      ],
+    });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 03 Dec/).click();
+    await page
+      .getByRole("button", { name: "Edit Tasking", exact: true })
+      .click();
+    for (const team of ["PTT", "CAP"]) {
+      await expect(page.getByLabel(`Shift ${team} · Mon`)).toHaveValue(
+        "0600-1400"
+      );
+      await expect(page.getByLabel(`Shift ${team} · Fri`)).toHaveValue(
+        "0600-1400"
+      );
+      await expect(page.getByLabel(`Shift ${team} · Sat`)).toHaveValue("RDO");
+      await expect(page.getByLabel(`Shift ${team} · Sun`)).toHaveValue("RDO");
+    }
+    // Showing them is not a change: there is nothing unsaved.
+    await expect(
+      page.getByRole("region", { name: "Unsaved timeline changes" })
+    ).toHaveCount(0);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
   }
 });
 

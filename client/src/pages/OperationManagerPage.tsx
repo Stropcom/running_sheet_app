@@ -63,12 +63,12 @@ import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
 import { RosterSyncDialog } from "@/components/opManager/RosterSyncDialog";
-import { toClock } from "@shared/taskingRosterSync";
 import {
-  ARVO_SHIFT,
-  DAY_SHIFT,
-  shiftAfterTaskChange,
-} from "@shared/taskingShiftHours";
+  defaultTaskingShift,
+  hasFixedShiftHours,
+} from "@shared/taskingDefaults";
+import { toClock } from "@shared/taskingRosterSync";
+import { shiftAfterTaskChange } from "@shared/taskingShiftHours";
 import {
   distinctBreachCount,
   taskingBreachCells,
@@ -182,46 +182,6 @@ function formatWeekLabel(weekStart: string): string {
       timeZone: "UTC",
     });
   return `${fmt(d)} – ${fmt(end)}`;
-}
-
-// ─── Shift auto-population ────────────────────────────────────────────────────
-// Rotation anchor: Team 1 (surv1) is on DAY shift the week of 2026-07-20.
-// Week of 13 Jul: surv1=afternoon, surv2=day
-// Week of 20 Jul: surv1=day,       surv2=afternoon
-// Week of 27 Jul: surv1=afternoon, surv2=day   ... alternates forever
-const SURV1_DAY_ANCHOR = "2026-07-20";
-
-function isSurv1DayShift(weekStart: string): boolean {
-  const anchor = new Date(SURV1_DAY_ANCHOR + "T00:00:00Z").getTime();
-  const ws = new Date(weekStart + "T00:00:00Z").getTime();
-  const diffWeeks = Math.round((ws - anchor) / (7 * 24 * 3600 * 1000));
-  // diffWeeks even (0, 2, 4, ...) = surv1 on day; odd = surv1 on afternoon
-  return diffWeeks % 2 === 0;
-}
-
-function getDefaultShift(
-  teamRow: TeamRow,
-  dayIndex: number,
-  weekStart: string
-): string {
-  // PTT: Day shift (0600-1500) Mon-Fri, RDO Sat-Sun
-  if (teamRow === "ptt") {
-    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
-  }
-  // Cap. Support: Day shift (0600-1500) Mon-Fri, RDO Sat-Sun
-  if (teamRow === "cap") {
-    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
-  }
-  const surv1IsDay = isSurv1DayShift(weekStart);
-  const isDay = teamRow === "surv1" ? surv1IsDay : !surv1IsDay;
-  if (isDay) {
-    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
-  } else {
-    if (dayIndex === 0) return "RDO";
-    if (dayIndex >= 1 && dayIndex <= 3) return ARVO_SHIFT;
-    if (dayIndex === 4) return "1000-1800";
-    return "RDO";
-  }
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -443,11 +403,23 @@ export default function OperationManagerPage() {
         DAYS.forEach((_, dayIndex) => {
           const key = `${teamRow}-${dayIndex}`;
           grid[key] = {
-            shiftTime: getDefaultShift(teamRow, dayIndex, weekStart) || null,
+            shiftTime:
+              defaultTaskingShift(teamRow, dayIndex, weekStart) || null,
           };
         });
       });
     } else {
+      // PTT and Capability always start the week with their standard shift
+      // (8 hours Monday to Friday, RDO at the weekend): a day nobody has saved
+      // yet shows it, so a week where only some cells were saved is not left
+      // with blank PTT / Capability rows. A day that was saved, even with no
+      // shift on purpose, is shown as saved.
+      for (const teamRow of ["ptt", "cap"] as const)
+        DAYS.forEach((_, dayIndex) => {
+          grid[`${teamRow}-${dayIndex}`] = {
+            shiftTime: defaultTaskingShift(teamRow, dayIndex, weekStart),
+          };
+        });
       taskingQuery.data.forEach(cell => {
         const key = `${cell.teamRow}-${cell.dayIndex}`;
         const storedShift = cell.shiftTime ?? null;
@@ -680,9 +652,14 @@ export default function OperationManagerPage() {
   ) => {
     const key = `${teamRow}-${dayIndex}`;
     // Choosing Admin makes the shift 8 hours (0700-1500); changing it back to
-    // an operation makes it a 9-hour Day shift (0600-1500) again.
+    // an operation makes it a 9-hour Day shift (0600-1500) again. (Team 1 and
+    // Team 2 only: PTT and Capability keep the shift they have, 8 hours.)
     let patch = patchIn;
-    if ("primaryTask" in patchIn && !("shiftTime" in patchIn)) {
+    if (
+      "primaryTask" in patchIn &&
+      !("shiftTime" in patchIn) &&
+      !hasFixedShiftHours(teamRow)
+    ) {
       const before = taskingGrid[key];
       const moved = shiftAfterTaskChange(
         cellShift(before),
@@ -1106,7 +1083,7 @@ export default function OperationManagerPage() {
             weekStart: nextWeekStart,
             dayIndex,
             teamRow,
-            shiftTime: getDefaultShift(teamRow, dayIndex, nextWeekStart),
+            shiftTime: defaultTaskingShift(teamRow, dayIndex, nextWeekStart),
             primaryTask: null,
             secondaryTask: null,
             blended: false,

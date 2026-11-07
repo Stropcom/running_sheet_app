@@ -1995,9 +1995,10 @@ export default function RosterPage() {
         }}
       >
         {/* ── Full screen on a phone or tablet: the controls that are left, as
-            a strip (a laptop has them in the RunLog header bar) ─────────── */}
+            a strip (a laptop, or a phone turned sideways, has them in the
+            RunLog header bar) ─────────── */}
         {fullscreen && (
-          <div className="mb-1.5 flex-shrink-0 lg:hidden">
+          <div className="roster-fs-strip mb-1.5 flex-shrink-0">
             <RosterFullscreenBar variant="strip" />
           </div>
         )}

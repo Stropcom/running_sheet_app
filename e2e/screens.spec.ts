@@ -2914,6 +2914,36 @@ test("Team Duty Roster on a phone: the month sits in the frozen corner, follows 
   await expect(corner).toBeVisible();
 });
 
+test("Team Duty Roster full screen: a phone turned sideways has zoom / Today / Exit in the header, a portrait phone keeps the strip", async ({
+  page,
+}) => {
+  const bar = page.getByRole("group", { name: "Roster full screen controls" });
+  // Sideways (landscape, both header layouts): the controls are in the header
+  // bar, at the very top, not in a strip over the grid.
+  for (const [width, height] of [
+    [844, 390],
+    [740, 360],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.goto("/cto-roster");
+    await page.getByRole("button", { name: "Full screen" }).click();
+    await expect(bar).toBeVisible();
+    await expect(bar).toHaveCount(1);
+    const box = await bar.boundingBox();
+    expect(box?.y ?? 99).toBeLessThan(40);
+    await bar.getByRole("button", { name: "Exit full screen" }).click();
+    await expect(page.getByText("Team Duty Roster")).toBeVisible();
+  }
+  // Portrait: still the strip on the page, under the header.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/cto-roster");
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(bar).toBeVisible();
+  await expect(bar).toHaveCount(1);
+  const portrait = await bar.boundingBox();
+  expect(portrait?.y ?? 0).toBeGreaterThan(55);
+});
+
 test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit in the header, Esc and Exit put it back", async ({
   page,
 }) => {

@@ -2094,9 +2094,10 @@ function DashboardLayoutContent({
               already has it. */}
           <div className="flex items-center gap-2">
             {/* Roster full screen: its few controls live here on a laptop
-                (narrower screens get a strip on the page instead). */}
+                (a portrait tablet or a small phone gets a strip on the page
+                instead; a phone turned sideways has room, so it is here). */}
             {rosterFullscreen && (
-              <div className="mr-2 hidden lg:block">
+              <div className="roster-fs-header mr-2">
                 <RosterFullscreenBar variant="header" />
               </div>
             )}
@@ -2574,6 +2575,13 @@ function DashboardLayoutContent({
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                {/* Roster full screen, phone turned sideways: the same
+                    controls as the laptop header (see index.css). */}
+                {rosterFullscreen && (
+                  <div className="roster-fs-header mr-1">
+                    <RosterFullscreenBar variant="bar" />
+                  </div>
+                )}
                 {!isInvestigator && (
                   <NotificationBell
                     className="h-11 w-11 hover:bg-accent"

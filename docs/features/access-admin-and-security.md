@@ -318,3 +318,7 @@ The roster does not get a push when the tasking changes; it pulls. Two things we
 ## Roster on a phone shows the month in the corner (v2.72.3)
 
 On a phone the roster's frozen top-left cell now reads **"Nov 2026" above "Member"**. It follows the horizontal scroll (same `visibleMonthIndex` the month picker uses), so you can always tell which month you are in, including in Full screen where the month picker is hidden. The floating month badge that desktop uses was left off the phone on purpose (it covered the day headers); the corner cell takes no extra room. The small month name on the 1st of each month is unchanged. Test id: `roster-month-corner`.
+
+## Roster full screen: controls in the header when the phone is sideways (v2.72.4)
+
+In roster Full screen the zoom −/+, Today and Exit full screen sit in the RunLog header whenever the screen is **667px or wider and sideways (landscape), or 1024px or wider**. That covers a laptop, an iPad sideways and a phone turned sideways, in both header layouts (the dark desktop header, and the compact light phone header, which uses `RosterFullscreenBar variant="bar"`). A portrait phone or tablet keeps the strip above the grid. One CSS rule (`.roster-fs-header` / `.roster-fs-strip` in `index.css`) decides which, so the controls are never in both places or in neither. On a phone turned sideways the grid gains the height the strip used (about 45px). The slider is not shown in the phone header (no room); − and + zoom. Test: e2e "…a phone turned sideways has zoom / Today / Exit in the header…".

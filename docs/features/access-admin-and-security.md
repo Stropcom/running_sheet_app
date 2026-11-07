@@ -362,3 +362,7 @@ A week that has not been **posted** is a **draft**, and the full view says so ("
 - **Post & Notify:** unchanged: the roster question first (if anything differs; Yes updates the roster, and the operation names appear on the roster tiles because the week is now posted), then who to notify.
 - **Posted:** the button is **Save**. Every Save asks "Update the roster too?" if anything differs and updates the roster on Yes; it does not notify. **Save and re-post** stays as its own second button: it saves, asks the roster question, then opens the notify step. Save never notifies by itself.
 - Checks: e2e "Save after sliding a bar asks about the roster…" (draft Save asks nothing and leaves the roster, then after posting Save asks and Yes moves the start); the other tasking tests accept "Save" or "Save draft".
+
+## Weekly Tasking: colour key taken out of the screen view (v2.76.1)
+
+The line under the Highlight chips ("Team 1, Team 2, PTT, Capability" with their colours, and "P = primary task, S = secondary task, RDO = rostered day off") is gone from the full view on every screen size. The teams' colours on the cards and bars still come from User Management → Teams. The PDF export is unchanged.

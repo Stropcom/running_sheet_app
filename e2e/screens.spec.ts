@@ -2857,14 +2857,14 @@ test("CTO Weekly Tasking on a phone: only Calendar and Timeline, no colour or le
     await page.getByText(/CTO Weekly Tasking — 07 May/).click();
     const picker = page.getByRole("combobox", { name: "Calendar view" });
     await expect(picker).toContainText("Calendar");
-    await expect(page.locator(".tcv-legend")).toHaveCount(0);
     await picker.click();
     await expect(page.getByRole("option")).toHaveText(["Calendar", "Timeline"]);
     await page.keyboard.press("Escape");
 
-    // A laptop still has all four, and the key.
+    // A laptop still has all four layouts, and no colour key (it was taken
+    // out of the screen view).
     await page.setViewportSize({ width: 1400, height: 900 });
-    await expect(page.locator(".tcv-legend")).toHaveCount(1);
+    await expect(page.locator(".tcv-legend")).toHaveCount(0);
     await page.getByRole("combobox", { name: "Calendar view" }).click();
     await expect(page.getByRole("option")).toHaveCount(4);
   } finally {

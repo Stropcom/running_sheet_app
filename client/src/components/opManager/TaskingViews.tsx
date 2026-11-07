@@ -1816,20 +1816,6 @@ export function TaskingCalendarViews({
           </div>
         </div>
       </div>
-      {!isMobile && (
-        <div className="tcv-legend">
-          {teams.map(t => (
-            <span key={t.id} style={teamStyle(t)}>
-              <i />
-              {t.label}
-            </span>
-          ))}
-          <span>
-            P = primary task, S = secondary task, RDO = rostered day off
-          </span>
-        </div>
-      )}
-
       {view === "cal-timeline" && edit?.editable && (
         <p className="px-1 text-xs text-muted-foreground">
           Slide a bar to change its time (steps of 30 minutes, a start from

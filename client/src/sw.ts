@@ -1,5 +1,9 @@
 /// <reference lib="webworker" />
-import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
+import {
+  cleanupOutdatedCaches,
+  matchPrecache,
+  precacheAndRoute,
+} from "workbox-precaching";
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -29,4 +33,30 @@ self.addEventListener("message", (event: ExtendableMessageEvent) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+});
+
+// Opening any page of the installed app with no connection (a reload on a
+// deep link, or opening the app on a phone with no signal) used to fail,
+// because only "/" and "/index.html" were answered from the cache. Every other
+// page load is tried on the network first as always, and only if that fails
+// is the cached app shell served — it then works out the page from the address
+// like any other visit. API calls, uploads and files are never answered this
+// way.
+self.addEventListener("fetch", (event: FetchEvent) => {
+  const req = event.request;
+  if (req.mode !== "navigate") return;
+  const path = new URL(req.url).pathname;
+  if (path === "/" || path === "/index.html") return; // already precached
+  if (
+    path.startsWith("/api/") ||
+    path.startsWith("/local-uploads/") ||
+    path.startsWith("/manus-storage/")
+  )
+    return;
+  event.respondWith(
+    fetch(req).catch(async () => {
+      const shell = await matchPrecache("/index.html");
+      return shell ?? Response.error();
+    })
+  );
 });

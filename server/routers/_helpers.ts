@@ -62,7 +62,8 @@ export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
  */
 export async function guardActiveOperation(operationId: number) {
   const op = await getOperationById(operationId);
-  if (!op)
+  // An operation in the Recycle Bin is gone as far as editing goes.
+  if (!op || op.deletedAt)
     throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
   if (op.status !== "active") {
     const label = op.status === "before_court" ? "Before Court" : "Archive";
@@ -73,11 +74,36 @@ export async function guardActiveOperation(operationId: number) {
   }
 }
 
+/**
+ * Every write to a sheet (rows, members, details) goes through this: the
+ * sheet must exist and not be in the Recycle Bin, its operation must be live
+ * and Active, and the sheet must not be closed. A closed sheet is reopened
+ * first (`sheet.reopen`), which this does not block.
+ */
 export async function guardActiveSheet(sheetId: number) {
   const sheet = await getRunningSheetById(sheetId);
-  if (!sheet)
+  if (!sheet || sheet.deletedAt)
     throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
   await guardActiveOperation(sheet.operationId);
+  if (sheet.closedAt)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This sheet is closed. Reopen it first to make changes.",
+    });
+}
+
+/**
+ * For signing: the sheet and its operation must still exist (not in the
+ * Recycle Bin). Signing stays possible once an operation has moved to Before
+ * Court; only taking a signature away needs the full guardActiveSheet.
+ */
+export async function guardLiveSheet(sheetId: number) {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet || sheet.deletedAt)
+    throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
+  const op = await getOperationById(sheet.operationId);
+  if (!op || op.deletedAt)
+    throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
 }
 
 // A photo's identity (which Target/Associate/Vehicle/person it's tagged

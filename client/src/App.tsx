@@ -2,7 +2,14 @@ import { Toaster } from "@/components/ui/sonner";
 import { normalizeChromeStyle, normalizeColorPalette } from "@shared/const";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Redirect, Route, Switch } from "wouter";
+import { Redirect, Route, Switch, useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { useOffline } from "@/contexts/OfflineContext";
+import {
+  looksOffline,
+  offlineReopenView,
+  readLastOfficer,
+} from "@shared/offlineReopen";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { NativeLocationSharing } from "./components/NativeLocationSharing";
@@ -384,6 +391,26 @@ function Router() {
   );
 }
 
+// Opened with no connection and not signed in: go to the drafts saved on this
+// device for the last officer (shared/offlineReopen.ts). Done here, above every
+// page, because a page that is still waiting for the server shows its own
+// loading screen before any layout can redirect.
+function OfflineReopenRedirect() {
+  const { user, loading, error } = useAuth();
+  const { isOnline } = useOffline();
+  const [path, setLocation] = useLocation();
+  const view = offlineReopenView({
+    signedIn: Boolean(user),
+    online: !looksOffline(isOnline, error),
+    lastOfficer: readLastOfficer(),
+    path,
+  });
+  useEffect(() => {
+    if (!loading && view === "go-drafts") setLocation("/draft");
+  }, [loading, view, setLocation]);
+  return null;
+}
+
 function App() {
   return (
     <ErrorBoundary>
@@ -398,6 +425,7 @@ function App() {
               <ForcedLocationSharing />
               <Toaster />
               <DraftModeBanner />
+              <OfflineReopenRedirect />
               <Router />
             </FaceMatchNotificationProvider>
           </SectionColorProvider>

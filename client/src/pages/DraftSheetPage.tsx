@@ -109,23 +109,25 @@ export default function DraftSheetPage() {
       .map(c => c.trim().toUpperCase())
       .filter(Boolean);
 
+    // Text the officer cleared is saved as empty (not "left as it was"), and
+    // the CINs travel with the edit.
     await updateDraftRow(rowLocalId, {
-      time: rowTime || undefined,
-      observation: rowObs || undefined,
+      time: rowTime,
+      observation: rowObs,
       members,
     });
     await enqueueSyncAction({
       type: "updateRow",
       localId: rowLocalId,
-      payload: { time: rowTime || undefined, observation: rowObs || undefined },
+      payload: { time: rowTime, observation: rowObs, members },
     });
     setRows(prev =>
       prev.map(r =>
         r.localId === rowLocalId
           ? {
               ...r,
-              time: rowTime || undefined,
-              observation: rowObs || undefined,
+              time: rowTime,
+              observation: rowObs,
               members,
             }
           : r

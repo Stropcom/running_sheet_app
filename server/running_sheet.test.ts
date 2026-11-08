@@ -47,6 +47,11 @@ vi.mock("./db", () => ({
     updatedAt: new Date(),
   }),
   createRunningSheet: vi.fn().mockResolvedValue(1),
+  // pass-through: no replay id in these tests
+  runOnce: vi.fn(
+    async (_u: number, _k: unknown, _kind: string, make: () => unknown) =>
+      make()
+  ),
   updateRunningSheet: vi.fn().mockResolvedValue(undefined),
   deleteRunningSheet: vi.fn().mockResolvedValue(undefined),
   softDeleteSheet: vi.fn().mockResolvedValue(undefined),
@@ -447,6 +452,8 @@ describe("certification.certify", () => {
 describe("certification.uncertify", () => {
   it("allows certifier to uncertify", async () => {
     const { getMembersByRowIds } = await import("./db");
+    // Taking a signature away needs an open sheet in an Active operation.
+    await mockActiveSheetAndOperation();
     vi.mocked(getMembersByRowIds).mockResolvedValueOnce([
       { id: 1, rowId: 1, memberName: "484" },
     ] as never);

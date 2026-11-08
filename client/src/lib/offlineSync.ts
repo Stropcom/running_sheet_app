@@ -18,6 +18,7 @@ import {
   getDraftOperation,
   getDraftTarget,
   getDraftSheet,
+  getDraftRow,
 } from "./offlineStore";
 
 export type SyncStatus = "idle" | "syncing" | "success" | "error";
@@ -48,11 +49,34 @@ function resolveServerId(
 }
 
 /**
- * Run the full sync queue.  Returns a summary of what was synced / failed.
- * Callers should invalidate tRPC caches after a successful sync.
+ * Run the sync queue for `userId` (the person signed in now). Returns a
+ * summary of what was synced / failed. Callers should invalidate tRPC caches
+ * after a sync.
+ *
+ *  - Only one tab replays at a time (a Web Lock), so two open tabs can't both
+ *    send the same action. A tab that finds another syncing returns at once.
+ *  - Each action is removed only when it works. One that fails stays queued
+ *    with its error, so it can be retried; later actions that don't depend on
+ *    it still go.
+ *  - Actions queued by a different signed-in user are left alone.
  */
-export async function runSync(): Promise<SyncResult> {
-  const queue = await getSyncQueue();
+export async function runSync(userId?: number): Promise<SyncResult> {
+  const locks = (
+    typeof navigator !== "undefined" ? navigator.locks : undefined
+  ) as LockManager | undefined;
+  if (!locks) return runSyncLocked(userId); // no Web Locks here: single-tab as before
+  const result = await locks.request(
+    "runlog-offline-sync",
+    { ifAvailable: true },
+    async lock => (lock ? runSyncLocked(userId) : null)
+  );
+  return result ?? { synced: 0, failed: 0, errors: [] };
+}
+
+async function runSyncLocked(userId?: number): Promise<SyncResult> {
+  const queue = (await getSyncQueue()).filter(
+    e => e.userId === undefined || userId === undefined || e.userId === userId
+  );
   if (queue.length === 0) return { synced: 0, failed: 0, errors: [] };
 
   let synced = 0;
@@ -60,18 +84,29 @@ export async function runSync(): Promise<SyncResult> {
   const errors: string[] = [];
 
   // Pre-populate idMap from any drafts that were already partially synced
-  // (e.g. app was closed mid-sync)
+  // (e.g. app was closed mid-sync, or an earlier action in this queue failed
+  // and is being retried now). A queued action can point at a draft that is
+  // not itself queued any more, so every local id it names is looked up.
+  const remember = async (localId: string | undefined) => {
+    if (!localId || idMap.has(localId)) return;
+    const found =
+      (await getDraftOperation(localId)) ??
+      (await getDraftTarget(localId)) ??
+      (await getDraftSheet(localId)) ??
+      (await getDraftRow(localId));
+    if (found?.serverId) idMap.set(localId, found.serverId);
+  };
   for (const entry of queue) {
-    const { action } = entry;
-    if (action.type === "createOperation") {
-      const draft = await getDraftOperation(action.localId);
-      if (draft?.serverId) idMap.set(action.localId, draft.serverId);
-    } else if (action.type === "createTarget") {
-      const draft = await getDraftTarget(action.localId);
-      if (draft?.serverId) idMap.set(action.localId, draft.serverId);
-    } else if (action.type === "createSheet") {
-      const draft = await getDraftSheet(action.localId);
-      if (draft?.serverId) idMap.set(action.localId, draft.serverId);
+    const a = entry.action as unknown as {
+      localId?: string;
+      pendingLocalId?: string;
+      payload?: Record<string, unknown>;
+    };
+    await remember(a.localId);
+    await remember(a.pendingLocalId);
+    for (const k of ["operationLocalId", "targetLocalId", "sheetLocalId"]) {
+      const v = a.payload?.[k];
+      if (typeof v === "string") await remember(v);
     }
   }
 
@@ -120,6 +155,9 @@ async function processSyncEntry(entry: {
     case "createOperation": {
       const { localId, payload } = action;
       const result = await trpcClient.operation.create.mutate({
+        // The draft's own id: sent again after a lost reply, it returns the
+        // operation already made instead of making a second one.
+        clientActionId: localId,
         name: payload.name,
         promisNumber: payload.promisNumber,
         imsNumber: payload.imsNumber,
@@ -145,6 +183,7 @@ async function processSyncEntry(entry: {
       if (!operationId)
         throw new Error(`Cannot resolve operationId for target ${localId}`);
       const result = await trpcClient.target.registry.create.mutate({
+        clientActionId: localId,
         name: payload.name,
         linkToOperationId: operationId,
       });
@@ -167,6 +206,7 @@ async function processSyncEntry(entry: {
         undefined;
 
       const result = await trpcClient.sheet.create.mutate({
+        clientActionId: localId,
         operationId,
         sheetDate: payload.sheetDate,
         targetId: targetId ?? null,
@@ -186,10 +226,15 @@ async function processSyncEntry(entry: {
       if (!sheetId)
         throw new Error(`Cannot resolve sheetId for row ${localId}`);
 
+      // The row as it stands now (its text, time and CINs after any offline
+      // edits), not as it was when first queued: typed CINs and text that was
+      // cleared offline are not lost or brought back.
+      const draft = await getDraftRow(localId);
       const result = await trpcClient.row.create.mutate({
+        clientActionId: localId,
         sheetId,
-        time: payload.time,
-        observation: payload.observation,
+        time: draft ? draft.time : payload.time,
+        observation: draft ? draft.observation : payload.observation,
         // The CINs are added below, from what was queued, and the time is the
         // one written when the row was made — not the time it is replayed.
         autoFill: false,
@@ -198,16 +243,11 @@ async function processSyncEntry(entry: {
       await updateDraftRow(localId, { serverId: result.id, synced: true });
 
       // Add CIN members to the row
-      for (const cin of payload.members ?? []) {
-        try {
-          await trpcClient.member.add.mutate({
-            rowId: result.id,
-            memberName: cin,
-          });
-        } catch {
-          // Non-fatal — member might not exist on server
-        }
-      }
+      await addMembersOnce(
+        result,
+        sheetId,
+        draft?.members ?? payload.members ?? []
+      );
       break;
     }
 
@@ -216,7 +256,9 @@ async function processSyncEntry(entry: {
       const serverId = idMap.get(localId);
       if (!serverId)
         throw new Error(`Cannot resolve serverId for row update ${localId}`);
-      await trpcClient.row.update.mutate({ id: serverId, ...payload });
+      const { members, ...fields } = payload;
+      await trpcClient.row.update.mutate({ id: serverId, ...fields });
+      if (members) await reconcileRowMembers(localId, serverId, members);
       break;
     }
 
@@ -236,6 +278,7 @@ async function processSyncEntry(entry: {
     case "addRowToServerSheet": {
       const { localId, payload } = action;
       const result = await trpcClient.row.create.mutate({
+        clientActionId: `server-sheet-row:${localId}`,
         sheetId: payload.sheetServerId,
         time: payload.time,
         observation: payload.observation,
@@ -245,16 +288,11 @@ async function processSyncEntry(entry: {
       });
       idMap.set(String(localId), result.id);
       // Add CIN members if any
-      for (const cin of payload.members ?? []) {
-        try {
-          await trpcClient.member.add.mutate({
-            rowId: result.id,
-            memberName: cin,
-          });
-        } catch {
-          // Non-fatal
-        }
-      }
+      await addMembersOnce(
+        result,
+        payload.sheetServerId,
+        payload.members ?? []
+      );
       break;
     }
 
@@ -310,6 +348,67 @@ async function processSyncEntry(entry: {
         // Non-fatal — member may already be removed
       }
       break;
+    }
+  }
+}
+
+/**
+ * Makes a row that already exists on the server carry exactly `members`
+ * (CINs typed in the draft after the row was first sent): adds the missing
+ * ones, removes the ones taken off.
+ */
+async function reconcileRowMembers(
+  rowLocalId: string,
+  rowServerId: number,
+  members: string[]
+): Promise<void> {
+  const draft = await getDraftRow(rowLocalId);
+  const sheetId = resolveServerId(draft?.sheetLocalId, draft?.sheetServerId);
+  if (!sheetId) return;
+  const rows = await trpcClient.row.list.query({ sheetId });
+  const onServer = rows.find(r => r.id === rowServerId)?.members ?? [];
+  const want = new Set(members.map(m => m.toUpperCase()));
+  const have = new Set(onServer.map(m => m.memberName.toUpperCase()));
+  for (const m of onServer)
+    if (m.memberName !== "__SPACE__" && !want.has(m.memberName.toUpperCase()))
+      await trpcClient.member.remove.mutate({ id: m.id, rowId: rowServerId });
+  for (const cin of Array.from(want))
+    if (!have.has(cin))
+      await trpcClient.member.add.mutate({
+        rowId: rowServerId,
+        memberName: cin,
+      });
+}
+
+/**
+ * Puts the queued CINs on a row just made. When the server answered "already
+ * made" (a replay: it returns only the id, no row number), the CINs may be on
+ * it already, so only the missing ones are added — never twice.
+ */
+async function addMembersOnce(
+  result: { id: number; rowNumber?: number },
+  sheetId: number,
+  cins: string[]
+): Promise<void> {
+  if (cins.length === 0) return;
+  let have = new Set<string>();
+  if (result.rowNumber === undefined) {
+    const rows = await trpcClient.row.list.query({ sheetId });
+    have = new Set(
+      (rows.find(r => r.id === result.id)?.members ?? []).map(m =>
+        m.memberName.toUpperCase()
+      )
+    );
+  }
+  for (const cin of cins) {
+    if (have.has(cin.toUpperCase())) continue;
+    try {
+      await trpcClient.member.add.mutate({
+        rowId: result.id,
+        memberName: cin,
+      });
+    } catch {
+      // Non-fatal — member might not exist on server
     }
   }
 }

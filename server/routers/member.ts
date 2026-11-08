@@ -108,6 +108,14 @@ export const memberRouter = router({
       await guardActiveSheet(row.sheetId);
       if (row.isLocked)
         throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
+      const onRow = new Set(
+        (await getMembersByRowIds([input.rowId])).map(m => m.id)
+      );
+      if (input.orderedIds.some(id => !onRow.has(id)))
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "That order includes a CIN that is not on this row.",
+        });
       await reorderRowMembers(input.rowId, input.orderedIds);
       return { success: true };
     }),
@@ -126,6 +134,13 @@ export const memberRouter = router({
       const removedMember = (await getMembersByRowIds([input.rowId])).find(
         m => m.id === input.id
       );
+      // The CIN must really be on this row — otherwise a made-up pair would
+      // remove a CIN from some other (possibly locked) row.
+      if (!removedMember)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "That CIN is not on this row.",
+        });
       await removeRowMember(input.id);
       await createAuditLog({
         sheetId: row.sheetId,

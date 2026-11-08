@@ -14,7 +14,11 @@ import {
   setRowLocked,
 } from "../db";
 
-import { certifierOrAdminProcedure } from "./_helpers";
+import {
+  certifierOrAdminProcedure,
+  guardActiveSheet,
+  guardLiveSheet,
+} from "./_helpers";
 
 export const certificationRouter = router({
   certify: certifierOrAdminProcedure
@@ -24,15 +28,18 @@ export const certificationRouter = router({
       if (!row)
         throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
 
+      await guardLiveSheet(row.sheetId);
+      // The CIN being signed must really be on this row (and a spacer is not
+      // a person) — for every role, not just members.
+      const members = await getMembersByRowIds([input.rowId]);
+      const member = members.find(m => m.id === input.memberId);
+      if (!member || member.memberName === "__SPACE__")
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Member not found on this row.",
+        });
       // Member role: can only certify their own CIN
       if (ctx.user.role === "member") {
-        const members = await getMembersByRowIds([input.rowId]);
-        const member = members.find(m => m.id === input.memberId);
-        if (!member)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Member not found.",
-          });
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "";
         if (member.memberName.toLowerCase() !== userCIN.toLowerCase()) {
           throw new TRPCError({
@@ -64,12 +71,12 @@ export const certificationRouter = router({
         isActive: true,
       });
 
-      const [members, certs] = await Promise.all([
+      const [membersNow, certs] = await Promise.all([
         getMembersByRowIds([input.rowId]),
         getCertificationsByRowIds([input.rowId]),
       ]);
       // Exclude spacer entries from certification checks
-      const rowMembers = members.filter(
+      const rowMembers = membersNow.filter(
         m => m.rowId === input.rowId && m.memberName !== "__SPACE__"
       );
       const activeCerts = certs.filter(
@@ -99,6 +106,7 @@ export const certificationRouter = router({
   certifyAllForCin: certifierOrAdminProcedure
     .input(z.object({ sheetId: z.number(), cin: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await guardLiveSheet(input.sheetId);
       // Member role: can only certify their own CIN
       if (ctx.user.role === "member") {
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "";
@@ -179,9 +187,17 @@ export const certificationRouter = router({
       if (!row)
         throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
 
+      // Taking a signature away changes the record: the sheet must be open
+      // (a closed sheet is reopened first) and live.
+      await guardActiveSheet(row.sheetId);
+      const rowMembers = await getMembersByRowIds([input.rowId]);
+      if (!rowMembers.some(m => m.id === input.memberId))
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Member not found on this row.",
+        });
       // Member role: can only unlock rows that contain their own CIN
       if (ctx.user.role === "member") {
-        const rowMembers = await getMembersByRowIds([input.rowId]);
         const userCIN = (ctx.user.cin ?? ctx.user.username ?? "").toLowerCase();
         const hasCIN = rowMembers.some(
           m => m.memberName.toLowerCase() === userCIN
@@ -219,6 +235,7 @@ export const certificationRouter = router({
       if (!row)
         throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
 
+      await guardActiveSheet(row.sheetId);
       // Member role: can only bulk-unlock rows that contain their own CIN
       if (ctx.user.role === "member") {
         const rowMembers = await getMembersByRowIds([input.rowId]);

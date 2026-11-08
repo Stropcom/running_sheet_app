@@ -2634,3 +2634,15 @@ export const appSettings = mysqlTable("app_settings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AppSettingRow = typeof appSettings.$inferSelect;
+
+// Offline work is sent as one action per record the officer made. The phone
+// gives each create an id; the server notes it here so a replay of the same
+// action (a lost reply, a second open tab) returns the record that was already
+// made instead of making it twice. `actionKey` is "<userId>:<client id>";
+// resultId is 0 while the first attempt is still being made.
+export const offlineActionKeys = mysqlTable("offline_action_keys", {
+  actionKey: varchar("actionKey", { length: 120 }).primaryKey(),
+  kind: varchar("kind", { length: 24 }).notNull(),
+  resultId: int("resultId").default(0).notNull(),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+});

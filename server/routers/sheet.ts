@@ -40,6 +40,7 @@ import {
   softDeleteSheet,
   getDismissedFindingKeys,
   dismissScanFinding,
+  runOnce,
 } from "../db";
 import { checkRunningSheet } from "../sheetCheck";
 
@@ -48,6 +49,7 @@ import {
   adminProcedure,
   guardActiveOperation,
   guardActiveSheet,
+  guardLiveSheet,
 } from "./_helpers";
 
 /** The operation a sheet is moved or copied into has to exist and not be in the recycle bin. */
@@ -98,6 +100,8 @@ export const sheetRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
+      // A sheet in the Recycle Bin (or whose operation is) is not opened.
+      await guardLiveSheet(input.id);
       const sheet = await getRunningSheetById(input.id);
       if (!sheet)
         throw new TRPCError({
@@ -128,6 +132,8 @@ export const sheetRouter = router({
       z.object({
         operationId: z.number(),
         sheetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        /** From the offline sync: makes this create happen once. */
+        clientActionId: z.string().max(100).optional(),
         targetId: z.number().optional().nullable(),
         sheetCins: z
           .array(
@@ -143,45 +149,47 @@ export const sheetRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       await guardActiveOperation(input.operationId);
-      // A target is always created (with full structured detail) via the
-      // Add Target dialog before this runs — here we only ever link an
-      // already-real target, never create one from a bare name.
-      if (input.targetId) {
-        await linkTargetToOperation(input.targetId, input.operationId);
-      }
-      // Title is auto-generated (DATE - AUTHOR CIN - OPERATION (TARGET)),
-      // never free-typed — see shared/runningSheetTitle.ts. Missing pieces
-      // (no author yet, no target) are left out, not blocked on.
-      const [operation, target] = await Promise.all([
-        getOperationById(input.operationId),
-        input.targetId ? getTargetById(input.targetId) : null,
-      ]);
-      const authorCIN = input.sheetCins?.find(c => c.isAuthor)?.cin ?? null;
-      const title = buildRunningSheetTitle({
-        sheetDate: input.sheetDate,
-        authorCIN,
-        operationName: operation?.name ?? "Untitled Operation",
-        targetBracketLabel: getTargetTitleBracket(target ?? null),
+      return runOnce(ctx.user.id, input.clientActionId, "sheet", async () => {
+        // A target is always created (with full structured detail) via the
+        // Add Target dialog before this runs — here we only ever link an
+        // already-real target, never create one from a bare name.
+        if (input.targetId) {
+          await linkTargetToOperation(input.targetId, input.operationId);
+        }
+        // Title is auto-generated (DATE - AUTHOR CIN - OPERATION (TARGET)),
+        // never free-typed — see shared/runningSheetTitle.ts. Missing pieces
+        // (no author yet, no target) are left out, not blocked on.
+        const [operation, target] = await Promise.all([
+          getOperationById(input.operationId),
+          input.targetId ? getTargetById(input.targetId) : null,
+        ]);
+        const authorCIN = input.sheetCins?.find(c => c.isAuthor)?.cin ?? null;
+        const title = buildRunningSheetTitle({
+          sheetDate: input.sheetDate,
+          authorCIN,
+          operationName: operation?.name ?? "Untitled Operation",
+          targetBracketLabel: getTargetTitleBracket(target ?? null),
+        });
+        const id = await createRunningSheet({
+          operationId: input.operationId,
+          title,
+          sheetDate: input.sheetDate,
+          targetId: input.targetId ?? null,
+          targetName: null,
+          sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
+          createdBy: ctx.user.id,
+        });
+        await createAuditLog({
+          sheetId: id,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "sheet_created",
+          details: `Sheet "${title}" created`,
+          createdAt: Date.now(),
+        });
+        return { id };
       });
-      const id = await createRunningSheet({
-        operationId: input.operationId,
-        title,
-        sheetDate: input.sheetDate,
-        targetId: input.targetId ?? null,
-        targetName: null,
-        sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
-        createdBy: ctx.user.id,
-      });
-      await createAuditLog({
-        sheetId: id,
-        userId: ctx.user.id,
-        userName: ctx.user.cin ?? "Unknown",
-        userCIN: ctx.user.cin ?? undefined,
-        action: "sheet_created",
-        details: `Sheet "${title}" created`,
-        createdAt: Date.now(),
-      });
-      return { id };
     }),
 
   update: protectedProcedure
@@ -447,7 +455,7 @@ export const sheetRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const sheet = await getRunningSheetById(input.sheetId);
-      if (!sheet)
+      if (!sheet || sheet.deletedAt)
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Running sheet not found.",
@@ -488,7 +496,7 @@ export const sheetRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const sheet = await getRunningSheetById(input.sheetId);
-      if (!sheet)
+      if (!sheet || sheet.deletedAt)
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Running sheet not found.",

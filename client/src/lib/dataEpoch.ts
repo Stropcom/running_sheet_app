@@ -24,17 +24,20 @@ function write(epoch: number): boolean {
   }
 }
 
-export async function applyDataEpoch(serverEpoch: number): Promise<void> {
-  if (!serverEpoch || read() === String(serverEpoch)) return;
+/** Resolves true when the drafts were dropped and the page is reloading (so
+ *  nothing should be sent from this page load). */
+export async function applyDataEpoch(serverEpoch: number): Promise<boolean> {
+  if (!serverEpoch || read() === String(serverEpoch)) return false;
   // If this device can't remember the number, do nothing rather than reload
   // on every visit.
-  if (!write(serverEpoch)) return;
+  if (!write(serverEpoch)) return false;
   try {
     await clearAllOfflineData();
   } catch {
     // no offline store on this device: nothing to drop
   }
   window.location.reload();
+  return true;
 }
 
 /** Marks this device as up to date (the person who did the zero). */

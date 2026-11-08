@@ -4,6 +4,7 @@
  * every `import { … } from "./db"` elsewhere in the server is unchanged.
  */
 export { withDedicatedConnection, getDb } from "./db/core";
+export { runOnce } from "./db/offlineActions";
 export {
   getUserByUsername,
   getUserById,

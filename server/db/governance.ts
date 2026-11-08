@@ -580,6 +580,7 @@ export interface SheetSummaryUpsertInput {
   objectives?: string | null;
   criticalDecisions?: string | null;
   issues?: string | null;
+  intelHiddenKeys?: string | null;
   lastEditedByCIN?: string | null;
 }
 

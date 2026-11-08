@@ -27,6 +27,12 @@ import { scopeEntities } from "@shared/operationAccess";
 import { holdsPriority, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
+import {
+  aggregateWeeklyIntel,
+  buildSheetIntel,
+  type WeeklyIntelInput,
+  type WeeklyIntelItem,
+} from "@shared/sheetIntel";
 
 import {
   FingerprintCache,
@@ -95,6 +101,7 @@ import {
   associates,
   users,
   sheetSummaries,
+  sheetIntelLines,
   operationTargetLinks,
   intelligenceGeocodeCache,
   entityAliases,
@@ -1720,6 +1727,11 @@ export interface WeeklyActivityNewIntel {
   vehicles: string[];
   locations: string[];
   images: WeeklyActivityImage[];
+  /** "Actions and items this week": what the target carried, used, did with
+   * money or at meetings — one entry per item or action, with straight counts
+   * for the week. Built from each sheet's New Intelligence (the lines left
+   * ticked, plus hand-added ones). */
+  actions: WeeklyIntelItem[];
 }
 
 export interface WeeklyActivityTargetBlock {
@@ -2095,6 +2107,85 @@ export async function getWeeklyActivityReport(
     }
   }
 
+  // ── Actions and items — what the target carried, used, did with money or
+  // at meetings (shared/sheetIntel.ts). Straight counts for the week: every
+  // line counts, nothing is carried over from other weeks. A line the
+  // supervisor unticked on the sheet's New Intelligence is left out; a
+  // hand-added line is in and says who added it. ──────────────────────────
+  const intelInputsByGroup = new Map<GroupKey, WeeklyIntelInput[]>();
+  {
+    const sheetIdsInGroups = Array.from(
+      new Set(
+        Array.from(groupSheetIds.values()).flatMap(ids => Array.from(ids))
+      )
+    );
+    const manualBySheet = new Map<
+      number,
+      (typeof sheetIntelLines.$inferSelect)[]
+    >();
+    if (sheetIdsInGroups.length) {
+      const manual = await db
+        .select()
+        .from(sheetIntelLines)
+        .where(inArray(sheetIntelLines.sheetId, sheetIdsInGroups));
+      for (const m of manual) {
+        if (!manualBySheet.has(m.sheetId)) manualBySheet.set(m.sheetId, []);
+        manualBySheet.get(m.sheetId)!.push(m);
+      }
+    }
+    const weekRowsBySheet = new Map<number, typeof rowsInWeek>();
+    for (const r of rowsInWeek) {
+      if (!weekRowsBySheet.has(r.sheetId)) weekRowsBySheet.set(r.sheetId, []);
+      weekRowsBySheet.get(r.sheetId)!.push(r);
+    }
+    for (const [key, sheetIds] of Array.from(groupSheetIds.entries())) {
+      const inputs: WeeklyIntelInput[] = [];
+      for (const sheetId of Array.from(sheetIds)) {
+        const sheetDate = resolveSheetDate(sheetId);
+        let hidden: string[] = [];
+        try {
+          const raw = summaryBySheetId.get(sheetId)?.intelHiddenKeys;
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(parsed)) hidden = parsed;
+        } catch {
+          hidden = [];
+        }
+        // Only the week's rows; hand-added lines belong to the sheet, so they
+        // are in when the sheet's own date is in the week.
+        const manualLines =
+          sheetDate && sheetDate >= weekStart && sheetDate <= weekEnd
+            ? (manualBySheet.get(sheetId) ?? [])
+            : [];
+        const lines = buildSheetIntel({
+          rows: weekRowsBySheet.get(sheetId) ?? [],
+          manualLines,
+          hiddenKeys: hidden,
+        });
+        for (const l of lines) {
+          if (!l.included) continue;
+          const date =
+            l.source === "manual"
+              ? sheetDate
+              : (() => {
+                  const row = l.rowId ? rowById.get(l.rowId) : undefined;
+                  return row ? resolveRowDate(row) : null;
+                })();
+          if (!date) continue;
+          inputs.push({
+            category: l.category,
+            heading: l.heading,
+            group: l.group,
+            sentence: l.sentence,
+            matched: l.matched,
+            date,
+            addedByCIN: l.source === "manual" ? l.addedByCIN : undefined,
+          });
+        }
+      }
+      if (inputs.length) intelInputsByGroup.set(key, inputs);
+    }
+  }
+
   const attachments = await db
     .select({
       id: rowAttachments.id,
@@ -2276,6 +2367,7 @@ export async function getWeeklyActivityReport(
         images: (imagesByGroup.get(key) ?? []).sort(
           (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
         ),
+        actions: aggregateWeeklyIntel(intelInputsByGroup.get(key) ?? []),
       },
     };
     if (!targetBlocksByOp.has(operationId))

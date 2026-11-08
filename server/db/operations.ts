@@ -18,6 +18,7 @@ import {
   targets,
   associates,
   governanceRecords,
+  sheetIntelLines,
   targetShortcuts,
   operationTargetLinks,
   customMapMarkers,
@@ -560,6 +561,8 @@ export async function deleteRunningSheet(id: number) {
   }
   // Delete governance record for this sheet
   await db.delete(governanceRecords).where(eq(governanceRecords.sheetId, id));
+  // Hand-added New Intelligence lines on this sheet's Supervisor Summary
+  await db.delete(sheetIntelLines).where(eq(sheetIntelLines.sheetId, id));
   // Delete audit logs for this sheet (retained for accountability until sheet is permanently deleted)
   await db.delete(auditLogs).where(eq(auditLogs.sheetId, id));
   // Delete RS mapping waypoint overrides for this sheet

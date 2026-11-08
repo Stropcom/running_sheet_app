@@ -129,7 +129,7 @@ const ITEM_NOUN =
   "(?:suitcases?|bags?|handbags?|backpacks?|back\\s+packs?|rucksacks?|duff?le\\s+bags?|gym\\s+bags?|sports\\s+bags?|shopping\\s+bags?|plastic\\s+bags?|garbage\\s+bags?|luggage|briefcases?|satchels?|parcels?|packages?|envelopes?|cartons?|crates?|eskies|esky|boxes|box|items?|objects?|something|totes?|pouch(?:es)?|folders?|documents?|papers|notebooks?|diary|ledger|clipboard|laptop\\s+bag)";
 const ITEM_NOUN_RE = new RegExp("\\b" + ITEM_NOUN + "\\b", "gi");
 const ITEM_VERB =
-  /\b(?:carry(?:ing)?|carried|hold(?:ing)?|held|retriev\w+|remov\w+|took|taken|taking|collect\w+|picked\s+up|place|places|placed|placing|put|putting|pulled|lifted|lifting|loaded|loading|unloaded|unloading|wheel\w+|dragg?\w+|handed|passed|swapp?\w+|exchang\w+|dropped|discard\w+|dispos\w+|dumped|threw|wearing|carries|produced|emptied)\b/i;
+  /\b(?:carry(?:ing)?|carried|hold(?:ing)?|held|retriev\w+|remov\w+|took|taken|taking|collect\w+|picked\s+up|place|places|placed|placing|put|putting|pulled|lifted|lifting|loaded|loading|unloaded|unloading|wheel\w+|dragg?\w+|handed|handing|hand(?=\s+(?:over|an?|the|his|her|their|it|them)\b)|passed|passing|swapp?\w+|exchang\w+|dropped|discard\w+|dispos\w+|dumped|threw|wearing|carries|produced|emptied)\b/i;
 const NOT_AN_ITEM_BOX =
   /\b(?:post|phone|letter|mail|call|ticket|fuse|junction|horse|witness|jury|black|sound|money|gearbox|ballot)\s*$/i;
 
@@ -373,7 +373,7 @@ const MEET_RULES: Array<{
 }> = [
   {
     re: new RegExp(
-      "\\b(?:handed|passed|gave|received|exchanged|swapped|delivered|dropped\\s+off)\\b[^.]{0,60}?\\b(?:to|from|with)\\s+(?:an?\\s+|the\\s+)?(?:\\w+\\s+){0,2}?" +
+      "\\b(?:handed|handing|hand(?=\\s+(?:over|an?|the|his|her|their|it|them)\\b)|hands(?=\\s+(?:over|an?|the|his|her|their|it|them)\\b)|passed|passing|gave|giving|give(?=\\s+(?:an?|the|his|her|their|it|them)\\b)|received|exchanged|swapped|delivered|dropped\\s+off)\\b[^.]{0,60}?\\b(?:to|from|with)\\s+(?:an?\\s+|the\\s+)?(?:\\w+\\s+){0,2}?" +
         PERSON_WORD,
       ""
     ),
@@ -517,4 +517,38 @@ export function findIntelCues(text: string | null | undefined): IntelCue[] {
     seen.add(k);
     return true;
   });
+}
+
+// ─── Sentences left out on purpose ───────────────────────────────────────────
+
+/** Words that, in a sentence, mean it might have been a cue. */
+const CUE_TRIGGER_WORDS =
+  /\b(?:bags?|suitcases?|luggage|backpacks?|rucksacks?|parcels?|packages?|envelopes?|boxes|box|briefcases?|documents?|phones?|mobiles?|texting|text\s+message|laptops?|tablets?|cameras?|binoculars|radio|cash|money|notes|ATMs?|withdr\w+|deposit\w*|handed|passed|exchang\w+|swapp?\w+|shook|embrac\w+|hugged|mirrors?|u[- ]?turn|counter[- ]?surveillance)\b/i;
+
+export interface LeftOutSentence {
+  sentence: string;
+  reason: "negated" | "quoted";
+}
+
+/** Sentences that mention something a cue looks for but were left out ON
+ * PURPOSE — because they say it did not happen ("did not use his phone",
+ * "no bags") or the words are quoted speech. The Supervisor Summary lists them
+ * in a footnote so nothing is dropped out of sight. */
+export function findLeftOutSentences(
+  text: string | null | undefined
+): LeftOutSentence[] {
+  if (!text) return [];
+  const out: LeftOutSentence[] = [];
+  for (const sentence of splitCueSentences(text)) {
+    if (findIntelCues(sentence).length > 0) continue;
+    const trigger = CUE_TRIGGER_WORDS.exec(sentence);
+    if (!trigger) continue;
+    const quotes = quotedSpans(sentence);
+    if (quotes.some(([a, b]) => trigger.index >= a && trigger.index < b)) {
+      out.push({ sentence, reason: "quoted" });
+    } else if (NEGATION.test(sentence)) {
+      out.push({ sentence, reason: "negated" });
+    }
+  }
+  return out;
 }

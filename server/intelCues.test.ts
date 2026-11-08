@@ -216,3 +216,24 @@ describe("intel cues: the first real-server trial", () => {
     expect(Array.from(groups)).toEqual(["suitcase"]);
   });
 });
+
+describe("intel cues: present-tense hand-overs", () => {
+  it("catches 'appeared to hand an envelope to a male' as a doubtful hand-over", () => {
+    const cues = findIntelCues(
+      "WATANABE appeared to hand an envelope to a male."
+    );
+    const keys = cues.map(c => `${c.category}/${c.heading}`).sort();
+    expect(keys).toEqual(["items/Envelope", "meetings/Hand-over / exchange"]);
+    expect(cues.every(c => c.doubtful)).toBe(true);
+  });
+  it("catches handing / passing / giving, not 'on hand' or 'left hand'", () => {
+    expect(
+      findIntelCues("FRASER was handing a parcel to the driver.").length
+    ).toBeGreaterThan(0);
+    expect(
+      findIntelCues("FRASER gave a package to the driver.").map(c => c.heading)
+    ).toContain("Hand-over / exchange");
+    expect(findIntelCues("FRASER held it in his left hand.")).toEqual([]);
+    expect(findIntelCues("Officers were on hand at the scene.")).toEqual([]);
+  });
+});

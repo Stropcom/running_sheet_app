@@ -52,6 +52,12 @@ import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput"
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { IntelDetailInput } from "@/components/IntelDetailInput";
 import { useOffline } from "@/contexts/OfflineContext";
+import { SheetIntelSection } from "@/components/SheetIntelSection";
+import {
+  SHEET_INTEL_PDF_CSS,
+  sheetIntelPdfBody,
+  type SheetIntelPdfData,
+} from "@/lib/sheetIntelPdf";
 
 // ─── Field definitions ─────────────────────────────────────────────────────
 
@@ -499,6 +505,8 @@ function exportSummaryToPDF(params: {
    * present they replace the Locations map. */
   dayRouteHtml: string | null;
   egoNetwork: EgoNetworkExportData | null;
+  /** The New Intelligence section (ticked lines only are written). */
+  intel: SheetIntelPdfData | null;
 }) {
   const {
     sheetTitle,
@@ -509,6 +517,7 @@ function exportSummaryToPDF(params: {
     mapImageDataUrl,
     dayRouteHtml,
     egoNetwork,
+    intel,
   } = params;
   const esc = (s: string | null | undefined) =>
     (s ?? "")
@@ -656,6 +665,7 @@ tfoot { display:table-footer-group; }
 .footer-band span:first-child { text-align:left; }
 .footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
 .footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
+${SHEET_INTEL_PDF_CSS}
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .plain-section-title { background:${BLUE_LIGHT} !important; } .chip { background:${BLUE_LIGHT} !important; } .numbered-list li::before { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
 </style></head><body>
 <div class="cover-header">
@@ -702,8 +712,9 @@ tfoot { display:table-footer-group; }
   ${section("Special Projects", specialProjectsHtml)}
   ${section("Objectives", objectivesHtml)}
   ${section("Critical Decisions", criticalDecisionsHtml)}
-  ${plainSection("Summary", summaryHtml)}
   ${section("Issues", form.issues.trim() ? `<p>${esc(form.issues)}</p>` : "")}
+  ${plainSection("Summary", summaryHtml)}
+  ${section("New Intelligence", sheetIntelPdfBody(intel))}
   <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
   </div>
@@ -1217,6 +1228,13 @@ export default function SheetSummaryPage() {
         toast.error("Couldn't build the ego network — exporting without it.");
       }
 
+      let intel: SheetIntelPdfData | null = null;
+      try {
+        intel = await trpcClient.summary.getIntel.query({ sheetId });
+      } catch {
+        toast.error("Couldn't load New Intelligence — exporting without it.");
+      }
+
       exportSummaryToPDF({
         sheetTitle: sheet?.title ?? "Running Sheet",
         form,
@@ -1226,6 +1244,7 @@ export default function SheetSummaryPage() {
         mapImageDataUrl,
         dayRouteHtml,
         egoNetwork,
+        intel,
       });
     } finally {
       setExportingPdf(false);
@@ -1691,6 +1710,13 @@ export default function SheetSummaryPage() {
                 )}
               </div>
 
+              <FieldTextarea
+                label="Issues"
+                value={form.issues}
+                onChange={v => handleChange("issues", v)}
+                disabled={isLocked}
+              />
+
               {/* Summary — one editable/deletable line per RS row, append-only synced */}
               <div>
                 <SectionLabel>Summary</SectionLabel>
@@ -1771,14 +1797,10 @@ export default function SheetSummaryPage() {
                   </p>
                 )}
               </div>
-
-              <FieldTextarea
-                label="Issues"
-                value={form.issues}
-                onChange={v => handleChange("issues", v)}
-                disabled={isLocked}
-              />
             </div>
+
+            {/* New Intelligence — bottom of the summary; locked with it */}
+            <SheetIntelSection sheetId={sheetId} locked={isLocked} />
           </div>
         )}
       </div>

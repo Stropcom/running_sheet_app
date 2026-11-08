@@ -502,3 +502,16 @@ export {
 } from "./db/notifications";
 export { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
 export { VEHICLE_REGO_PATTERN } from "@shared/vehicleRego";
+export {
+  getSheetIntelHiddenKeys,
+  setSheetIntelHiddenKeys,
+  getSheetIntelManualLines,
+  getSheetIntelManualLinesForSheets,
+  getSheetIntelManualLine,
+  addSheetIntelManualLine,
+  updateSheetIntelManualLine,
+  deleteSheetIntelManualLine,
+  getSheetNewEntities,
+  type SheetIntelLineFields,
+  type SheetNewEntities,
+} from "./db/sheetIntel";

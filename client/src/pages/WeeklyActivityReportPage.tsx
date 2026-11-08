@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { type WeeklyIntelItem } from "@shared/sheetIntel";
+import { WeeklyIntelActions } from "@/components/WeeklyIntelActions";
+import {
+  WEEKLY_ACTIONS_CSS,
+  weeklyActionsHtml,
+} from "@/lib/weeklyIntelActions";
 import { trpc } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { hoursText, overviewOperation } from "@shared/weeklyOverview";
@@ -96,6 +102,8 @@ interface TargetBlock {
       createdAt: string | Date;
       linkedEntities: { category: string; label: string }[];
     }[];
+    /** Actions and items this week (straight counts). */
+    actions?: WeeklyIntelItem[];
   };
 }
 interface OperationBlock {
@@ -186,12 +194,14 @@ function exportWeeklyActivityToPDF(params: {
       t.newIntel.persons.length ||
       t.newIntel.vehicles.length ||
       t.newIntel.locations.length ||
-      t.newIntel.images.length;
+      t.newIntel.images.length ||
+      (t.newIntel.actions?.length ?? 0);
     const intelHtml = hasIntel
       ? `
         ${t.newIntel.persons.length ? `<div class="intel-sub-label">Persons</div><div class="chip-row">${t.newIntel.persons.map(p => `<span class="chip chip-person">${esc(p)}</span>`).join("")}</div>` : ""}
         ${t.newIntel.vehicles.length ? `<div class="intel-sub-label">Vehicles</div><div class="chip-row">${t.newIntel.vehicles.map(v => `<span class="chip chip-vehicle">${esc(v)}</span>`).join("")}</div>` : ""}
         ${t.newIntel.locations.length ? `<div class="intel-sub-label">Locations</div><div class="chip-row">${t.newIntel.locations.map(l => `<span class="chip chip-location">${esc(l)}</span>`).join("")}</div>` : ""}
+        ${weeklyActionsHtml(t.newIntel.actions)}
         ${
           t.newIntel.images.length
             ? `<div class="intel-sub-label">Images</div><div class="image-grid">${t.newIntel.images
@@ -358,6 +368,7 @@ tfoot { display:table-footer-group; }
 .issue-date { font-weight:700; color:#b91c1c !important; white-space:nowrap; }
 .intel-sub-label { font-size:8.5px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; margin:7px 0 3px; }
 .intel-sub-label:first-child { margin-top:0; }
+${WEEKLY_ACTIONS_CSS}
 .image-grid { display:flex; flex-wrap:wrap; gap:8px; }
 .image-card { width:84px; }
 .image-thumb { width:84px; height:84px; object-fit:cover; border-radius:6px 6px 0 0; border:1px solid ${GREY_BORDER}; display:block; }
@@ -464,7 +475,8 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
     t.newIntel.persons.length ||
     t.newIntel.vehicles.length ||
     t.newIntel.locations.length ||
-    t.newIntel.images.length;
+    t.newIntel.images.length ||
+    (t.newIntel.actions?.length ?? 0);
 
   return (
     <div
@@ -676,6 +688,9 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
                   ))}
                 </div>
               </div>
+            )}
+            {(t.newIntel.actions?.length ?? 0) > 0 && (
+              <WeeklyIntelActions items={t.newIntel.actions!} />
             )}
             {t.newIntel.images.length > 0 && (
               <div>

@@ -12,6 +12,7 @@ import { LocationProfileContent } from "@/components/LocationProfileContent";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
 import { isHere, useHereAbove } from "@/lib/currentProfiles";
+import { profileLinkFor } from "@shared/profileLink";
 
 /**
  * A link to another Intelligence profile that opens in place instead of
@@ -151,17 +152,8 @@ export function ProfileDropdownRow({
  */
 export function IntelEntityDropdown({ item }: { item: IntelAssocEntity }) {
   // A target shows as its target profile (same rule the plain links used).
-  const isTargetEntity = item.type === "target" && item.id.includes("target");
-  const kind: ProfileKind = isTargetEntity
-    ? "target"
-    : item.type === "vehicle"
-      ? "vehicle"
-      : item.type === "address" || item.type === "business"
-        ? "location"
-        : "associate";
-  const refId: number | string = isTargetEntity
-    ? Number(item.id.split("::")[1])
-    : item.label;
+  // A target opens its Target profile by id (shared/profileLink.ts).
+  const { kind, refId } = profileLinkFor(item);
   const { cls, icon, label } = intelEntityChipLook(item);
   return (
     <ProfileDropdownRow

@@ -634,6 +634,11 @@ async function buildTargetOperationalAssociations(
       type: entity.isTarget
         ? "target"
         : (entity.type as IntelProfileEntity["type"]),
+      // A target in a list needs its own id so the drop-down opens its
+      // TARGET profile (the label alone would be looked up as an associate).
+      ...(entity.isTarget && entity.targetId
+        ? { targetId: entity.targetId }
+        : {}),
       sheetIds: Array.from(new Set(relevantOccs.map(o => o.sheetId))),
       operationIds: Array.from(new Set(relevantOccs.map(o => o.operationId))),
       rowCount: new Set(relevantOccs.map(o => o.rowId)).size,
@@ -1335,6 +1340,7 @@ export async function getIntelAssociateProfile(
       type: other.isTarget
         ? "target"
         : (other.type as IntelProfileEntity["type"]),
+      ...(other.isTarget && other.targetId ? { targetId: other.targetId } : {}),
       sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
       operationIds: Array.from(
         new Set(overlappingOccs.map(o => o.operationId))
@@ -1589,6 +1595,7 @@ export async function getIntelVehicleProfile(
       type: other.isTarget
         ? "target"
         : (other.type as IntelProfileEntity["type"]),
+      ...(other.isTarget && other.targetId ? { targetId: other.targetId } : {}),
       sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
       operationIds: Array.from(
         new Set(overlappingOccs.map(o => o.operationId))
@@ -1775,6 +1782,7 @@ export async function getIntelLocationProfile(
       type: other.isTarget
         ? "target"
         : (other.type as IntelProfileEntity["type"]),
+      ...(other.isTarget && other.targetId ? { targetId: other.targetId } : {}),
       sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
       operationIds: Array.from(
         new Set(overlappingOccs.map(o => o.operationId))

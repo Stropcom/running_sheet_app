@@ -17,6 +17,8 @@ export interface IntelAssocEntity {
   id: string;
   label: string;
   type: string;
+  /** Set on a target: opens the Target profile (the label alone can't). */
+  targetId?: number;
   rowCount: number;
   photos?: IntelEntityPhoto[];
   /** True when this vehicle/location matches a value superseded by a target-merge. */

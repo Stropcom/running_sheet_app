@@ -89,6 +89,8 @@ export function knownSurnamesOf(texts: Iterable<string | null | undefined>) {
   return out;
 }
 
+const CAPITALISED_WORD = /^[A-Z][a-z'-]+$/;
+
 /** Person tokens of a stretch of text, counting a mixed-case surname that is
  * known from elsewhere ("Doyle" when DOYLE is on the sheet). */
 export function personTokensKnown(
@@ -97,7 +99,15 @@ export function personTokensKnown(
 ): string[] {
   const out = personTokens(text);
   if (known) {
-    for (const w of nameWordsUpper(text)) {
+    // A known surname typed in mixed case counts only when it is written as
+    // a name (capitalised: "Doyle"), never an ordinary lower-case word — "a
+    // brown dog" is not BROWN, even when BROWN is on the sheet.
+    for (const w of text.match(/[A-Za-z][A-Za-z'-]+/g) ?? []) {
+      if (!CAPITALISED_WORD.test(w)) continue;
+      const u = w.toUpperCase();
+      if (known.has(u) && !out.includes(u)) out.push(u);
+    }
+    for (const w of nameWordsUpper(text).filter(x => /^U[MFCP]\d+$/.test(x))) {
       if (known.has(w) && !out.includes(w)) out.push(w);
     }
   }
@@ -112,7 +122,10 @@ export function canonicalNames(
 ): string {
   if (!known || known.size === 0) return names;
   return names.replace(/[A-Za-z][A-Za-z'-]+/g, w =>
-    known.has(w.toUpperCase()) ? w.toUpperCase() : w
+    known.has(w.toUpperCase()) &&
+    (CAPITALISED_WORD.test(w) || w === w.toUpperCase())
+      ? w.toUpperCase()
+      : w
   );
 }
 

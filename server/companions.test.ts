@@ -114,3 +114,27 @@ describe("the target typed in mixed case ('Doyle')", () => {
     ).toBeNull();
   });
 });
+
+// ─── Audit stage 5: an ordinary word is not a known surname ─────────────────
+describe("a known surname typed as an ordinary word", () => {
+  const known = new Set(["BROWN", "DOYLE"]);
+  it("'a brown dog' is not BROWN, even though BROWN is on the sheet", () => {
+    expect(
+      companionNames("seated inside Cafe One with a brown dog", "", {
+        bareWith: true,
+        known,
+      })
+    ).toEqual([]);
+  });
+  it("a capitalised known surname still counts ('with Doyle')", () => {
+    expect(
+      companionNames("seated inside Cafe One with Doyle at a table", "", {
+        bareWith: true,
+        known,
+      })
+    ).toEqual(["DOYLE"]);
+  });
+  it("canonicalNames upper-cases a typed surname but not an ordinary word", () => {
+    expect(canonicalNames("Doyle and brown", known)).toBe("DOYLE and brown");
+  });
+});

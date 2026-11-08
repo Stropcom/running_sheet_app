@@ -28,7 +28,12 @@ export function givenNameWords(fullName: string, alias: string): string[] {
   const surname = alias.trim().replace(/^(?:[A-Za-z]\.)+/, "");
   let rest = plainName(fullName);
   if (surname) {
-    rest = rest.replace(new RegExp(escapeRe(surname), "ig"), " ");
+    // Whole words only: removing "TAN" from "Stan TAN" must leave "Stan",
+    // not "S" (which would then match "Susan TAN" and every other S-name).
+    rest = rest.replace(
+      new RegExp(`(?<![A-Za-z])${escapeRe(surname)}(?![A-Za-z])`, "ig"),
+      " "
+    );
   }
   return rest
     .split(/[\s]+/)
@@ -111,4 +116,89 @@ export function mentionIsOtherRegisteredPerson(
     names.every(w => mention.includes(w.toUpperCase()));
   if (sameWords(givenNameWords(targetName, alias))) return false;
   return otherRegisteredNames.some(n => sameWords(givenNameWords(n, alias)));
+}
+
+/**
+ * Which registered person a mention is, when a surname alias is shared.
+ *
+ * Several registered people (targets and associates) can use the same surname
+ * alias ("Grace TAN (TAN)", "Greg TAN (TAN)"). Resolving "TAN" by whichever
+ * was loaded first or last credits one of them with the other's sightings.
+ * The rule, erring towards missing a mention:
+ *
+ *  - only one person uses the alias: the mention is them when their given
+ *    names don't contradict (the long-standing rule);
+ *  - more than one: a bare alias is nobody in particular, and a mention with
+ *    given names is a person only when exactly ONE registered person with the
+ *    alias fits it (so "G TAN", which fits both Grace and Greg, is nobody).
+ *
+ * @param candidateNames the registered names this lookup could return (the
+ *        target names that carry the alias)
+ * @param allRegisteredNames every registered person (targets and associates)
+ *        who uses the alias
+ * @returns the one candidate the mention is, or undefined
+ */
+export function pickRegisteredForAlias(
+  mentionName: string,
+  alias: string,
+  candidateNames: readonly string[],
+  allRegisteredNames: readonly string[]
+): string | undefined {
+  const distinct = (names: readonly string[]) => {
+    const seen = new Map<string, string>();
+    for (const n of names) {
+      const k = plainName(n).toUpperCase();
+      if (!seen.has(k)) seen.set(k, n);
+    }
+    return Array.from(seen.values());
+  };
+  const all = distinct([...allRegisteredNames, ...candidateNames]);
+  const fits = (n: string) => aliasMentionCompatible(mentionName, alias, n);
+  if (all.length <= 1) {
+    const only = distinct(candidateNames)[0];
+    return only && fits(only) ? only : undefined;
+  }
+  // Shared alias: a bare mention is nobody in particular.
+  if (givenNameWords(mentionName, alias).length === 0) return undefined;
+  const fitting = all.filter(fits);
+  if (fitting.length !== 1) return undefined;
+  return distinct(candidateNames).find(
+    c => plainName(c).toUpperCase() === plainName(fitting[0]).toUpperCase()
+  );
+}
+
+/** Capitalised words that open a sentence without being a given name. */
+const NOT_A_GIVEN_NAME = new Set(
+  (
+    "Then Later Also Next Now Meanwhile After Before Once When While Soon " +
+    "Shortly Suddenly Again Still However Eventually Observed Seen Sighted " +
+    "Noted Subject Target Male Female The And But With Without Both Another " +
+    "Mr Mrs Ms Miss Mx Dr Sir Madam Cafe Hotel Street Road Park Hill"
+  )
+    .split(" ")
+    .map(w => w.toUpperCase())
+);
+
+/**
+ * True when a bare surname alias ("TAN") is written straight after a
+ * capitalised word that is a DIFFERENT given name from the registered
+ * person's — "Lawrence TAN departed" is Lawrence TAN, not the registered
+ * "Grace Olivia TAN". `before` is the text up to the alias.
+ *
+ * This holds at the start of a sentence too: "Lawrence TAN left." at the head
+ * of a row used to count as the registered Grace, because the check only ran
+ * mid-sentence. A capitalised word that is plainly not a name ("Then TAN
+ * left") is skipped, so that still counts as the registered person.
+ */
+export function bareAliasFollowsOtherGivenName(
+  before: string,
+  alias: string,
+  registeredName: string
+): boolean {
+  const prev = before.match(
+    /(?:^|[\s(])([A-Z][a-z]{2,}(?:[-'][A-Za-z]+)?)\s+$/
+  );
+  if (!prev) return false;
+  if (NOT_A_GIVEN_NAME.has(prev[1].toUpperCase())) return false;
+  return !aliasMentionCompatible(`${prev[1]} ${alias}`, alias, registeredName);
 }

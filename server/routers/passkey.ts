@@ -24,7 +24,8 @@ import {
   listDevices,
   liveAdminCodeExpiries,
   loadPasskeySettings,
-  markCodeUsed,
+  claimCode,
+  releaseCode,
   myStatus,
   recordFailedAttempt,
   removeDevice,
@@ -162,13 +163,27 @@ export const passkeyRouter = router({
             "That code isn't right, has expired, or was already used. Ask your admin for a new one.",
         });
       }
-      await finishRegistration(ctx.req, user, {
-        challengeId: input.challengeId,
-        response: input.response,
-        deviceName: input.deviceName,
-        deviceKind: input.deviceKind,
-      });
-      await markCodeUsed(code.id);
+      // Take the code first, in one step, so it really is one-time. If the
+      // registration then fails, give it back.
+      if (!(await claimCode(code.id))) {
+        recordFailedAttempt(key);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "That code isn't right, has expired, or was already used. Ask your admin for a new one.",
+        });
+      }
+      try {
+        await finishRegistration(ctx.req, user, {
+          challengeId: input.challengeId,
+          response: input.response,
+          deviceName: input.deviceName,
+          deviceKind: input.deviceKind,
+        });
+      } catch (error) {
+        await releaseCode(code.id);
+        throw error;
+      }
       clearAttempts(key);
       await createAuditLog({
         sheetId: 0,

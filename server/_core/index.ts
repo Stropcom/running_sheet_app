@@ -143,7 +143,15 @@ async function startServer() {
   ];
   app.use("/api/oauth", authRateLimiter);
   app.use((req, res, next) => {
-    if (RATE_LIMITED_TRPC_PATHS.some(p => req.path.startsWith(p))) {
+    // A batch is one request with several calls, named after the first one
+    // ("/api/trpc/passkey.loginOptions,auth.login"): look at every call.
+    const calls = req.path.startsWith("/api/trpc/")
+      ? req.path
+          .slice("/api/trpc/".length)
+          .split(",")
+          .map(c => `/api/trpc/${c}`)
+      : [req.path];
+    if (calls.some(c => RATE_LIMITED_TRPC_PATHS.some(p => c.startsWith(p)))) {
       return authRateLimiter(req, res, next);
     }
     next();

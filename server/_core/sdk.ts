@@ -26,6 +26,8 @@ export type SessionPayload = {
   openId: string;
   appId: string;
   name: string;
+  /** The person's session number when this was issued (see users.sessionVersion); a token without one counts as 0. */
+  sessionVersion?: number;
 };
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
@@ -176,13 +178,18 @@ class SDKServer {
    */
   async createSessionToken(
     openId: string,
-    options: { expiresInMs?: number; name?: string } = {}
+    options: {
+      expiresInMs?: number;
+      name?: string;
+      sessionVersion?: number;
+    } = {}
   ): Promise<string> {
     return this.signSession(
       {
         openId,
         appId: ENV.appId,
         name: options.name || "",
+        sessionVersion: options.sessionVersion ?? 0,
       },
       options
     );
@@ -201,15 +208,19 @@ class SDKServer {
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
+      sv: payload.sessionVersion ?? 0,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
 
-  async verifySession(
-    cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
+  async verifySession(cookieValue: string | undefined | null): Promise<{
+    openId: string;
+    appId: string;
+    name: string;
+    sessionVersion: number;
+  } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -220,7 +231,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+      const { openId, appId, name, sv } = payload as Record<string, unknown>;
 
       if (
         !isNonEmptyString(openId) ||
@@ -235,6 +246,7 @@ class SDKServer {
         openId,
         appId,
         name,
+        sessionVersion: typeof sv === "number" ? sv : 0,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -311,6 +323,12 @@ class SDKServer {
 
     if (user.archivedAt) {
       throw ForbiddenError("This account has been archived.");
+    }
+
+    // A sign-in ends when its owner logs out, changes or is given a new
+    // password, or is archived (users.sessionVersion moves on).
+    if (session.sessionVersion !== (user.sessionVersion ?? 0)) {
+      throw ForbiddenError("This sign-in has ended. Please sign in again.");
     }
 
     await db.updateLastSignedIn(user.id);

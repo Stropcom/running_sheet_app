@@ -84,7 +84,6 @@ vi.mock("./db", () => ({
   getAllAuditLogs: vi.fn().mockResolvedValue([]),
   getAllUsers: vi.fn().mockResolvedValue([]),
   listTeams: vi.fn().mockResolvedValue([]),
-  updateUserRole: vi.fn().mockResolvedValue(undefined),
   upsertUser: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),
   getOperations: vi.fn().mockResolvedValue([]),
@@ -488,24 +487,6 @@ describe("admin.listUsers", () => {
     await expect(caller.admin.listUsers()).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
-  });
-});
-
-describe("admin.updateUserRole", () => {
-  it("allows admin to update user role", async () => {
-    const caller = appRouter.createCaller(makeCtx("admin"));
-    const result = await caller.admin.updateUserRole({
-      userId: 2,
-      role: "member",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("throws FORBIDDEN for non-admin", async () => {
-    const caller = appRouter.createCaller(makeCtx("member"));
-    await expect(
-      caller.admin.updateUserRole({ userId: 2, role: "observer" })
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

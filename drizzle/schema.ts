@@ -61,6 +61,10 @@ export const users = mysqlTable("users", {
   // Forces a password change on next login (e.g. admin-issued temporary
   // password). Enforced server-side in _core/trpc.ts, not just client UI.
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
+  // Goes up by one when this person logs out, changes or is given a new
+  // password, or is archived. A sign-in carries the number it was issued with,
+  // so every older sign-in (a copied cookie, another device) stops working.
+  sessionVersion: int("sessionVersion").default(0).notNull(),
   // Home Command (region) — see shared/commands.ts. Existing users land in
   // WESTERN when the column is added.
   command: mysqlEnum("command", [

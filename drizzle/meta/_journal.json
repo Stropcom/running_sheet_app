@@ -1009,6 +1009,13 @@
       "when": 1794062980789,
       "tag": "0143_audit_actions_intelligence",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "5",
+      "when": 1794095114854,
+      "tag": "0144_user_session_version",
+      "breakpoints": true
     }
   ]
 }

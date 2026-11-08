@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
 import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
+import { ownerAccountProblem } from "@shared/commandFeatures";
 import {
   commandsOfUsers,
   filterByOperationAccess,
@@ -344,10 +345,24 @@ export async function assertCanManageWipcMember(
 /** An admin manages people in their own Command; only an all-region admin
  * reaches across Commands. */
 export async function assertCanManageUser(
-  admin: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
-  targetUserId: number
+  admin: {
+    command: (typeof COMMAND_CODES)[number];
+    allRegions: boolean;
+    cin?: string | null;
+    role?: string | null;
+  },
+  targetUserId: number,
+  /** A CIN the change would give them, if it changes it. */
+  newCin?: string | null
 ) {
   const target = await getUserById(targetUserId);
+  const protectedOwner = ownerAccountProblem(
+    admin,
+    target ?? undefined,
+    newCin
+  );
+  if (protectedOwner)
+    throw new TRPCError({ code: "FORBIDDEN", message: protectedOwner });
   if (!target) return;
   if (!admin.allRegions && target.command !== admin.command) {
     throw new TRPCError({
@@ -455,10 +470,11 @@ export function requireAllRegions(user: { allRegions: boolean }) {
 /** Starts a signed-in session for `user` (cookie), as a password sign-in does. */
 export async function startSignedInSession(
   ctx: { req: Parameters<typeof getSessionCookieOptions>[0]; res: any },
-  user: { username: string; name: string }
+  user: { username: string; name: string; sessionVersion?: number }
 ) {
   const sessionToken = await sdk.createSessionToken(user.username, {
     name: user.name,
+    sessionVersion: user.sessionVersion ?? 0,
     expiresInMs: SESSION_EXPIRY_MS,
   });
   const cookieOptions = getSessionCookieOptions(ctx.req);

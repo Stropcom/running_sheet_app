@@ -698,3 +698,44 @@ export async function dismissScanFinding(
       set: { dismissedByCIN, dismissedAt: new Date() },
     });
 }
+
+// ─── Is it really in the bin? ────────────────────────────────────────────────
+
+export type RecycleBinType =
+  | "operation"
+  | "sheet"
+  | "target"
+  | "map_marker"
+  | "attachment"
+  | "smeac_briefing"
+  | "uco_guide"
+  | "weekly_tasking";
+
+/** True only when the item exists and has been deleted (is in the Recycle
+ * Bin). Reinstating and "delete forever" are for bin items only: a live
+ * operation must never be wiped by calling "delete forever" with its number.
+ * Deleted weekly taskings live in their own table, so any id there is a bin
+ * item by definition. */
+export async function isInRecycleBin(
+  type: RecycleBinType,
+  id: number
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (type === "weekly_tasking") return true;
+  const table = {
+    operation: operations,
+    sheet: runningSheets,
+    target: targets,
+    map_marker: customMapMarkers,
+    attachment: rowAttachments,
+    smeac_briefing: smeacBriefings,
+    uco_guide: ucoGuideBriefings,
+  }[type];
+  const [row] = await db
+    .select({ deletedAt: table.deletedAt })
+    .from(table)
+    .where(eq(table.id, id))
+    .limit(1);
+  return !!row && row.deletedAt != null;
+}

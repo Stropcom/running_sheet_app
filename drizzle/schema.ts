@@ -1178,6 +1178,8 @@ export const auditLogs = mysqlTable(
       "person_name_confirmed",
       "person_name_rejected",
       "face_group_relabelled",
+      "recycle_bin_restored",
+      "recycle_bin_deleted",
     ]).notNull(),
     details: text("details"),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),

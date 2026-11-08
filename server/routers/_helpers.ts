@@ -2,6 +2,7 @@ import { storagePut } from "../storage";
 import { convertDocxToPdf } from "../documentImport/docxToPdf";
 import { embedFaceAt } from "../faceRecognition";
 import { lowerVehicleColour } from "@shared/vehicleColour";
+import { checkStoredDocument } from "@shared/documentUpload";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
@@ -321,17 +322,19 @@ export async function storeTargetDocumentSourceFile(params: {
   mimeType: string | null | undefined;
 }): Promise<{ sourceFileUrl: string; renderablePdfUrl: string | null }> {
   const buffer = Buffer.from(params.base64, "base64");
+  // The file's own contents decide whether it is stored and what it is stored
+  // as; the name and type the caller sent are never used in the stored path
+  // (they stay on the import record for display only). shared/documentUpload.ts.
+  const kind = checkStoredDocument(buffer);
+  if (!kind.ok)
+    throw new TRPCError({ code: "BAD_REQUEST", message: kind.reason });
   const { url: sourceFileUrl } = await storagePut(
-    `target-documents/target-${params.targetId}/${Date.now()}-${params.fileName || "document"}`,
+    `target-documents/target-${params.targetId}/${Date.now()}-document.${kind.ext}`,
     buffer,
-    params.mimeType || "application/octet-stream"
+    kind.mime
   );
-  const isDocx =
-    params.mimeType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    /\.docx$/i.test(params.fileName || "");
   let renderablePdfUrl: string | null = null;
-  if (isDocx) {
+  if (kind.ext === "docx") {
     const pdfBytes = await convertDocxToPdf(buffer);
     if (pdfBytes) {
       const put = await storagePut(

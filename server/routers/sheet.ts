@@ -41,6 +41,7 @@ import {
   getDismissedFindingKeys,
   dismissScanFinding,
   runOnce,
+  isInRecycleBin,
 } from "../db";
 import { checkRunningSheet } from "../sheetCheck";
 
@@ -270,6 +271,12 @@ export const sheetRouter = router({
   hardDelete: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      // Permanent delete is for sheets already in the Recycle Bin.
+      if (!(await isInRecycleBin("sheet", input.id)))
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "That sheet is not in the Recycle Bin.",
+        });
       await deleteRunningSheet(input.id);
       await createAuditLog({
         sheetId: input.id,

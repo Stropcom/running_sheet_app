@@ -406,6 +406,7 @@ export {
   scanFindingKey,
   getDismissedFindingKeys,
   dismissScanFinding,
+  isInRecycleBin,
 } from "./db/recycleBin";
 export type {
   RecycleBinItem,

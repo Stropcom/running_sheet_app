@@ -26,6 +26,7 @@ import {
   setOperationStatus,
   softDeleteOperation,
   runOnce,
+  isInRecycleBin,
 } from "../db";
 
 import { adminProcedure } from "./_helpers";
@@ -207,6 +208,12 @@ export const operationRouter = router({
   hardDelete: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
+      // Permanent delete is for operations already in the Recycle Bin.
+      if (!(await isInRecycleBin("operation", input.id)))
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "That operation is not in the Recycle Bin.",
+        });
       await deleteOperation(input.id);
       return { success: true };
     }),

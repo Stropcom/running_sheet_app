@@ -16,6 +16,7 @@ import { ENV } from "./_core/env";
 import { sdk } from "./_core/sdk";
 import { UPLOAD_CACHE_CONTROL } from "./uploadAccess";
 import { requireFileAccess } from "./storedFileAccess";
+import { isRunnableWhenOpened } from "@shared/documentUpload";
 
 const LOCAL_UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
@@ -32,7 +33,19 @@ export function registerLocalUploadsRoute(app: Express) {
       req => req.path
     ),
     express.static(LOCAL_UPLOAD_DIR, {
-      setHeaders: res => res.setHeader("Cache-Control", UPLOAD_CACHE_CONTROL),
+      setHeaders: (res, filePath) => {
+        res.setHeader("Cache-Control", UPLOAD_CACHE_CONTROL);
+        // The browser must use the type we send, never guess one from the
+        // contents; and a stored file that would run as a page or script
+        // (an .html file stored before uploads were checked) is only ever
+        // downloaded, never shown as a page.
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        if (isRunnableWhenOpened(filePath)) {
+          res.setHeader("Content-Type", "application/octet-stream");
+          res.setHeader("Content-Disposition", "attachment");
+          res.setHeader("Content-Security-Policy", "sandbox");
+        }
+      },
     })
   );
 }

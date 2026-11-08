@@ -93,9 +93,9 @@ async function main() {
   >();
   const byCategory = new Map<CueCategory, number>();
   const misses: Sample[] = [];
-  // What repeats: counted by the item/action itself (a brown, black and blue
-  // suitcase are all "suitcase"), with how many different sheets it is on.
-  const repeats = new Map<string, { n: number; sheets: Set<number> }>();
+  // A straight count from ONE sheet: the same item or action (a brown and a
+  // black suitcase are both "suitcase") appearing more than once on it.
+  const repeats = new Map<string, number>();
   let rowsWithCue = 0;
 
   for (const r of rows) {
@@ -104,12 +104,8 @@ async function main() {
     const cuedSentences = new Set(cues.map(c => c.sentence));
     const where = `${r.opName} · ${r.sheetTitle} · ${r.time ?? "no time"}`;
     for (const c of cues) {
-      const rp = repeats.get(
-        `${CUE_CATEGORY_LABELS[c.category]} / ${c.group}`
-      ) ?? { n: 0, sheets: new Set<number>() };
-      rp.n++;
-      rp.sheets.add(r.sheetId);
-      repeats.set(`${CUE_CATEGORY_LABELS[c.category]} / ${c.group}`, rp);
+      const rk = `${CUE_CATEGORY_LABELS[c.category]} / ${c.group}   [${r.opName} · ${r.sheetTitle}]`;
+      repeats.set(rk, (repeats.get(rk) ?? 0) + 1);
       byCategory.set(c.category, (byCategory.get(c.category) ?? 0) + 1);
       const key = `${CUE_CATEGORY_LABELS[c.category]} / ${c.heading}`;
       const e = byHeading.get(key) ?? {
@@ -166,14 +162,13 @@ async function main() {
     );
   L.push("");
   L.push(
-    "REPEATS — the same item or action seen again and again (possible MO), by number of sheets"
+    "MOST TIMES ON ONE SHEET — each line is one sheet (a straight count, nothing carried over from other sheets)"
   );
-  for (const [k, v] of Array.from(repeats.entries()).sort(
-    (a, b) => b[1].sheets.size - a[1].sheets.size || b[1].n - a[1].n
-  ))
-    L.push(
-      `  ${String(v.n).padStart(6)} times on ${String(v.sheets.size).padStart(3)} sheets  ${k}`
-    );
+  for (const [k, n] of Array.from(repeats.entries())
+    .filter(([, n]) => n > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 25))
+    L.push(`  ${String(n).padStart(4)} times  ${k}`);
   L.push("");
   L.push("SAMPLES — mark each yes (intelligence) or no (noise)");
   for (const [k, v] of sorted) {

@@ -1,3 +1,7 @@
+import {
+  OperationSearchHits,
+  type SearchRowHit,
+} from "@/components/OperationSearchHits";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -162,6 +166,8 @@ export default function Home() {
           imsNumber: r.imsNumber,
           investigationUnit: r.investigationUnit,
           matchContexts: r.matchContexts,
+          rowHits: (r.rowHits ?? []) as SearchRowHit[],
+          rowHitCount: r.rowHitCount ?? 0,
           createdAt: new Date(),
           operationStatus: r.operationStatus as
             | "active"
@@ -171,6 +177,8 @@ export default function Home() {
       : displayOps.map(op => ({
           ...op,
           matchContexts: [] as string[],
+          rowHits: [] as SearchRowHit[],
+          rowHitCount: 0,
           operationStatus: "active" as const,
         }));
 
@@ -397,6 +405,11 @@ export default function Home() {
                         ))}
                     </div>
                   )}
+                <OperationSearchHits
+                  hits={op.rowHits}
+                  total={op.rowHitCount}
+                  query={search}
+                />
               </div>
             ))}
           </div>
@@ -499,6 +512,11 @@ export default function Home() {
                         )}
                       </div>
                     )}
+                  <OperationSearchHits
+                    hits={op.rowHits}
+                    total={op.rowHitCount}
+                    query={search}
+                  />
                   <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
                     <Calendar className="w-3 h-3" />
                     <span>

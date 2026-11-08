@@ -2,6 +2,8 @@ import { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
 
 import { flattenNestedBrackets } from "@shared/nestedBrackets";
 
+import { snippetAround } from "@shared/searchSnippet";
+
 import { and, eq, inArray, isNull, like, or, sql } from "drizzle-orm";
 
 import {
@@ -52,6 +54,24 @@ import { OperationEntityPhoto } from "./faces";
 // sheet CINs (JSON text), target fields, and observation row text.
 // Each matched operation includes a list of match contexts for display.
 
+/** One running sheet line the search found, with where to open it. */
+export type DeepSearchRowHit = {
+  rowId: number;
+  sheetId: number;
+  sheetTitle: string;
+  /** The row's time as written ("10:05 AM"), or null. */
+  time: string | null;
+  /** The row's date (YYYY-MM-DD) when it has one. */
+  date: string | null;
+  /** A stretch of the officer's own text around the match. */
+  snippet: string;
+  /** "text": the words are in the observation. "cin": an officer CIN on the row matched. */
+  via: "text" | "cin";
+};
+
+/** At most this many lines are returned per operation; `rowHitCount` is the full count. */
+export const DEEP_SEARCH_MAX_HITS_PER_OPERATION = 40;
+
 export type DeepSearchMatch = {
   operationId: number;
   operationName: string;
@@ -60,6 +80,10 @@ export type DeepSearchMatch = {
   investigationUnit: string | null;
   matchContexts: string[];
   operationStatus: "active" | "before_court" | "archive";
+  /** The matching running sheet lines (newest sheets first, each sheet in row order). */
+  rowHits: DeepSearchRowHit[];
+  /** How many lines matched in all (rowHits is capped). */
+  rowHitCount: number;
 };
 
 export async function deepSearchOperations(
@@ -75,11 +99,14 @@ export async function deepSearchOperations(
     .select()
     .from(operations)
     .where(
-      or(
-        like(sql`LOWER(${operations.name})`, q),
-        like(sql`LOWER(COALESCE(${operations.promisNumber}, ''))`, q),
-        like(sql`LOWER(COALESCE(${operations.imsNumber}, ''))`, q),
-        like(sql`LOWER(COALESCE(${operations.investigationUnit}, ''))`, q)
+      and(
+        isNull(operations.deletedAt),
+        or(
+          like(sql`LOWER(${operations.name})`, q),
+          like(sql`LOWER(COALESCE(${operations.promisNumber}, ''))`, q),
+          like(sql`LOWER(COALESCE(${operations.imsNumber}, ''))`, q),
+          like(sql`LOWER(COALESCE(${operations.investigationUnit}, ''))`, q)
+        )
       )
     );
 
@@ -138,9 +165,13 @@ export async function deepSearchOperations(
   // 4. Observation rows that match
   const rowMatches = await db
     .select({
+      id: sheetRows.id,
       sheetId: sheetRows.sheetId,
       observation: sheetRows.observation,
       time: sheetRows.time,
+      timeMinutes: sheetRows.timeMinutes,
+      rowNumber: sheetRows.rowNumber,
+      rowDate: sheetRows.rowDate,
     })
     .from(sheetRows)
     .where(like(sql`LOWER(COALESCE(${sheetRows.observation}, ''))`, q));
@@ -151,32 +182,69 @@ export async function deepSearchOperations(
     .from(rowMembers)
     .where(like(sql`LOWER(${rowMembers.memberName})`, q));
 
-  // Resolve sheetId → operationId for row/member matches
-  const rowSheetIds = Array.from(new Set(rowMatches.map(r => r.sheetId)));
+  // Resolve rows → sheets → operations (live sheets in live operations only)
   const memberRowIds = Array.from(new Set(memberMatches.map(m => m.rowId)));
-  let memberSheetIds: number[] = [];
-  const memberRowToSheetMap: Record<number, number> = {}; // rowId -> sheetId
+  const memberRowInfo = new Map<
+    number,
+    {
+      id: number;
+      sheetId: number;
+      observation: string | null;
+      time: string | null;
+      timeMinutes: number | null;
+      rowNumber: number;
+      rowDate: string | null;
+    }
+  >();
   if (memberRowIds.length > 0) {
     const memberRows = await db
-      .select({ id: sheetRows.id, sheetId: sheetRows.sheetId })
+      .select({
+        id: sheetRows.id,
+        sheetId: sheetRows.sheetId,
+        observation: sheetRows.observation,
+        time: sheetRows.time,
+        timeMinutes: sheetRows.timeMinutes,
+        rowNumber: sheetRows.rowNumber,
+        rowDate: sheetRows.rowDate,
+      })
       .from(sheetRows)
       .where(inArray(sheetRows.id, memberRowIds));
-    memberRows.forEach(r => {
-      memberRowToSheetMap[r.id] = r.sheetId;
-    });
-    memberSheetIds = Array.from(new Set(memberRows.map(r => r.sheetId)));
+    memberRows.forEach(r => memberRowInfo.set(r.id, r));
   }
-  const allSheetIds = Array.from(new Set([...rowSheetIds, ...memberSheetIds]));
-  let sheetOpMap: Record<number, number> = {};
+  const allSheetIds = Array.from(
+    new Set([
+      ...rowMatches.map(r => r.sheetId),
+      ...Array.from(memberRowInfo.values()).map(r => r.sheetId),
+    ])
+  );
+  const sheetInfo: Record<
+    number,
+    { operationId: number; title: string; sheetDate: string | null }
+  > = {};
   if (allSheetIds.length > 0) {
-    const sheetRows2 = await db
-      .select({ id: runningSheets.id, operationId: runningSheets.operationId })
+    const liveSheets = await db
+      .select({
+        id: runningSheets.id,
+        operationId: runningSheets.operationId,
+        title: runningSheets.title,
+        sheetDate: runningSheets.sheetDate,
+      })
       .from(runningSheets)
-      .where(inArray(runningSheets.id, allSheetIds));
-    sheetRows2.forEach(s => {
-      sheetOpMap[s.id] = s.operationId;
+      .innerJoin(operations, eq(operations.id, runningSheets.operationId))
+      .where(
+        and(
+          inArray(runningSheets.id, allSheetIds),
+          isNull(runningSheets.deletedAt),
+          isNull(operations.deletedAt)
+        )
+      );
+    liveSheets.forEach(s => {
+      sheetInfo[s.id] = s;
     });
   }
+  const sheetOpMap: Record<number, number> = {};
+  for (const [id, s] of Object.entries(sheetInfo))
+    sheetOpMap[Number(id)] = s.operationId;
 
   // Collect all matching operationIds with context labels
   const matchMap = new Map<number, Set<string>>();
@@ -203,24 +271,43 @@ export async function deepSearchOperations(
     matchMap.get(t.operationId)!.add(`Target: ${t.name}`);
   });
 
-  rowMatches.forEach(r => {
-    const opId = sheetOpMap[r.sheetId];
-    if (!opId) return;
-    ensure(opId);
-    const snippet = (r.observation ?? "").slice(0, 60);
-    matchMap
-      .get(opId)!
-      .add(`Observation: "${snippet}${snippet.length === 60 ? "…" : ""}"`);
-  });
-
+  // The running sheet lines themselves (one per row, text matches first; a
+  // row that matched both ways is listed once, as a text match).
+  type HitRow = {
+    id: number;
+    sheetId: number;
+    observation: string | null;
+    time: string | null;
+    timeMinutes: number | null;
+    rowNumber: number;
+    rowDate: string | null;
+    via: "text" | "cin";
+  };
+  const hitRows = new Map<number, HitRow>();
+  rowMatches.forEach(r => hitRows.set(r.id, { ...r, via: "text" }));
   memberMatches.forEach(m => {
-    const sheetId = memberRowToSheetMap[m.rowId];
-    if (!sheetId) return;
-    const opId = sheetOpMap[sheetId];
+    const r = memberRowInfo.get(m.rowId);
+    if (r && !hitRows.has(r.id)) hitRows.set(r.id, { ...r, via: "cin" });
+    const opId = r ? sheetOpMap[r.sheetId] : undefined;
     if (!opId) return;
     ensure(opId);
     matchMap.get(opId)!.add(`CIN: ${m.memberName}`);
   });
+  const hitsByOp = new Map<number, HitRow[]>();
+  hitRows.forEach(r => {
+    const opId = sheetOpMap[r.sheetId];
+    if (!opId) return;
+    ensure(opId);
+    if (!hitsByOp.has(opId)) hitsByOp.set(opId, []);
+    hitsByOp.get(opId)!.push(r);
+  });
+  hitsByOp.forEach(list =>
+    // Newest sheet first (higher id), each sheet in the order of its rows.
+    list.sort(
+      (a, b) =>
+        b.sheetId - a.sheetId || a.rowNumber - b.rowNumber || a.id - b.id
+    )
+  );
 
   // Fetch full operation records for all matched ids
   const matchedIds = Array.from(matchMap.keys());
@@ -229,20 +316,35 @@ export async function deepSearchOperations(
   const matchedOps = await db
     .select()
     .from(operations)
-    .where(inArray(operations.id, matchedIds));
+    .where(
+      and(inArray(operations.id, matchedIds), isNull(operations.deletedAt))
+    );
 
-  return matchedOps.map(op => ({
-    operationId: op.id,
-    operationName: op.name,
-    promisNumber: op.promisNumber ?? null,
-    imsNumber: op.imsNumber ?? null,
-    investigationUnit: op.investigationUnit ?? null,
-    matchContexts: Array.from(matchMap.get(op.id) ?? []),
-    operationStatus: (op.status ?? "active") as
-      | "active"
-      | "before_court"
-      | "archive",
-  }));
+  return matchedOps.map(op => {
+    const allHits = hitsByOp.get(op.id) ?? [];
+    return {
+      operationId: op.id,
+      operationName: op.name,
+      promisNumber: op.promisNumber ?? null,
+      imsNumber: op.imsNumber ?? null,
+      investigationUnit: op.investigationUnit ?? null,
+      matchContexts: Array.from(matchMap.get(op.id) ?? []),
+      operationStatus: (op.status ?? "active") as
+        | "active"
+        | "before_court"
+        | "archive",
+      rowHitCount: allHits.length,
+      rowHits: allHits.slice(0, DEEP_SEARCH_MAX_HITS_PER_OPERATION).map(r => ({
+        rowId: r.id,
+        sheetId: r.sheetId,
+        sheetTitle: sheetInfo[r.sheetId]?.title ?? "",
+        time: r.time ?? null,
+        date: r.rowDate ?? sheetInfo[r.sheetId]?.sheetDate ?? null,
+        snippet: snippetAround(r.observation ?? "", query),
+        via: r.via,
+      })),
+    };
+  });
 }
 
 // What may sit between a business's name and its street address: a shop /

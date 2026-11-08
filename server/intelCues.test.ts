@@ -147,3 +147,72 @@ describe("splitCueSentences", () => {
     ).toEqual(["Arrived at 04:04 PM.", "Walked in.", "Carried a bag."]);
   });
 });
+
+// The seven sentences found by the first trial on the real server (205 rows).
+describe("intel cues: the first real-server trial", () => {
+  const REAL: Array<[string, string, string]> = [
+    [
+      "Malcolm Hugh FRASER (FRASER) walked to Vehicle 1VAL75 and placed a brown suitcase in the boot.",
+      "items/Brown suitcase",
+      "suitcase",
+    ],
+    [
+      "VALE, FRASER and WATANABE exited the vehicle, FRASER went to the boot retrieved the brown suitcase.",
+      "items/Brown suitcase",
+      "suitcase",
+    ],
+    [
+      "Noah Benjamin PIKE (PIKE), placed a black suitcase in the back seat and entered Vehicle 1MIR84 as front passenger.",
+      "items/Black suitcase",
+      "suitcase",
+    ],
+    [
+      "Daniel Tomas IBARRA (IBARRA), place a suitcase in the boot, then entered Vehicle 1MEN83 via the front passenger door.",
+      "items/Suitcase",
+      "suitcase",
+    ],
+    [
+      "Peter JAMES (LANGLEY), placed a blue suitcase in the boot and entered Vehicle 1MEN83 as rear passenger.",
+      "items/Blue suitcase",
+      "suitcase",
+    ],
+  ];
+  it.each(REAL)("%s", (text, heading, group) => {
+    const c = findIntelCues(text).find(
+      x => `${x.category}/${x.heading}` === heading
+    );
+    expect(c).toBeTruthy();
+    expect(c!.group).toBe(group);
+    expect(c!.doubtful).toBe(false);
+  });
+
+  it("an ATM DEPOSIT of cash is a deposit, not a withdrawal (the word 'cash' is in both)", () => {
+    const dep = findIntelCues(
+      "TRAORE entered Commonwealth Bank East Victoria Park Branch, Shop 19 The Park Centre, 789 Albany Highway, EAST VICTORIA PARK WA (Commonwealth Bank East Victoria Park Branch) and used the ATM to deposit $5,000.00 cash in $50 notes."
+    );
+    expect(dep.map(c => c.heading)).toEqual(["ATM deposit"]);
+    const dep2 = findIntelCues(
+      "VALE used the ATM closest to the entrance door to deposit a number of $50.00 notes into the machine."
+    );
+    expect(dep2.map(c => c.heading)).toEqual(["ATM deposit"]);
+  });
+
+  it("a withdrawal of cash is still a withdrawal", () => {
+    expect(
+      findIntelCues("SIMPSON used the ATM to withdraw $500.00 cash.").map(
+        c => c.heading
+      )
+    ).toEqual(["ATM withdrawal"]);
+  });
+
+  it("repeats group by the item: brown, black and blue suitcases are one suitcase", () => {
+    const groups = new Set(
+      [
+        "FRASER placed a brown suitcase in the boot.",
+        "PIKE placed a black suitcase in the back seat.",
+        "LANGLEY placed a blue suitcases in the boot.",
+      ].flatMap(t => findIntelCues(t).map(c => c.group))
+    );
+    expect(Array.from(groups)).toEqual(["suitcase"]);
+  });
+});

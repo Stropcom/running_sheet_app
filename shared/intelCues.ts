@@ -30,6 +30,10 @@ export interface IntelCue {
   category: CueCategory;
   /** Short heading, e.g. "Brown suitcase", "ATM withdrawal". */
   heading: string;
+  /** What repeats are counted by: the item itself without its colour or size
+   * ("suitcase" for a brown, black or blue suitcase), else the heading. A
+   * repeated item or action can be the target's MO. */
+  group: string;
   /** The whole sentence the cue came from, exactly as written. */
   sentence: string;
   /** The words in the sentence that triggered it. */
@@ -131,8 +135,10 @@ const NOT_AN_ITEM_BOX =
 
 // ─── Items ───────────────────────────────────────────────────────────────────
 
-function itemCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful">[] = [];
+function itemCues(
+  s: string
+): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
   ITEM_NOUN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ITEM_NOUN_RE.exec(s))) {
@@ -170,8 +176,10 @@ const NOT_A_DEVICE_PLACE =
 const CALL_WORDING =
   /\b(?:on\s+(?:a|the)\s+(?:phone\s+)?call|phone\s+call|video\s+call|text\s+messages?|texting|voice\s+(?:message|note)s?|whatsapp|facetime|messaging\s+app|signal\s+app|snapchat)\b/gi;
 
-function deviceCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful">[] = [];
+function deviceCues(
+  s: string
+): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
   if (NOT_A_DEVICE_PLACE.test(s)) {
     // "phone box" is a place; remove it so the word is not read as a device.
     s = s.replace(new RegExp(NOT_A_DEVICE_PLACE.source, "gi"), " ");
@@ -258,12 +266,12 @@ const MONEY_RULES: Array<{
   strength: "firm" | "low";
 }> = [
   {
-    re: /\b(?:withdr(?:ew|aw|awing|awal)|took\s+out)\b[^.]{0,30}?\b(?:cash|money|funds|notes|\$\s?\d[\d,]*)/i,
+    re: /\b(?:withdr(?:ew|aw|awing|awal)|took\s+out)\b[^;]{0,40}?(?:\b(?:cash|money|funds|notes)\b|\$\s?\d)/i,
     heading: "Cash withdrawal",
     strength: "firm",
   },
   {
-    re: /\bdeposit(?:ed|ing)?\b[^.]{0,30}?\b(?:cash|money|cheque|check|funds|notes|\$\s?\d[\d,]*)/i,
+    re: /\bdeposit(?:ed|ing)?\b[^;]{0,40}?(?:\b(?:cash|money|cheque|check|funds|notes)\b|\$\s?\d)/i,
     heading: "Deposit",
     strength: "firm",
   },
@@ -278,7 +286,7 @@ const MONEY_RULES: Array<{
     strength: "firm",
   },
   {
-    re: /\b(?:handed|passed|gave|received|exchanged)\b[^.]{0,40}?\b(?:cash|money|notes|\$\s?\d[\d,]*)\b/i,
+    re: /\b(?:handed|passed|gave|received|exchanged)\b[^;]{0,40}?(?:\b(?:cash|money|notes)\b|\$\s?\d)/i,
     heading: "Cash handed over",
     strength: "firm",
   },
@@ -301,8 +309,10 @@ const MONEY_RULES: Array<{
 const ATM_ACTION =
   /\b(?:withdr\w+|deposit\w*|us(?:ed|ing)|inserted|entered\s+(?:a\s+)?pin|transaction|checked\s+(?:his\s+|her\s+)?balance|card|cash|money)\b/i;
 
-function moneyCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful">[] = [];
+function moneyCues(
+  s: string
+): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
   for (const r of MONEY_RULES) {
     const m = r.re.exec(s);
     if (m && !negatedBefore(s, m.index))
@@ -322,10 +332,10 @@ function moneyCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
     if (done)
       out.push({
         category: "money",
-        heading: /withdr|cash/i.test(s)
-          ? "ATM withdrawal"
-          : /deposit/i.test(s)
-            ? "ATM deposit"
+        heading: /deposit/i.test(s)
+          ? "ATM deposit"
+          : /withdr|took\s+out/i.test(s)
+            ? "ATM withdrawal"
             : "ATM use",
         matched: atm[0],
         strength: "firm",
@@ -344,9 +354,12 @@ function moneyCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
       });
   }
   // "walked to the ATM and withdrew cash" is one cue, not two.
-  if (out.some(c => c.heading === "ATM withdrawal"))
-    return out.filter(c => c.heading !== "Cash withdrawal");
-  return out;
+  let kept = out;
+  if (kept.some(c => c.heading === "ATM withdrawal"))
+    kept = kept.filter(c => c.heading !== "Cash withdrawal");
+  if (kept.some(c => c.heading === "ATM deposit"))
+    kept = kept.filter(c => c.heading !== "Deposit");
+  return kept;
 }
 
 // ─── Meetings and exchanges ──────────────────────────────────────────────────
@@ -389,8 +402,10 @@ const MEET_RULES: Array<{
   },
 ];
 
-function meetingCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful">[] = [];
+function meetingCues(
+  s: string
+): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
   for (const r of MEET_RULES) {
     const m = r.re.exec(s);
     if (m && !negatedBefore(s, m.index))
@@ -435,8 +450,10 @@ const BEHAVIOUR_RULES: Array<{ re: RegExp; heading: string }> = [
   },
 ];
 
-function behaviourCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful">[] = [];
+function behaviourCues(
+  s: string
+): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
   for (const r of BEHAVIOUR_RULES) {
     const m = r.re.exec(s);
     if (m && !negatedBefore(s, m.index))
@@ -451,6 +468,21 @@ function behaviourCues(s: string): Omit<IntelCue, "sentence" | "doubtful">[] {
 }
 
 // ─── Public ──────────────────────────────────────────────────────────────────
+
+/** The word repeats are counted under: "brown suitcase" and "blue suitcases"
+ * are both "suitcase". */
+function cueGroup(c: {
+  category: CueCategory;
+  heading: string;
+  matched: string;
+}) {
+  if (c.category !== "items") return c.heading.toLowerCase();
+  const noun = c.matched.trim().split(/\s+/).pop()!.toLowerCase();
+  if (/^(luggage|something|papers)$/.test(noun)) return noun;
+  if (/^(boxes)$/.test(noun)) return "box";
+  if (/^(eskies)$/.test(noun)) return "esky";
+  return noun.replace(/s$/, "");
+}
 
 /** Every cue in a row's text, one sentence at a time. */
 export function findIntelCues(text: string | null | undefined): IntelCue[] {
@@ -470,6 +502,7 @@ export function findIntelCues(text: string | null | undefined): IntelCue[] {
       if (at >= 0 && quotes.some(([a, b]) => at >= a && at < b)) continue;
       out.push({
         ...c,
+        group: cueGroup(c),
         sentence,
         doubtful:
           at >= 0 ? doubtfulAround(sentence, at, at + c.matched.length) : false,

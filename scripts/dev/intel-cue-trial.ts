@@ -66,7 +66,7 @@ async function main() {
     params.push(Number(operationId));
   }
   const [rows] = (await conn.query(
-    `SELECT r.id, r.time, r.observation, s.title AS sheetTitle, o.name AS opName
+    `SELECT r.id, r.time, r.observation, s.id AS sheetId, s.title AS sheetTitle, o.name AS opName
        FROM sheet_rows r
        JOIN running_sheets s ON s.id = r.sheetId
        JOIN operations o ON o.id = s.operationId
@@ -78,6 +78,7 @@ async function main() {
       id: number;
       time: string | null;
       observation: string;
+      sheetId: number;
       sheetTitle: string;
       opName: string;
     }>,
@@ -92,6 +93,9 @@ async function main() {
   >();
   const byCategory = new Map<CueCategory, number>();
   const misses: Sample[] = [];
+  // What repeats: counted by the item/action itself (a brown, black and blue
+  // suitcase are all "suitcase"), with how many different sheets it is on.
+  const repeats = new Map<string, { n: number; sheets: Set<number> }>();
   let rowsWithCue = 0;
 
   for (const r of rows) {
@@ -100,6 +104,12 @@ async function main() {
     const cuedSentences = new Set(cues.map(c => c.sentence));
     const where = `${r.opName} · ${r.sheetTitle} · ${r.time ?? "no time"}`;
     for (const c of cues) {
+      const rp = repeats.get(
+        `${CUE_CATEGORY_LABELS[c.category]} / ${c.group}`
+      ) ?? { n: 0, sheets: new Set<number>() };
+      rp.n++;
+      rp.sheets.add(r.sheetId);
+      repeats.set(`${CUE_CATEGORY_LABELS[c.category]} / ${c.group}`, rp);
       byCategory.set(c.category, (byCategory.get(c.category) ?? 0) + 1);
       const key = `${CUE_CATEGORY_LABELS[c.category]} / ${c.heading}`;
       const e = byHeading.get(key) ?? {
@@ -153,6 +163,16 @@ async function main() {
   for (const [k, v] of sorted)
     L.push(
       `  ${String(v.n).padStart(6)}  ${k}   (firm ${v.firm}, doubtful ${v.doubtful})`
+    );
+  L.push("");
+  L.push(
+    "REPEATS — the same item or action seen again and again (possible MO), by number of sheets"
+  );
+  for (const [k, v] of Array.from(repeats.entries()).sort(
+    (a, b) => b[1].sheets.size - a[1].sheets.size || b[1].n - a[1].n
+  ))
+    L.push(
+      `  ${String(v.n).padStart(6)} times on ${String(v.sheets.size).padStart(3)} sheets  ${k}`
     );
   L.push("");
   L.push("SAMPLES — mark each yes (intelligence) or no (noise)");

@@ -34,7 +34,10 @@ import {
   setSheetSummaryEntryTime,
 } from "../db";
 
-import { certifierOrAdminProcedure } from "./_helpers";
+import {
+  assertCanCompleteSummary,
+  certifierOrAdminProcedure,
+} from "./_helpers";
 
 export const summaryRouter = router({
   /** Get (or auto-create, prepopulated from the sheet) the summary for a sheet */
@@ -272,28 +275,7 @@ export const summaryRouter = router({
   complete: protectedProcedure
     .input(z.object({ sheetId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const sheet = await getRunningSheetById(input.sheetId);
-      if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
-
-      if (ctx.user.role !== "admin") {
-        const userCin = ctx.user.cin ?? "";
-        let sheetCins: { cin: string; isTeamLeader?: boolean }[] = [];
-        try {
-          sheetCins = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-        } catch {
-          sheetCins = [];
-        }
-        const isTeamLeader = sheetCins.some(
-          c => c.isTeamLeader && c.cin === userCin
-        );
-        if (!isTeamLeader) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message:
-              "Only the listed Team Leader or an Admin can complete this summary.",
-          });
-        }
-      }
+      await assertCanCompleteSummary(ctx.user, input.sheetId);
 
       const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
       const record = await completeSheetSummary(input.sheetId, cin);

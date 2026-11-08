@@ -1124,3 +1124,20 @@ html.app-no-scroll body.app-vv-shifted {
 .roster-zoomed-out .roster-cell-label {
   display: none;
 }
+
+/* Roster full screen: where its few controls sit. The RunLog header has room
+   for them on a laptop and on a phone or tablet turned sideways (667px and
+   wider, both header layouts); a portrait tablet or phone gets the strip on
+   the page. One
+   rule decides both, so the controls are never in both places or in neither. */
+.roster-fs-header {
+  display: none;
+}
+@media (min-width: 1024px), (min-width: 667px) and (orientation: landscape) {
+  .roster-fs-header {
+    display: block;
+  }
+  .roster-fs-strip {
+    display: none;
+  }
+}

@@ -96,14 +96,15 @@ export function RosterScrubber({
 /**
  * What is left of the roster toolbar in full screen: zoom out / % / zoom in,
  * Today, and Exit full screen. `header` sits in the dark RunLog bar (laptop),
- * `strip` is the same row on the page for a phone or tablet where the header
- * has no room. Buttons are equal height; the slider only shows where there is
+ * `bar` in the light compact header of a phone turned sideways, and `strip` is
+ * the same row on the page for a portrait phone or tablet where the header has
+ * no room. Buttons are equal height; the slider only shows where there is
  * space for it.
  */
 export function RosterFullscreenBar({
   variant,
 }: {
-  variant: "header" | "strip";
+  variant: "header" | "strip" | "bar";
 }) {
   const [zoom, onZoom] = useRosterZoom();
   const inHeader = variant === "header";

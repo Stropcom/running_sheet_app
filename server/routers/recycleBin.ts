@@ -22,9 +22,60 @@ import {
   deleteUcoGuideBriefing,
   reinstateOpManagerWeek,
   hardDeleteOpManagerWeek,
+  isInRecycleBin,
 } from "../db";
 
 import { adminProcedure } from "./_helpers";
+
+const BIN_TYPES = [
+  "operation",
+  "sheet",
+  "target",
+  "map_marker",
+  "attachment",
+  "smeac_briefing",
+  "uco_guide",
+  "weekly_tasking",
+] as const;
+
+const BIN_LABEL: Record<(typeof BIN_TYPES)[number], string> = {
+  operation: "Operation",
+  sheet: "Running sheet",
+  target: "Target",
+  map_marker: "Map marker",
+  attachment: "Photo",
+  smeac_briefing: "SMEAC briefing",
+  uco_guide: "UCO guide",
+  weekly_tasking: "Weekly tasking",
+};
+
+/** Restore and "delete forever" are for items that are in the bin. */
+async function requireInBin(type: (typeof BIN_TYPES)[number], id: number) {
+  if (!(await isInRecycleBin(type, id)))
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "That item is not in the Recycle Bin.",
+    });
+}
+
+/** Every restore and permanent delete is written to the audit log. */
+async function auditBin(
+  ctx: { user: { id: number; cin?: string | null } },
+  action: "recycle_bin_restored" | "recycle_bin_deleted",
+  type: (typeof BIN_TYPES)[number],
+  id: number
+) {
+  const cin = ctx.user.cin ?? "Unknown";
+  await createAuditLog({
+    sheetId: type === "sheet" ? id : 0,
+    userId: ctx.user.id,
+    userName: cin,
+    userCIN: ctx.user.cin ?? undefined,
+    action,
+    details: `${BIN_LABEL[type]} ${id} ${action === "recycle_bin_restored" ? "restored from" : "permanently deleted from"} the Recycle Bin by CIN ${cin}`,
+    createdAt: Date.now(),
+  });
+}
 
 export const recycleBinRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -57,20 +108,12 @@ export const recycleBinRouter = router({
   reinstate: protectedProcedure
     .input(
       z.object({
-        type: z.enum([
-          "operation",
-          "sheet",
-          "target",
-          "map_marker",
-          "attachment",
-          "smeac_briefing",
-          "uco_guide",
-          "weekly_tasking",
-        ]),
+        type: z.enum(BIN_TYPES),
         id: z.number(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await requireInBin(input.type, input.id);
       if (input.type === "weekly_tasking") {
         if (ctx.user.role !== "admin")
           throw new TRPCError({
@@ -86,6 +129,7 @@ export const recycleBinRouter = router({
                 ? "That weekly tasking is no longer in the Recycle Bin."
                 : "A weekly tasking for that week has been made since. Delete it first, then reinstate this one.",
           });
+        await auditBin(ctx, "recycle_bin_restored", input.type, input.id);
         return { success: true };
       }
       if (input.type === "operation") await reinstateOperation(input.id);
@@ -98,49 +142,25 @@ export const recycleBinRouter = router({
       else if (input.type === "uco_guide")
         await reinstateUcoGuideBriefing(input.id);
       else await reinstateTarget(input.id);
+      await auditBin(ctx, "recycle_bin_restored", input.type, input.id);
       return { success: true };
     }),
   hardDelete: adminProcedure
     .input(
       z.object({
-        type: z.enum([
-          "operation",
-          "sheet",
-          "target",
-          "map_marker",
-          "attachment",
-          "smeac_briefing",
-          "uco_guide",
-          "weekly_tasking",
-        ]),
+        type: z.enum(BIN_TYPES),
         id: z.number(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // Only an item that is in the bin can be deleted forever.
+      await requireInBin(input.type, input.id);
       if (input.type === "weekly_tasking") {
         await hardDeleteOpManagerWeek(input.id);
       } else if (input.type === "operation") {
         await deleteOperation(input.id);
-        await createAuditLog({
-          sheetId: 0,
-          userId: ctx.user.id,
-          userName: ctx.user.cin ?? "Unknown",
-          userCIN: ctx.user.cin ?? undefined,
-          action: "operation_status_changed",
-          details: `Operation permanently deleted from Recycle Bin by CIN ${ctx.user.cin ?? "Unknown"}`,
-          createdAt: Date.now(),
-        });
       } else if (input.type === "sheet") {
         await deleteRunningSheet(input.id);
-        await createAuditLog({
-          sheetId: input.id,
-          userId: ctx.user.id,
-          userName: ctx.user.cin ?? "Unknown",
-          userCIN: ctx.user.cin ?? undefined,
-          action: "sheet_deleted",
-          details: `Sheet permanently deleted from Recycle Bin`,
-          createdAt: Date.now(),
-        });
       } else if (input.type === "map_marker") {
         await hardDeleteCustomMarker(input.id);
       } else if (input.type === "attachment") {
@@ -152,6 +172,7 @@ export const recycleBinRouter = router({
       } else {
         await deleteTarget(input.id);
       }
+      await auditBin(ctx, "recycle_bin_deleted", input.type, input.id);
       return { success: true };
     }),
 });

@@ -63,12 +63,12 @@ import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
 import { RosterSyncDialog } from "@/components/opManager/RosterSyncDialog";
-import { toClock } from "@shared/taskingRosterSync";
 import {
-  ARVO_SHIFT,
-  DAY_SHIFT,
-  shiftAfterTaskChange,
-} from "@shared/taskingShiftHours";
+  defaultTaskingShift,
+  hasFixedShiftHours,
+} from "@shared/taskingDefaults";
+import { toClock } from "@shared/taskingRosterSync";
+import { shiftAfterTaskChange } from "@shared/taskingShiftHours";
 import {
   distinctBreachCount,
   taskingBreachCells,
@@ -184,46 +184,6 @@ function formatWeekLabel(weekStart: string): string {
   return `${fmt(d)} – ${fmt(end)}`;
 }
 
-// ─── Shift auto-population ────────────────────────────────────────────────────
-// Rotation anchor: Team 1 (surv1) is on DAY shift the week of 2026-07-20.
-// Week of 13 Jul: surv1=afternoon, surv2=day
-// Week of 20 Jul: surv1=day,       surv2=afternoon
-// Week of 27 Jul: surv1=afternoon, surv2=day   ... alternates forever
-const SURV1_DAY_ANCHOR = "2026-07-20";
-
-function isSurv1DayShift(weekStart: string): boolean {
-  const anchor = new Date(SURV1_DAY_ANCHOR + "T00:00:00Z").getTime();
-  const ws = new Date(weekStart + "T00:00:00Z").getTime();
-  const diffWeeks = Math.round((ws - anchor) / (7 * 24 * 3600 * 1000));
-  // diffWeeks even (0, 2, 4, ...) = surv1 on day; odd = surv1 on afternoon
-  return diffWeeks % 2 === 0;
-}
-
-function getDefaultShift(
-  teamRow: TeamRow,
-  dayIndex: number,
-  weekStart: string
-): string {
-  // PTT: Day shift (0600-1500) Mon-Fri, RDO Sat-Sun
-  if (teamRow === "ptt") {
-    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
-  }
-  // Cap. Support: Day shift (0600-1500) Mon-Fri, RDO Sat-Sun
-  if (teamRow === "cap") {
-    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
-  }
-  const surv1IsDay = isSurv1DayShift(weekStart);
-  const isDay = teamRow === "surv1" ? surv1IsDay : !surv1IsDay;
-  if (isDay) {
-    return dayIndex <= 4 ? DAY_SHIFT : "RDO";
-  } else {
-    if (dayIndex === 0) return "RDO";
-    if (dayIndex >= 1 && dayIndex <= 3) return ARVO_SHIFT;
-    if (dayIndex === 4) return "1000-1800";
-    return "RDO";
-  }
-}
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PriorityRow {
   localId: string;
@@ -335,6 +295,8 @@ export default function OperationManagerPage() {
     { weekStart },
     { staleTime: 5_000 }
   );
+  /** A week that has not been posted is a draft: Save draft only saves it. */
+  const isPosted = postedQuery.data?.posted === true;
   const postedWeeksQuery = trpc.opManager.getPostedWeeks.useQuery(undefined, {
     staleTime: 30_000,
   });
@@ -443,11 +405,23 @@ export default function OperationManagerPage() {
         DAYS.forEach((_, dayIndex) => {
           const key = `${teamRow}-${dayIndex}`;
           grid[key] = {
-            shiftTime: getDefaultShift(teamRow, dayIndex, weekStart) || null,
+            shiftTime:
+              defaultTaskingShift(teamRow, dayIndex, weekStart) || null,
           };
         });
       });
     } else {
+      // PTT and Capability always start the week with their standard shift
+      // (8 hours Monday to Friday, RDO at the weekend): a day nobody has saved
+      // yet shows it, so a week where only some cells were saved is not left
+      // with blank PTT / Capability rows. A day that was saved, even with no
+      // shift on purpose, is shown as saved.
+      for (const teamRow of ["ptt", "cap"] as const)
+        DAYS.forEach((_, dayIndex) => {
+          grid[`${teamRow}-${dayIndex}`] = {
+            shiftTime: defaultTaskingShift(teamRow, dayIndex, weekStart),
+          };
+        });
       taskingQuery.data.forEach(cell => {
         const key = `${cell.teamRow}-${cell.dayIndex}`;
         const storedShift = cell.shiftTime ?? null;
@@ -680,9 +654,14 @@ export default function OperationManagerPage() {
   ) => {
     const key = `${teamRow}-${dayIndex}`;
     // Choosing Admin makes the shift 8 hours (0700-1500); changing it back to
-    // an operation makes it a 9-hour Day shift (0600-1500) again.
+    // an operation makes it a 9-hour Day shift (0600-1500) again. (Team 1 and
+    // Team 2 only: PTT and Capability keep the shift they have, 8 hours.)
     let patch = patchIn;
-    if ("primaryTask" in patchIn && !("shiftTime" in patchIn)) {
+    if (
+      "primaryTask" in patchIn &&
+      !("shiftTime" in patchIn) &&
+      !hasFixedShiftHours(teamRow)
+    ) {
       const before = taskingGrid[key];
       const moved = shiftAfterTaskChange(
         cellShift(before),
@@ -788,20 +767,26 @@ export default function OperationManagerPage() {
   };
 
   // ── Carry the tasking's start times to the roster ───────────────────────────
-  /** Each team's start time on the tasking, by day (a shift with no time, such
-   * as RDO, has none). */
+  /** Each team's start time on the tasking, by day (null for a day with no shift,
+   * such as RDO), and whether its task is Admin. */
   const rosterTargets = () => {
-    const out: { teamName: string; date: string; start: string }[] = [];
+    const out: {
+      teamName: string;
+      date: string;
+      start: string | null;
+      admin: boolean;
+    }[] = [];
     for (const teamRow of TEAM_ROWS)
       DAYS.forEach((_, dayIndex) => {
-        const start = shiftStart(
-          cellShift(taskingGrid[`${teamRow}-${dayIndex}`])
-        );
-        if (start === null) return;
+        const cell = taskingGrid[`${teamRow}-${dayIndex}`];
+        const start = shiftStart(cellShift(cell));
         out.push({
           teamName: TEAM_LABELS[teamRow],
           date: addDaysUTC(weekStart, dayIndex),
-          start: toClock(start),
+          // null: no shift that day (RDO or none), so a shift the roster took
+          // from the tasking earlier can go back to a rest day.
+          start: start === null ? null : toClock(start),
+          admin: cell?.primaryTask === "Admin",
         });
       });
     return out;
@@ -817,7 +802,6 @@ export default function OperationManagerPage() {
   const checkRosterAgainstTasking = async () => {
     if (!isAdmin) return;
     const targets = rosterTargets();
-    if (targets.length === 0) return;
     try {
       const plan = await utils.ctoRoster.roster.previewTaskingSync.fetch(
         { targets },
@@ -914,8 +898,9 @@ export default function OperationManagerPage() {
     discardTimelineChanges();
     setEditingCal(false);
   };
-  /** Saves only the cells that changed; with `repost` it then opens the same
-   * "Select who to notify" dialog as Re-post & Notify. */
+  /** Saves only the cells that changed. On a draft (not posted) that is all it
+   * does; on a posted week it then asks the roster question, and with `repost`
+   * it goes on to the same "Select who to notify" dialog as Re-post & Notify. */
   const saveTimelineChanges = async (repost: boolean) => {
     const keys = changedCellKeys(timelineChanges);
     setIsSavingTasking(true);
@@ -933,9 +918,16 @@ export default function OperationManagerPage() {
       setSavedGrid(taskingGrid);
       setEditingCal(false); // Save leaves edit mode
       toast.success(
-        keys.length === 1 ? "Saved 1 change." : `Saved ${keys.length} changes.`
+        isPosted
+          ? keys.length === 1
+            ? "Saved 1 change."
+            : `Saved ${keys.length} changes.`
+          : "Draft saved. Not posted yet, so the roster is unchanged."
       );
-      await checkRosterAgainstTasking();
+      // A draft only saves. Once posted, every Save asks whether to update
+      // the roster (start times and shifts), and Save and re-post then goes on
+      // to the notify step.
+      if (isPosted) await checkRosterAgainstTasking();
       if (repost) openNotifyDialog();
     } catch {
       toast.error("Failed to save the changes.");
@@ -1101,7 +1093,7 @@ export default function OperationManagerPage() {
             weekStart: nextWeekStart,
             dayIndex,
             teamRow,
-            shiftTime: getDefaultShift(teamRow, dayIndex, nextWeekStart),
+            shiftTime: defaultTaskingShift(teamRow, dayIndex, nextWeekStart),
             primaryTask: null,
             secondaryTask: null,
             blended: false,
@@ -1634,18 +1626,17 @@ export default function OperationManagerPage() {
                       </Button>
                       <Button
                         size="sm"
-                        variant={
-                          postedQuery.data?.posted ? "outline" : "default"
-                        }
+                        variant={isPosted ? "outline" : "default"}
                         disabled={
                           isSavingTasking || timelineChanges.length === 0
                         }
                         onClick={() => void saveTimelineChanges(false)}
                         className="hidden gap-1 md:inline-flex"
                       >
-                        <Save className="h-3.5 w-3.5" /> Save
+                        <Save className="h-3.5 w-3.5" />{" "}
+                        {isPosted ? "Save" : "Save draft"}
                       </Button>
-                      {postedQuery.data?.posted && (
+                      {isPosted && (
                         <Button
                           size="sm"
                           disabled={
@@ -1665,19 +1656,11 @@ export default function OperationManagerPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setEditingCal(true)}
-                        className="gap-1"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" /> Edit Tasking
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
                         onClick={() => setViewMode("edit")}
                         className="gap-1"
                         title="On-call, contacts and the priority board"
                       >
-                        Edit Contacts &amp; Details
+                        Edit Contacts &amp; Priorities
                       </Button>
                       <Button
                         variant="outline"
@@ -1733,6 +1716,14 @@ export default function OperationManagerPage() {
                 <span className="text-sm text-blue-200">
                   {formatWeekLabel(weekStart)}
                 </span>
+                {postedQuery.data && !isPosted && (
+                  <span
+                    data-testid="week-draft-badge"
+                    className="rounded-full bg-amber-400 px-2.5 py-0.5 text-xs font-bold text-amber-950"
+                  >
+                    Draft, not posted
+                  </span>
+                )}
               </div>
               <div className="hidden sm:flex flex-col items-end gap-1">
                 <p className="text-xs text-blue-400">
@@ -1768,6 +1759,17 @@ export default function OperationManagerPage() {
                 breachCount={taskingBreachCount}
                 onOpenRoster={i =>
                   navigate(`/cto-roster?date=${addDaysUTC(weekStart, i)}`)
+                }
+                toolbarAction={
+                  isAdmin && !editingCal ? (
+                    <Button
+                      variant="outline"
+                      className="h-9 shrink-0 gap-1"
+                      onClick={() => setEditingCal(true)}
+                    >
+                      <Edit2 className="h-3.5 w-3.5" /> Edit Tasking
+                    </Button>
+                  ) : undefined
                 }
                 edit={
                   isAdmin && editingCal
@@ -1826,28 +1828,29 @@ export default function OperationManagerPage() {
                   {timelineChanges.map(c => c.text).join("  •  ")}
                 </p>
               </div>
-              {/* On a phone the buttons are down here, within reach; on a
-                  laptop or tablet they are at the top of the page. */}
-              <div className="flex gap-2 md:hidden">
+              {/* Save and Save and re-post are here on every screen (in reach
+                  as the page scrolls) and also at the top of the page; Cancel
+                  is only down here on a phone. */}
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9"
+                  className="h-9 md:hidden"
                   disabled={isSavingTasking}
                   onClick={cancelEditing}
                 >
                   Cancel
                 </Button>
                 <Button
-                  variant={postedQuery.data?.posted ? "outline" : "default"}
+                  variant={isPosted ? "outline" : "default"}
                   size="sm"
                   className="h-9"
                   disabled={isSavingTasking}
                   onClick={() => void saveTimelineChanges(false)}
                 >
-                  Save
+                  {isPosted ? "Save" : "Save draft"}
                 </Button>
-                {postedQuery.data?.posted && (
+                {isPosted && (
                   <Button
                     size="sm"
                     className="h-9 gap-1"

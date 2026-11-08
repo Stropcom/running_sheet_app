@@ -2,10 +2,12 @@ import { storagePut } from "../storage";
 import { convertDocxToPdf } from "../documentImport/docxToPdf";
 import { embedFaceAt } from "../faceRecognition";
 import { lowerVehicleColour } from "@shared/vehicleColour";
+import { checkStoredDocument } from "@shared/documentUpload";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
 import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
+import { ownerAccountProblem } from "@shared/commandFeatures";
 import {
   commandsOfUsers,
   filterByOperationAccess,
@@ -61,7 +63,8 @@ export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
  */
 export async function guardActiveOperation(operationId: number) {
   const op = await getOperationById(operationId);
-  if (!op)
+  // An operation in the Recycle Bin is gone as far as editing goes.
+  if (!op || op.deletedAt)
     throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
   if (op.status !== "active") {
     const label = op.status === "before_court" ? "Before Court" : "Archive";
@@ -72,11 +75,63 @@ export async function guardActiveOperation(operationId: number) {
   }
 }
 
+/**
+ * Every write to a sheet (rows, members, details) goes through this: the
+ * sheet must exist and not be in the Recycle Bin, its operation must be live
+ * and Active, and the sheet must not be closed. A closed sheet is reopened
+ * first (`sheet.reopen`), which this does not block.
+ */
 export async function guardActiveSheet(sheetId: number) {
   const sheet = await getRunningSheetById(sheetId);
-  if (!sheet)
+  if (!sheet || sheet.deletedAt)
     throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
   await guardActiveOperation(sheet.operationId);
+  if (sheet.closedAt)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This sheet is closed. Reopen it first to make changes.",
+    });
+}
+
+/**
+ * Who may complete a sheet's summary: the listed Team Leader of that sheet, or
+ * an Admin. One rule, used by the Summary tab's Complete button and by the
+ * governance "Summary complete" tick, so neither is a way round the other.
+ */
+export async function assertCanCompleteSummary(
+  user: { role?: string | null; cin?: string | null },
+  sheetId: number
+) {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+  if (user.role === "admin") return;
+  let sheetCins: { cin: string; isTeamLeader?: boolean }[] = [];
+  try {
+    sheetCins = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+  } catch {
+    sheetCins = [];
+  }
+  const userCin = user.cin ?? "";
+  if (!sheetCins.some(c => c.isTeamLeader && c.cin === userCin))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Only the listed Team Leader or an Admin can complete this summary.",
+    });
+}
+
+/**
+ * For signing: the sheet and its operation must still exist (not in the
+ * Recycle Bin). Signing stays possible once an operation has moved to Before
+ * Court; only taking a signature away needs the full guardActiveSheet.
+ */
+export async function guardLiveSheet(sheetId: number) {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet || sheet.deletedAt)
+    throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
+  const op = await getOperationById(sheet.operationId);
+  if (!op || op.deletedAt)
+    throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
 }
 
 // A photo's identity (which Target/Associate/Vehicle/person it's tagged
@@ -294,17 +349,19 @@ export async function storeTargetDocumentSourceFile(params: {
   mimeType: string | null | undefined;
 }): Promise<{ sourceFileUrl: string; renderablePdfUrl: string | null }> {
   const buffer = Buffer.from(params.base64, "base64");
+  // The file's own contents decide whether it is stored and what it is stored
+  // as; the name and type the caller sent are never used in the stored path
+  // (they stay on the import record for display only). shared/documentUpload.ts.
+  const kind = checkStoredDocument(buffer);
+  if (!kind.ok)
+    throw new TRPCError({ code: "BAD_REQUEST", message: kind.reason });
   const { url: sourceFileUrl } = await storagePut(
-    `target-documents/target-${params.targetId}/${Date.now()}-${params.fileName || "document"}`,
+    `target-documents/target-${params.targetId}/${Date.now()}-document.${kind.ext}`,
     buffer,
-    params.mimeType || "application/octet-stream"
+    kind.mime
   );
-  const isDocx =
-    params.mimeType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    /\.docx$/i.test(params.fileName || "");
   let renderablePdfUrl: string | null = null;
-  if (isDocx) {
+  if (kind.ext === "docx") {
     const pdfBytes = await convertDocxToPdf(buffer);
     if (pdfBytes) {
       const put = await storagePut(
@@ -344,10 +401,24 @@ export async function assertCanManageWipcMember(
 /** An admin manages people in their own Command; only an all-region admin
  * reaches across Commands. */
 export async function assertCanManageUser(
-  admin: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
-  targetUserId: number
+  admin: {
+    command: (typeof COMMAND_CODES)[number];
+    allRegions: boolean;
+    cin?: string | null;
+    role?: string | null;
+  },
+  targetUserId: number,
+  /** A CIN the change would give them, if it changes it. */
+  newCin?: string | null
 ) {
   const target = await getUserById(targetUserId);
+  const protectedOwner = ownerAccountProblem(
+    admin,
+    target ?? undefined,
+    newCin
+  );
+  if (protectedOwner)
+    throw new TRPCError({ code: "FORBIDDEN", message: protectedOwner });
   if (!target) return;
   if (!admin.allRegions && target.command !== admin.command) {
     throw new TRPCError({
@@ -455,10 +526,11 @@ export function requireAllRegions(user: { allRegions: boolean }) {
 /** Starts a signed-in session for `user` (cookie), as a password sign-in does. */
 export async function startSignedInSession(
   ctx: { req: Parameters<typeof getSessionCookieOptions>[0]; res: any },
-  user: { username: string; name: string }
+  user: { username: string; name: string; sessionVersion?: number }
 ) {
   const sessionToken = await sdk.createSessionToken(user.username, {
     name: user.name,
+    sessionVersion: user.sessionVersion ?? 0,
     expiresInMs: SESSION_EXPIRY_MS,
   });
   const cookieOptions = getSessionCookieOptions(ctx.req);

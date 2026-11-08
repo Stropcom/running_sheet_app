@@ -1,3 +1,4 @@
+import { auditLogs } from "../../drizzle/schema";
 import { PLACE_SIGN_ICONS } from "@shared/placeSigns";
 import { LABELLABLE_KINDS } from "@shared/placesReport";
 import { TRPCError } from "@trpc/server";
@@ -7,6 +8,7 @@ import { lookupRoadSpeed } from "../roadSpeed";
 import {
   accessibleOperationIds,
   filterLocationRows,
+  hiddenIntelligenceFor,
   reachableFor,
   toAccessUser,
 } from "../operationAccess";
@@ -15,6 +17,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import {
   getInvestigatorAllowedOperationIds,
   getRunningSheetById,
+  getAssociateById,
   getTargetById,
   getAllIntelligenceEntities,
   getIntelligenceHeatMapLocations,
@@ -80,6 +83,76 @@ import { getNerModelStatus } from "../localNER";
 import { adminProcedure, withHostedTeams } from "./_helpers";
 
 /** Intelligence Folder */
+/**
+ * Names (and "also known as" names) of entities that exist but that this person
+ * cannot see: they only appear in another Command's Restricted operations
+ * (or, in the Folder, operations they were not given). Changing one of them
+ * (merging, unmerging, moving its map pin) needs the access to see it. A name
+ * that matches no entity at all (a new Target's name, say) is not in this set.
+ */
+async function hiddenEntityNames(): Promise<Set<string>> {
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
+  const [all, visible] = await Promise.all([
+    getAllIntelligenceEntities({ unscoped: true }),
+    getAllIntelligenceEntities(),
+  ]);
+  const names = (e: { shortForm: string; aliasLabels?: string[] }) => [
+    e.shortForm,
+    ...(e.aliasLabels ?? []),
+  ];
+  const seen = new Set<string>();
+  for (const e of visible) for (const n of names(e)) seen.add(norm(n));
+  const hidden = new Set<string>();
+  for (const e of all)
+    for (const n of names(e)) if (!seen.has(norm(n))) hidden.add(norm(n));
+  return hidden;
+}
+
+async function assertEntitiesNotHidden(labels: string[]) {
+  const hidden = await hiddenEntityNames();
+  if (hidden.size === 0) return;
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
+  if (labels.some(l => hidden.has(norm(l))))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You don't have access to that entity.",
+    });
+}
+
+/** The Target or Associate a name decision points at has to exist. */
+async function requireRegisteredPerson(
+  targetId?: number,
+  associateId?: number
+) {
+  const found = targetId
+    ? await getTargetById(targetId)
+    : associateId
+      ? await getAssociateById(associateId)
+      : undefined;
+  if (!found || (found as { deletedAt?: number | null }).deletedAt)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "That registered person was not found.",
+    });
+}
+
+/** Intelligence decisions change what everyone sees, so each one is recorded. */
+async function auditEntityChange(
+  user: { id: number; cin: string | null },
+  action: (typeof auditLogs.$inferInsert)["action"],
+  details: string
+) {
+  await createAuditLog({
+    sheetId: 0,
+    userId: user.id,
+    userName: user.cin ?? "Unknown",
+    userCIN: user.cin ?? undefined,
+    action,
+    details,
+    createdAt: Date.now(),
+  });
+}
+
 export const intelligenceRouter = router({
   /** Everyone registered against the selected operations' targets (targets,
    * associates, other home address residents) with all their registry
@@ -789,9 +862,17 @@ export const intelligenceRouter = router({
         ).map(r => r.userId)
       );
       visible.add(ctx.user.id);
+      // Seeing someone's live pin is not seeing everywhere they have been:
+      // earlier points tagged only with another Command's Restricted
+      // operation (that this person was not given) stay out.
+      const hiddenOperationIds = await hiddenIntelligenceFor(
+        toAccessUser(ctx.user),
+        "profile"
+      );
       return getUserLocationHistories(
         input.userIds.filter(id => visible.has(id)),
-        input.sinceMs
+        input.sinceMs,
+        { hiddenOperationIds, ownUserId: ctx.user.id }
       );
     }),
 
@@ -914,11 +995,17 @@ export const intelligenceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertEntitiesNotHidden([input.labelA, input.labelB]);
       await markEntitiesNotDuplicate(
         input.type,
         input.labelA,
         input.labelB,
         ctx.user.cin ?? undefined
+      );
+      await auditEntityChange(
+        ctx.user,
+        "entity_not_duplicate",
+        `${input.type}: "${input.labelA}" and "${input.labelB}" marked as different`
       );
       return { ok: true };
     }),
@@ -933,6 +1020,7 @@ export const intelligenceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertEntitiesNotHidden([input.winnerLabel, input.loserLabel]);
       try {
         await mergeEntities(
           input.type,
@@ -946,6 +1034,11 @@ export const intelligenceRouter = router({
           message: err instanceof Error ? err.message : "Merge failed.",
         });
       }
+      await auditEntityChange(
+        ctx.user,
+        "entity_merged",
+        `${input.type}: "${input.loserLabel}" merged into "${input.winnerLabel}"`
+      );
       return { ok: true };
     }),
 
@@ -978,7 +1071,16 @@ export const intelligenceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertEntitiesNotHidden([input.label]);
       await saveIntelPinOverride(input, ctx.user.cin ?? undefined);
+      await auditEntityChange(
+        ctx.user,
+        "intel_pin_changed",
+        `Map pin for "${input.label}" changed` +
+          (input.lat != null && input.lng != null
+            ? ` to ${input.lat.toFixed(5)}, ${input.lng.toFixed(5)}`
+            : "")
+      );
       return { ok: true };
     }),
 
@@ -1008,8 +1110,21 @@ export const intelligenceRouter = router({
         loserKey: z.string().min(1),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // The merge being undone names two entities: they must not be hidden.
+      const merge = (await listEntityMerges()).find(
+        m => m.type === input.type && m.loserKey === input.loserKey
+      );
+      if (merge)
+        await assertEntitiesNotHidden([merge.winnerLabel, merge.loserLabel]);
       await unmergeEntity(input.type, input.loserKey);
+      await auditEntityChange(
+        ctx.user,
+        "entity_unmerged",
+        merge
+          ? `${input.type}: "${merge.loserLabel}" taken out of "${merge.winnerLabel}"`
+          : `${input.type}: merge with key "${input.loserKey}" undone`
+      );
       return { ok: true };
     }),
 
@@ -1060,10 +1175,16 @@ export const intelligenceRouter = router({
           message: "Either targetId or associateId is required.",
         });
       }
+      await requireRegisteredPerson(input.targetId, input.associateId);
       await confirmPersonNameMatch({
         ...input,
         decidedByCIN: ctx.user.cin ?? undefined,
       });
+      await auditEntityChange(
+        ctx.user,
+        "person_name_confirmed",
+        `Spelling "${input.spelling}" confirmed as "${input.correctSpelling}" (${input.targetId ? `target ${input.targetId}` : `associate ${input.associateId}`})`
+      );
       return { ok: true };
     }),
 
@@ -1083,10 +1204,16 @@ export const intelligenceRouter = router({
           message: "Either targetId or associateId is required.",
         });
       }
+      await requireRegisteredPerson(input.targetId, input.associateId);
       await rejectPersonNameMatch({
         ...input,
         decidedByCIN: ctx.user.cin ?? undefined,
       });
+      await auditEntityChange(
+        ctx.user,
+        "person_name_rejected",
+        `Spelling "${input.spelling}" marked as not (${input.targetId ? `target ${input.targetId}` : `associate ${input.associateId}`})`
+      );
       return { ok: true };
     }),
 

@@ -61,6 +61,10 @@ export const users = mysqlTable("users", {
   // Forces a password change on next login (e.g. admin-issued temporary
   // password). Enforced server-side in _core/trpc.ts, not just client UI.
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
+  // Goes up by one when this person logs out, changes or is given a new
+  // password, or is archived. A sign-in carries the number it was issued with,
+  // so every older sign-in (a copied cookie, another device) stops working.
+  sessionVersion: int("sessionVersion").default(0).notNull(),
   // Home Command (region) — see shared/commands.ts. Existing users land in
   // WESTERN when the column is added.
   command: mysqlEnum("command", [
@@ -1167,6 +1171,15 @@ export const auditLogs = mysqlTable(
       "document_ai_changed",
       "place_label_changed",
       "predictor_last_seen_changed",
+      "entity_merged",
+      "entity_unmerged",
+      "entity_not_duplicate",
+      "intel_pin_changed",
+      "person_name_confirmed",
+      "person_name_rejected",
+      "face_group_relabelled",
+      "recycle_bin_restored",
+      "recycle_bin_deleted",
     ]).notNull(),
     details: text("details"),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -2013,6 +2026,8 @@ export const ctoRosterShifts = mysqlTable(
     shiftDurationHours: int("shiftDurationHours"),
     comment: text("comment"),
     isActing: boolean("isActing").default(false).notNull(),
+    /** Set only when the CTO Weekly Tasking turned a Rest Day ("r") or Rest on-call ("o") into a working shift: the code it was, so the roster goes back to it if the tasking later has no shift for that team and day. Any other write to the shift clears it. */
+    taskingRevert: varchar("taskingRevert", { length: 8 }),
     updatedBy: int("updatedBy"), // FK → users.id
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -2621,3 +2636,15 @@ export const appSettings = mysqlTable("app_settings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type AppSettingRow = typeof appSettings.$inferSelect;
+
+// Offline work is sent as one action per record the officer made. The phone
+// gives each create an id; the server notes it here so a replay of the same
+// action (a lost reply, a second open tab) returns the record that was already
+// made instead of making it twice. `actionKey` is "<userId>:<client id>";
+// resultId is 0 while the first attempt is still being made.
+export const offlineActionKeys = mysqlTable("offline_action_keys", {
+  actionKey: varchar("actionKey", { length: 120 }).primaryKey(),
+  kind: varchar("kind", { length: 24 }).notNull(),
+  resultId: int("resultId").default(0).notNull(),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+});

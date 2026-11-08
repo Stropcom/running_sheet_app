@@ -141,7 +141,7 @@ describe("toggleExportView", () => {
 });
 
 describe("calendar layouts on a phone", () => {
-  it("keeps Day tiles and Timeline, and shows Day tiles for any other saved choice", () => {
+  it("keeps Calendar and Timeline, and shows Calendar for any other saved choice", () => {
     expect(viewOnPhone("tile-days")).toBe("tile-days");
     expect(viewOnPhone("cal-timeline")).toBe("cal-timeline");
     expect(viewOnPhone("panel-banded")).toBe("tile-days");

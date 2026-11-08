@@ -18,6 +18,7 @@ export const ZERO_AREAS: ZeroArea[] = [
     label: "Running sheets and rows",
     tables: [
       "running_sheets",
+      "offline_action_keys",
       "sheet_rows",
       "row_members",
       "certifications",

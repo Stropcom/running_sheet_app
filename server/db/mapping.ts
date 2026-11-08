@@ -40,6 +40,12 @@ import {
 
 import { getAllIntelligenceEntities } from "./reports";
 import { getDb } from "./core";
+import { getRowsBySheetId } from "./operations";
+import {
+  noteKnownAddress,
+  resolveKnownAddress,
+  type KnownAddresses,
+} from "@shared/knownAddresses";
 import { IntelligenceEntity, extractEntitiesFromText } from "./intelligence";
 
 // ─── Intelligence Mapping ─────────────────────────────────────────────────────
@@ -867,9 +873,30 @@ export interface UserLocationHistoryPointDTO {
  * userId (not deviceId) since a single officer's trail should read as one
  * continuous line regardless of which device recorded which point.
  */
+/** A point tagged with operations, all of which are hidden from the viewer. */
+export function pointIsOnlyInHiddenOperations(
+  operationIdsJson: string | null,
+  hidden: ReadonlySet<number>
+): boolean {
+  try {
+    const ids = JSON.parse(operationIdsJson || "[]");
+    return (
+      Array.isArray(ids) &&
+      ids.length > 0 &&
+      ids.every(id => typeof id === "number" && hidden.has(id))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function getUserLocationHistories(
   userIds: number[],
-  sinceMs: number
+  sinceMs: number,
+  /** Operations this person cannot open (another Command's Restricted ones):
+   * an earlier point tagged only with those stays out, and so does the
+   * person's own trail never (it is theirs). */
+  scope?: { hiddenOperationIds: ReadonlySet<number>; ownUserId: number }
 ): Promise<Record<number, UserLocationHistoryPointDTO[]>> {
   const db = await getDb();
   const result: Record<number, UserLocationHistoryPointDTO[]> = {};
@@ -882,6 +909,7 @@ export async function getUserLocationHistories(
       lng: userLocationHistory.lng,
       speed: userLocationHistory.speed,
       recordedAt: userLocationHistory.recordedAt,
+      operationIds: userLocationHistory.operationIds,
     })
     .from(userLocationHistory)
     .where(
@@ -893,6 +921,13 @@ export async function getUserLocationHistories(
     .orderBy(asc(userLocationHistory.recordedAt));
 
   for (const r of rows) {
+    if (
+      scope &&
+      scope.hiddenOperationIds.size > 0 &&
+      r.userId !== scope.ownUserId &&
+      pointIsOnlyInHiddenOperations(r.operationIds, scope.hiddenOperationIds)
+    )
+      continue;
     if (!result[r.userId]) result[r.userId] = [];
     result[r.userId].push({
       lat: r.lat,
@@ -1514,16 +1549,11 @@ export async function getRsMappingWaypoints(
   const db = await getDb();
   if (!db) return [];
 
-  // Load all rows for the sheet (sorted chronologically)
-  const rows = await db
-    .select()
-    .from(sheetRows)
-    .where(eq(sheetRows.sheetId, sheetId))
-    .orderBy(
-      sql`ISNULL(${sheetRows.timeMinutes})`,
-      asc(sheetRows.timeMinutes),
-      asc(sheetRows.rowNumber)
-    );
+  // Load all rows for the sheet in real order: by DATE and then time (an
+  // arrival at 00:05 the next day comes after a departure at 23:55), using the
+  // same day logic as the rest of the app (rowDate, then day offset, then the
+  // time sequence) — not by the clock time alone.
+  const rows = await getRowsBySheetId(sheetId);
 
   // Load persisted waypoint overrides
   const overrides = await db
@@ -1554,7 +1584,9 @@ export async function getRsMappingWaypoints(
   // Build a normalised-address → full-address lookup from bracketed entries seen so far
   // Key: normalised street number + street name (lowercase, no punctuation)
   // Value: the best full address string seen for that location
-  const knownAddressMap = new Map<string, string>(); // normKey → addressFull
+  // (every full address seen per key — a street named in two suburbs is
+  // ambiguous, see shared/knownAddresses.ts)
+  const knownAddressMap: KnownAddresses = new Map();
 
   const normaliseAddrKey = (addr: string): string =>
     addr
@@ -1608,14 +1640,11 @@ export async function getRsMappingWaypoints(
       // Bracketed address found — use it and register in knownAddressMap
       // Register by display shortForm key (e.g. "4 glyde street")
       const displayKey = addrMatchKey(addrEntity.shortForm);
-      if (displayKey && !knownAddressMap.has(displayKey)) {
-        knownAddressMap.set(displayKey, addrEntity.shortForm);
-      }
+      noteKnownAddress(knownAddressMap, displayKey, addrEntity.shortForm);
       // Also register by rawShortForm key (the exact bracket token, e.g. "4 glyde st")
       const rawKey = addrMatchKey(addrEntity.rawShortForm);
-      if (rawKey && rawKey !== displayKey && !knownAddressMap.has(rawKey)) {
-        knownAddressMap.set(rawKey, addrEntity.shortForm);
-      }
+      if (rawKey && rawKey !== displayKey)
+        noteKnownAddress(knownAddressMap, rawKey, addrEntity.shortForm);
       addressRows.push({
         row,
         address: addrEntity.shortForm,
@@ -1634,7 +1663,7 @@ export async function getRsMappingWaypoints(
     const rawAddr = bareMatch[1].trim();
     // Try to enrich with a known full address from earlier in the sheet
     const matchKey = addrMatchKey(rawAddr);
-    const knownFull = knownAddressMap.get(matchKey);
+    const knownFull = resolveKnownAddress(knownAddressMap, matchKey);
     addressRows.push({
       row,
       address: rawAddr,

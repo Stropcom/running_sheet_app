@@ -4,11 +4,13 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { firstRowFill } from "@shared/firstRow";
 import { ceaseMembers, ceaseRowText } from "@shared/ceaseRow";
 import { rowTimeForNewRow } from "@shared/rowTime";
+import { rowEditChangesContent } from "@shared/rowEditSignatures";
 import {
   addRowMember,
   createAuditLog,
   getAllUsers,
   createSheetRow,
+  deactivateAllCertificationsForRow,
   deleteSheetRow,
   getCertificationsByRowIds,
   getMembersByRowIds,
@@ -31,9 +33,10 @@ import {
   insertTravelledViaRow,
   textHasContinuedVia,
   getAttachmentsByRowIds,
+  runOnce,
 } from "../db";
 
-import { guardActiveSheet } from "./_helpers";
+import { guardActiveSheet, guardLiveSheet } from "./_helpers";
 
 const createRowInput = z.object({
   sheetId: z.number(),
@@ -214,6 +217,7 @@ export const rowRouter = router({
   list: protectedProcedure
     .input(z.object({ sheetId: z.number() }))
     .query(async ({ input }) => {
+      await guardLiveSheet(input.sheetId);
       const rows = await getRowsBySheetId(input.sheetId);
       const rowIds = rows.map(r => r.id);
       const [members, certs, attachments] = await Promise.all([
@@ -371,8 +375,15 @@ export const rowRouter = router({
     }),
 
   create: protectedProcedure
-    .input(createRowInput)
-    .mutation(async ({ input, ctx }) => createRowFor(ctx, input)),
+    .input(
+      createRowInput.extend({ clientActionId: z.string().max(100).optional() })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { clientActionId, ...rest } = input;
+      return runOnce(ctx.user.id, clientActionId, "row", () =>
+        createRowFor(ctx, rest)
+      );
+    }),
 
   // The ceased row — the mirror of the first row. One tap writes "Surveillance
   // ceased in the vicinity of [place]" with the current time and every CIN that
@@ -437,6 +448,31 @@ export const rowRouter = router({
           message: "Row is locked. Uncertify to edit.",
         });
       const { id, ...data } = input;
+      // A half-signed row that is edited loses its signatures: what the
+      // officers signed is no longer what the row says. (A locked row can't
+      // be edited at all, so this only meets rows still being signed.) Only a
+      // real change counts — saving the same text again keeps them.
+      const changed = rowEditChangesContent(row, data);
+      let signaturesRemoved = 0;
+      if (changed) {
+        const signed = (await getCertificationsByRowIds([id])).filter(
+          c => c.rowId === id && c.isActive
+        );
+        if (signed.length > 0) {
+          await deactivateAllCertificationsForRow(id);
+          signaturesRemoved = signed.length;
+          await createAuditLog({
+            sheetId: row.sheetId,
+            rowId: id,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "uncertified",
+            details: `${signed.length} signature(s) removed (${signed.map(c => c.certifiedByCIN).join(", ")}) because the row was edited`,
+            createdAt: Date.now(),
+          });
+        }
+      }
       // See insertTravelledViaRow — only fires the FIRST time "continued
       // via:" appears in this row's text, not on every subsequent save of
       // an already-flagged row (which would otherwise insert a fresh
@@ -475,7 +511,7 @@ export const rowRouter = router({
           createdAt: Date.now(),
         });
       }
-      return { success: true };
+      return { success: true, signaturesRemoved };
     }),
 
   delete: protectedProcedure

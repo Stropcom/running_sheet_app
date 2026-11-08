@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
+import { ownerAccountProblem } from "@shared/commandFeatures";
 import {
   canShareOperation,
   SHARE_LEVELS,
@@ -24,9 +25,9 @@ import {
   deleteUser,
   getAllUsers,
   getOperationById,
+  bumpSessionVersion,
   getUserById,
   updateUser,
-  updateUserRole,
   listOperationShares,
   upsertOperationShare,
   deleteOperationShare,
@@ -418,12 +419,15 @@ export const adminRouter = router({
         teamId: z.number().nullable().optional(),
         phone: z.string().optional(),
         username: z.string().min(1),
-        password: z.string().min(1),
+        password: z.string().min(8, "Password must be at least 8 characters."),
         role: z.enum(["observer", "member", "admin", "investigator"]),
         investigatorOperationIds: z.array(z.number()).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const reserved = ownerAccountProblem(ctx.user, undefined, input.cin);
+      if (reserved)
+        throw new TRPCError({ code: "FORBIDDEN", message: reserved });
       if (!ctx.user.allRegions) {
         if (input.command && input.command !== ctx.user.command) {
           throw new TRPCError({
@@ -489,7 +493,10 @@ export const adminRouter = router({
         teamId: z.number().nullable().optional(),
         phone: z.string().nullable().optional(),
         username: z.string().min(1).optional(),
-        password: z.string().min(1).optional(),
+        password: z
+          .string()
+          .min(8, "Password must be at least 8 characters.")
+          .optional(),
         role: z
           .enum(["observer", "member", "admin", "investigator"])
           .optional(),
@@ -498,7 +505,7 @@ export const adminRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const { id, password, investigatorOperationIds, ...rest } = input;
-      await assertCanManageUser(ctx.user, id);
+      await assertCanManageUser(ctx.user, id, rest.cin);
       if (!ctx.user.allRegions) {
         const current = await getUserById(id);
         if (rest.command && current && rest.command !== current.command) {
@@ -541,6 +548,9 @@ export const adminRouter = router({
       }
       if (password) {
         updateData.passwordHash = await bcrypt.hash(password, 12);
+        // A password an admin typed is a temporary one: the person chooses
+        // their own at their next sign-in (as with a new account).
+        updateData.mustChangePassword = true;
       }
       // All-region is an admin-only setting; dropping the admin role drops it.
       if (rest.role && rest.role !== "admin") updateData.allRegions = false;
@@ -560,6 +570,9 @@ export const adminRouter = router({
         );
       }
       await updateUser(id, updateData as Parameters<typeof updateUser>[1]);
+      // A new password ends the person's current sign-ins (they sign in with
+      // the one they were given).
+      if (password) await bumpSessionVersion(id);
       await createAuditLog({
         sheetId: 0,
         userId: ctx.user.id,
@@ -594,18 +607,6 @@ export const adminRouter = router({
       return { success: true };
     }),
 
-  updateUserRole: adminProcedure
-    .input(
-      z.object({
-        userId: z.number(),
-        role: z.enum(["observer", "member", "admin"]),
-      })
-    )
-    .mutation(async ({ input }) => {
-      await updateUserRole(input.userId, input.role);
-      return { success: true };
-    }),
-
   /** Reversible — signs the officer out and hides them from CIN pickers
    * (adding to a team/operation/running sheet) without touching anything
    * already recorded against their CIN. See archivedAt's own comment on
@@ -620,6 +621,7 @@ export const adminRouter = router({
         });
       await assertCanManageUser(ctx.user, input.id);
       await archiveUser(input.id, ctx.user.cin ?? "Unknown");
+      await bumpSessionVersion(input.id);
       await createAuditLog({
         sheetId: 0,
         userId: ctx.user.id,

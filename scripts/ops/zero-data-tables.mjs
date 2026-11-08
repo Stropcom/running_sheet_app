@@ -43,6 +43,8 @@ export const KEEP_TABLES = [
 
 /** Operational records that are emptied (and numbered from 1 again). */
 export const CLEAR_TABLES = [
+  // Offline replay ids: they name records that no longer exist after a zero.
+  "offline_action_keys",
   // Operations and running sheets
   "operations",
   "operation_shares",

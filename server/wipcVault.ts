@@ -112,3 +112,25 @@ export function fingerprintVaultKey(): string {
   const key = getKey();
   return crypto.createHash("sha256").update(key).digest("hex").slice(0, 32);
 }
+
+/**
+ * Tries to open each stored encrypted value with the current key. Returns the
+ * number of values that do not open (0 = the key is the one that wrote them).
+ * Empty values are skipped. Used before the first key check is recorded: a
+ * mistyped key must never become the key of record while real encrypted
+ * members are already on file.
+ */
+export function countUndecryptable(
+  values: ReadonlyArray<string | null | undefined>
+): number {
+  let bad = 0;
+  for (const v of values) {
+    if (!v) continue;
+    try {
+      vaultDecrypt(v);
+    } catch {
+      bad++;
+    }
+  }
+  return bad;
+}

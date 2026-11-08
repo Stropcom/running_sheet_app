@@ -1995,9 +1995,10 @@ export default function RosterPage() {
         }}
       >
         {/* ── Full screen on a phone or tablet: the controls that are left, as
-            a strip (a laptop has them in the RunLog header bar) ─────────── */}
+            a strip (a laptop, or a phone turned sideways, has them in the
+            RunLog header bar) ─────────── */}
         {fullscreen && (
-          <div className="mb-1.5 flex-shrink-0 lg:hidden">
+          <div className="roster-fs-strip mb-1.5 flex-shrink-0">
             <RosterFullscreenBar variant="strip" />
           </div>
         )}
@@ -2234,8 +2235,12 @@ export default function RosterPage() {
                   paddingLeft: ROSTER_FRAME_EDGE,
                 }}
               >
+                {/* The month sits in the frozen corner, above "Member": it
+                    follows the scroll, and it is still there in full screen
+                    (where the month picker is hidden). A floating badge over
+                    the day headers was tried and covered them. */}
                 <div
-                  className="flex-shrink-0 flex items-center px-3 bg-card rounded-md shadow-sm border border-border/50 font-semibold text-foreground text-sm"
+                  className="flex-shrink-0 flex flex-col items-start justify-center gap-0.5 px-2 bg-card rounded-md shadow-sm border border-border/50 font-semibold text-foreground text-sm leading-none"
                   style={{
                     width: `${nameColWidthForGrid}px`,
                     height: `${HEADER_HEIGHT}px`,
@@ -2245,11 +2250,14 @@ export default function RosterPage() {
                     background: "var(--color-card)",
                   }}
                 >
-                  Member
+                  <span
+                    data-testid="roster-month-corner"
+                    className="text-xs font-bold text-primary whitespace-nowrap"
+                  >
+                    {MONTHS[visibleMonthIndex]}
+                  </span>
+                  <span>Member</span>
                 </div>
-                {/* No floating month badge on a phone: it sat over the day
-                    headers, and the month picker above already says which
-                    month this is. */}
                 <DateSpacer width={spacers.lead} />
                 {windowDates.map(d => {
                   const ds = format(d, "yyyy-MM-dd");

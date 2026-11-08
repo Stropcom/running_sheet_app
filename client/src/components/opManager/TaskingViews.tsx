@@ -632,7 +632,7 @@ function PanelTables({
   );
 }
 
-/** Day tiles (seven days and a week summary: four across, two rows) */
+/** Calendar (was "Day tiles"; seven days and a week summary: four across, two rows) */
 function DayTiles({
   week,
   days,
@@ -1640,7 +1640,11 @@ export function TaskingCalendarViews({
   breaches,
   breachCount = 0,
   onOpenRoster,
+  toolbarAction,
 }: {
+  /** A button for the Highlight line, on the right beside the view picker
+   * (the page puts Edit Tasking here). */
+  toolbarAction?: ReactNode;
   /** EA breaches by `team-day` (see shared/taskingBreaches.ts); shown to
    * everyone who can see the calendar. Screen only, not in the PDF. */
   breaches?: Record<string, BreachItem[] | undefined>;
@@ -1665,7 +1669,7 @@ export function TaskingCalendarViews({
   ) => ReactNode;
 }) {
   const [savedView, setView] = useTaskingView();
-  // A phone offers only Day tiles and Timeline (and has no colour / letter key);
+  // A phone offers only Calendar and Timeline (and has no colour / letter key);
   // the saved choice is left alone for the laptop.
   const isMobile = useIsMobile();
   const view = isMobile ? (viewOnPhone(savedView) as TaskingViewId) : savedView;
@@ -1753,70 +1757,65 @@ export function TaskingCalendarViews({
             </Badge>
           )}
         </div>
-        <Select
-          value={view}
-          onValueChange={v => {
-            if (isTaskingView(v)) setView(v);
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-[270px]"
-            aria-label="Calendar view"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {viewChoices.map(v => (
-              <SelectItem key={v.id} value={v.id}>
-                {v.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
-      {ops.length > 0 && (
-        <div
-          className="tcv-focus"
-          role="group"
-          aria-label="Highlight an operation"
-        >
-          <span className="lab">Highlight</span>
-          <button
-            type="button"
-            className="tcv-chip"
-            aria-pressed={!focus}
-            onClick={() => setFocus(null)}
+      {/* The Highlight line: the operation chips on the left; Edit Tasking and
+          the view picker on the right (one equal-height row; on a phone the
+          picker takes the rest of the width beside the button). */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {ops.length > 0 ? (
+          <div
+            className="tcv-focus"
+            role="group"
+            aria-label="Highlight an operation"
           >
-            All
-          </button>
-          {ops.map(o => (
+            <span className="lab">Highlight</span>
             <button
-              key={o}
               type="button"
               className="tcv-chip"
-              aria-pressed={focus === o}
-              onClick={() => toggle(o)}
+              aria-pressed={!focus}
+              onClick={() => setFocus(null)}
             >
-              {o}
+              All
             </button>
-          ))}
+            {ops.map(o => (
+              <button
+                key={o}
+                type="button"
+                className="tcv-chip"
+                aria-pressed={focus === o}
+                onClick={() => toggle(o)}
+              >
+                {o}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span />
+        )}
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          {toolbarAction}
+          <div className="min-w-0 flex-1 sm:w-[270px] sm:flex-none">
+            <Select
+              value={view}
+              onValueChange={v => {
+                if (isTaskingView(v)) setView(v);
+              }}
+            >
+              <SelectTrigger className="w-full" aria-label="Calendar view">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {viewChoices.map(v => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      )}
-      {!isMobile && (
-        <div className="tcv-legend">
-          {teams.map(t => (
-            <span key={t.id} style={teamStyle(t)}>
-              <i />
-              {t.label}
-            </span>
-          ))}
-          <span>
-            P = primary task, S = secondary task, RDO = rostered day off
-          </span>
-        </div>
-      )}
-
+      </div>
       {view === "cal-timeline" && edit?.editable && (
         <p className="px-1 text-xs text-muted-foreground">
           Slide a bar to change its time (steps of 30 minutes, a start from

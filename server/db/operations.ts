@@ -339,13 +339,17 @@ export async function getOperationDeleteStats(id: number) {
 
 // ─── Running Sheets ───────────────────────────────────────────────────────────
 
+// Sheets whose operation is in the Recycle Bin are not live: the lists leave
+// them out (they come back with the operation when it is reinstated).
+const inLiveOperation = sql`${runningSheets.operationId} NOT IN (SELECT id FROM operations WHERE deletedAt IS NOT NULL)`;
+
 export async function getRunningSheets() {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
     .from(runningSheets)
-    .where(isNull(runningSheets.deletedAt))
+    .where(and(isNull(runningSheets.deletedAt), inLiveOperation))
     .orderBy(desc(runningSheets.createdAt));
 }
 
@@ -358,7 +362,8 @@ export async function getRunningSheetsByOperation(operationId: number) {
     .where(
       and(
         eq(runningSheets.operationId, operationId),
-        isNull(runningSheets.deletedAt)
+        isNull(runningSheets.deletedAt),
+        inLiveOperation
       )
     )
     .orderBy(desc(runningSheets.createdAt));
@@ -374,7 +379,8 @@ export async function getRunningSheetsByOperations(operationIds: number[]) {
     .where(
       and(
         inArray(runningSheets.operationId, operationIds),
-        isNull(runningSheets.deletedAt)
+        isNull(runningSheets.deletedAt),
+        inLiveOperation
       )
     )
     .orderBy(desc(runningSheets.createdAt));
@@ -617,6 +623,9 @@ export async function copyRunningSheet(
   const [newSheetResult] = await db.insert(runningSheets).values({
     operationId: targetOperationId,
     title: newTitle?.trim() || srcSheet.title,
+    // The copy keeps the day the sheet is for — without it the title and the
+    // row dates lose their day.
+    sheetDate: srcSheet.sheetDate,
     targetName: srcSheet.targetName,
     sheetCins: srcSheet.sheetCins,
     targetId: srcSheet.targetId,
@@ -640,6 +649,8 @@ export async function copyRunningSheet(
       rowNumber: row.rowNumber,
       time: row.time,
       timeMinutes: row.timeMinutes,
+      dayOffset: row.dayOffset,
+      rowDate: row.rowDate,
       observation: row.observation,
       isLocked: false, // copy starts unlocked
     });

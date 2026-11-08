@@ -18,7 +18,7 @@ import {
   type AuthenticationResponseJSON,
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import {
   passkeyCodes,
   passkeyCredentials,
@@ -50,28 +50,32 @@ export function invalidatePasskeySettings() {
   settingsCache = null;
 }
 
-/** The switch and the allowance. With no saved row, or if the database can't be
- * read, the requirement is OFF — the feature never blocks anyone by accident. */
+/** The switch and the allowance. With no saved row the requirement is OFF — the
+ * feature never blocks anyone by accident. If the settings cannot be read this
+ * throws (see below), so the sign-in is refused for now rather than guessed. */
 export async function loadPasskeySettings(): Promise<PasskeySettings> {
   if (settingsCache && Date.now() - settingsCache.at < SETTINGS_TTL_MS)
     return settingsCache.value;
+  // With no saved row the requirement is OFF. A settings table that cannot be
+  // READ is not the same as no row: it must not switch the requirement off
+  // (that would let a password-only sign-in through for someone who needs a
+  // passkey), so a read failure throws and is not cached.
+  const db = await getDb();
+  if (!db) throw new Error("Passkey settings unavailable");
   let value = DEFAULT_PASSKEY_SETTINGS;
   try {
-    const db = await getDb();
-    if (db) {
-      const [row] = await db
-        .select()
-        .from(passkeySettings)
-        .where(eq(passkeySettings.id, 1))
-        .limit(1);
-      if (row)
-        value = {
-          requireAll: row.requireAll,
-          maxPasswordSignIns: row.maxPasswordSignIns,
-        };
-    }
-  } catch {
-    value = DEFAULT_PASSKEY_SETTINGS;
+    const [row] = await db
+      .select()
+      .from(passkeySettings)
+      .where(eq(passkeySettings.id, 1))
+      .limit(1);
+    if (row)
+      value = {
+        requireAll: row.requireAll,
+        maxPasswordSignIns: row.maxPasswordSignIns,
+      };
+  } catch (error) {
+    throw new Error("Passkey settings unavailable", { cause: error });
   }
   settingsCache = { at: Date.now(), value };
   return value;
@@ -579,6 +583,38 @@ export async function findLiveCode(userId: number, raw: string) {
     .limit(1);
   if (!row || row.expiresAt <= Date.now()) return null;
   return row;
+}
+
+/**
+ * Takes a one-time code in a single step: true only for the one request that
+ * finds it unused and unexpired. Two registrations started at the same moment
+ * with the same code cannot both get it.
+ */
+export async function claimCode(codeId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const now = Date.now();
+  const [res] = await db
+    .update(passkeyCodes)
+    .set({ usedAt: now })
+    .where(
+      and(
+        eq(passkeyCodes.id, codeId),
+        isNull(passkeyCodes.usedAt),
+        gt(passkeyCodes.expiresAt, now)
+      )
+    );
+  return (res as { affectedRows?: number } | undefined)?.affectedRows === 1;
+}
+
+/** Gives a claimed code back when the registration it was claimed for failed. */
+export async function releaseCode(codeId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(passkeyCodes)
+    .set({ usedAt: null })
+    .where(eq(passkeyCodes.id, codeId));
 }
 
 export async function markCodeUsed(codeId: number) {

@@ -48,7 +48,13 @@ export function CreateOperationDialog({
 
   const createOp = trpc.operation.create.useMutation({
     onSuccess: ({ id }) => {
-      utils.operation.list.invalidate();
+      // If the Operations list is still doing its FIRST load (a slow
+      // connection, or a quick click), a plain invalidate does nothing — the
+      // list in flight is waited for instead, and it was asked for before this
+      // operation existed. So drop that request first, then ask again.
+      void utils.operation.list
+        .cancel()
+        .then(() => utils.operation.list.invalidate());
       toast.success("Operation created");
       const createdName = name.trim();
       setName("");

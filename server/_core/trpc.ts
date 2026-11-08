@@ -101,6 +101,21 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "mapShape.list",
 ]);
 
+/**
+ * What a middleware hands to next() when it has trimmed a request's input (the
+ * operation guard cutting a list down to what the person may reach).
+ *
+ * `input` alone is NOT enough: the procedure's own `.input(...)` step reads the
+ * ORIGINAL request again and lets what it reads win over `input`, so a trimmed
+ * list was put back to the untrimmed one (a request naming a restricted
+ * operation in a list got it). Replacing what the next step reads
+ * (`getRawInput`) as well makes the trimmed input the one every later step
+ * sees. Tested in server/scopedInput.test.ts.
+ */
+export function scopedInputOpts(input: unknown) {
+  return { input, getRawInput: async () => input };
+}
+
 const requireUser = t.middleware(async opts => {
   const { ctx, next, path, type, getRawInput } = opts;
 
@@ -160,7 +175,7 @@ const requireUser = t.middleware(async opts => {
     );
     const run = () =>
       guard.input !== undefined
-        ? next({ ctx: { ...ctx, user }, input: guard.input })
+        ? next({ ctx: { ...ctx, user }, ...scopedInputOpts(guard.input) })
         : next({ ctx: { ...ctx, user } });
     return hidden.size > 0
       ? intelScope.run({ hiddenOperationIds: hidden }, run)

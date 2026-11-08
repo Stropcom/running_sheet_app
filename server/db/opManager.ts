@@ -70,19 +70,23 @@ export async function saveOpManagerPriorityBoard(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db
-    .delete(opManagerPriorityRows)
-    .where(
-      and(
-        eq(opManagerPriorityRows.weekStart, weekStart),
-        inOpCommand(opManagerPriorityRows.command)
-      )
-    );
-  if (rows.length === 0) return [];
   const command = rosterCommandForWrite();
-  await db
-    .insert(opManagerPriorityRows)
-    .values(rows.map(r => ({ ...r, weekStart, command })));
+  // Delete and insert in one step: if the insert fails the old board stays.
+  await db.transaction(async tx => {
+    await tx
+      .delete(opManagerPriorityRows)
+      .where(
+        and(
+          eq(opManagerPriorityRows.weekStart, weekStart),
+          inOpCommand(opManagerPriorityRows.command)
+        )
+      );
+    if (rows.length > 0)
+      await tx
+        .insert(opManagerPriorityRows)
+        .values(rows.map(r => ({ ...r, weekStart, command })));
+  });
+  if (rows.length === 0) return [];
   return getOpManagerPriorityBoard(weekStart);
 }
 
@@ -168,19 +172,23 @@ export async function saveOpManagerSupervisorContacts(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db
-    .delete(opManagerSupervisorContacts)
-    .where(
-      and(
-        eq(opManagerSupervisorContacts.weekStart, weekStart),
-        inOpCommand(opManagerSupervisorContacts.command)
-      )
-    );
-  if (contacts.length === 0) return [];
   const command = rosterCommandForWrite();
-  await db
-    .insert(opManagerSupervisorContacts)
-    .values(contacts.map(c => ({ ...c, weekStart, command })));
+  // Delete and insert in one step: if the insert fails the old contacts stay.
+  await db.transaction(async tx => {
+    await tx
+      .delete(opManagerSupervisorContacts)
+      .where(
+        and(
+          eq(opManagerSupervisorContacts.weekStart, weekStart),
+          inOpCommand(opManagerSupervisorContacts.command)
+        )
+      );
+    if (contacts.length > 0)
+      await tx
+        .insert(opManagerSupervisorContacts)
+        .values(contacts.map(c => ({ ...c, weekStart, command })));
+  });
+  if (contacts.length === 0) return [];
   return getOpManagerSupervisorContacts(weekStart);
 }
 
@@ -276,39 +284,43 @@ export async function copyOpManagerWeek(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const contacts = await getOpManagerSupervisorContacts(fromWeekStart);
-  if (contacts.length > 0) {
-    await db
-      .delete(opManagerSupervisorContacts)
-      .where(
-        and(
-          eq(opManagerSupervisorContacts.weekStart, toWeekStart),
-          inOpCommand(opManagerSupervisorContacts.command)
-        )
-      );
-    await db.insert(opManagerSupervisorContacts).values(
-      contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({
-        ...rest,
-        weekStart: toWeekStart,
-      }))
-    );
-  }
   const priority = await getOpManagerPriorityBoard(fromWeekStart);
-  if (priority.length > 0) {
-    await db
-      .delete(opManagerPriorityRows)
-      .where(
-        and(
-          eq(opManagerPriorityRows.weekStart, toWeekStart),
-          inOpCommand(opManagerPriorityRows.command)
-        )
+  // Contacts and priority board together in one step: a failure part-way
+  // leaves the destination week exactly as it was.
+  await db.transaction(async tx => {
+    if (contacts.length > 0) {
+      await tx
+        .delete(opManagerSupervisorContacts)
+        .where(
+          and(
+            eq(opManagerSupervisorContacts.weekStart, toWeekStart),
+            inOpCommand(opManagerSupervisorContacts.command)
+          )
+        );
+      await tx.insert(opManagerSupervisorContacts).values(
+        contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({
+          ...rest,
+          weekStart: toWeekStart,
+        }))
       );
-    await db.insert(opManagerPriorityRows).values(
-      priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({
-        ...rest,
-        weekStart: toWeekStart,
-      }))
-    );
-  }
+    }
+    if (priority.length > 0) {
+      await tx
+        .delete(opManagerPriorityRows)
+        .where(
+          and(
+            eq(opManagerPriorityRows.weekStart, toWeekStart),
+            inOpCommand(opManagerPriorityRows.command)
+          )
+        );
+      await tx.insert(opManagerPriorityRows).values(
+        priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({
+          ...rest,
+          weekStart: toWeekStart,
+        }))
+      );
+    }
+  });
   return { ok: true, contacts: contacts.length, priority: priority.length };
 }
 

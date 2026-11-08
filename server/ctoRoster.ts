@@ -11,6 +11,7 @@ import {
   max,
   count,
 } from "drizzle-orm";
+import { liveChangedSinceSeed } from "@shared/ctoRosterMerge";
 import {
   getDb,
   getAllUsers as getAllRunLogUsers,
@@ -701,11 +702,17 @@ export async function upsertCtoRosterShift(
   comment?: string | null,
   isActing?: boolean,
   shiftTime?: string | null,
-  shiftDurationHours?: number | null
+  shiftDurationHours?: number | null,
+  /** Only the CTO Weekly Tasking sync passes this (see `taskingRevert` in the schema); any other write clears it. */
+  taskingRevert?: string | null
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const updateSet: Record<string, unknown> = { shiftCode, updatedBy };
+  const updateSet: Record<string, unknown> = {
+    shiftCode,
+    updatedBy,
+    taskingRevert: taskingRevert ?? null,
+  };
   if (comment !== undefined) updateSet.comment = comment;
   if (isActing !== undefined) updateSet.isActing = isActing;
   if (shiftTime !== undefined) updateSet.shiftTime = shiftTime;
@@ -722,6 +729,7 @@ export async function upsertCtoRosterShift(
       isActing: isActing ?? false,
       shiftTime: shiftTime ?? null,
       shiftDurationHours: shiftDurationHours ?? null,
+      taskingRevert: taskingRevert ?? null,
     })
     .onDuplicateKeyUpdate({ set: updateSet });
 }
@@ -743,6 +751,7 @@ export async function bulkUpdateCtoRosterShifts(
     const baseUpd: Record<string, unknown> = {
       shiftCode: row.shiftCode,
       updatedBy: row.updatedBy,
+      taskingRevert: null,
     };
     if (row.isActing !== undefined) baseUpd.isActing = row.isActing;
     if (row.shiftTime !== undefined) baseUpd.shiftTime = row.shiftTime;
@@ -836,6 +845,7 @@ export async function bulkCopyCtoRosterShifts(
             shiftTime: s.shiftTime,
             shiftDurationHours: s.shiftDurationHours,
             updatedBy,
+            taskingRevert: null,
           },
         });
       count++;
@@ -1214,7 +1224,6 @@ export async function getCtoRosterDraftMergeDiff(draftId: number): Promise<{
     const draftTime = ds.shiftTime ?? null;
     if (draftCode === liveCode && draftTime === liveTime) continue;
     if (liveCode === "l" || liveCode === "c") continue;
-    const seededCode = snapshot[key]?.shiftCode ?? "";
     diff.push({
       memberId: ds.memberId,
       memberName: nameByMemberId.get(ds.memberId) ?? String(ds.memberId),
@@ -1223,7 +1232,7 @@ export async function getCtoRosterDraftMergeDiff(draftId: number): Promise<{
       draftTime,
       liveCode,
       liveTime,
-      isConflict: liveCode !== seededCode,
+      isConflict: liveChangedSinceSeed(live, snapshot[key]),
     });
   }
   return {
@@ -1275,10 +1284,12 @@ export async function mergeCtoRosterDraft(
   const mergeableMemberIds = rosterCommand()
     ? new Set((await getAllCtoRosterMembers()).map(m => m.id))
     : null;
-  let applied = 0,
-    skipped = 0,
+  // Pass 1 — decide everything, change nothing. A merge either works
+  // completely or does nothing: if any conflicting cell is still unresolved
+  // the whole merge is refused before a single shift is written.
+  let skipped = 0,
     conflicts = 0;
-  const affectedMemberIds = new Set<number>();
+  const toApply: typeof draftShiftRows = [];
   for (const ds of draftShiftRows) {
     if (mergeableMemberIds && !mergeableMemberIds.has(ds.memberId)) {
       skipped++;
@@ -1298,8 +1309,7 @@ export async function mergeCtoRosterDraft(
       skipped++;
       continue;
     }
-    const seededCode = snapshot[key]?.shiftCode ?? "";
-    if (liveCode !== seededCode) {
+    if (liveChangedSinceSeed(live, snapshot[key])) {
       const res = resolutionMap.get(key);
       if (!res) {
         conflicts++;
@@ -1310,6 +1320,16 @@ export async function mergeCtoRosterDraft(
         continue;
       }
     }
+    toApply.push(ds);
+  }
+  if (conflicts > 0)
+    throw new Error(
+      `${conflicts} unresolved conflict(s). Resolve all conflicts before merging.`
+    );
+
+  // Pass 2 — write.
+  const affectedMemberIds = new Set<number>();
+  for (const ds of toApply) {
     await upsertCtoRosterShift(
       ds.memberId,
       ds.shiftDate,
@@ -1319,14 +1339,13 @@ export async function mergeCtoRosterDraft(
       ds.isActing,
       ds.shiftTime ?? undefined
     );
-    applied++;
     affectedMemberIds.add(ds.memberId);
   }
-  if (conflicts > 0)
-    throw new Error(
-      `${conflicts} unresolved conflict(s). Resolve all conflicts before merging.`
-    );
-  return { applied, skipped, affectedMemberIds: Array.from(affectedMemberIds) };
+  return {
+    applied: toApply.length,
+    skipped,
+    affectedMemberIds: Array.from(affectedMemberIds),
+  };
 }
 
 // ── Standalone draft teams/members (free-text — see schema comment) ────────────
@@ -2486,6 +2505,7 @@ export async function repeatCtoRosterCycle(
           comment: day.comment,
           isActing: day.isActing,
           updatedBy,
+          taskingRevert: null,
         },
       });
   };
@@ -2716,8 +2736,10 @@ export async function getWeeklyTaskingReport(
 export interface TaskingSyncInput {
   teamName: string;
   date: string;
-  /** "HH:MM" */
-  start: string;
+  /** "HH:MM", or null when the tasking has no shift for the team that day. */
+  start: string | null;
+  /** The task is Admin (so a rest day becomes an Admin shift). */
+  admin?: boolean;
 }
 
 /** Today in the unit's own time zone (the server runs on Perth time). */
@@ -2733,13 +2755,24 @@ export async function planTaskingSyncFor(
   const targets: SyncTarget[] = [];
   for (const i of inputs) {
     const team = teamByName.get(i.teamName.trim().toLowerCase());
+    if (!team) continue;
+    if (i.start === null) {
+      targets.push({
+        teamId: team.id,
+        teamName: team.name,
+        date: i.date,
+        startMinutes: null,
+      });
+      continue;
+    }
     const [h, m] = i.start.split(":").map(Number);
-    if (!team || h > 23 || m > 59) continue;
+    if (h > 23 || m > 59) continue;
     targets.push({
       teamId: team.id,
       teamName: team.name,
       date: i.date,
       startMinutes: h * 60 + m,
+      admin: i.admin === true,
     });
   }
   if (targets.length === 0) return [];
@@ -2778,7 +2811,8 @@ export async function applyTaskingSyncFor(
       undefined,
       undefined,
       c.storeTime,
-      undefined
+      undefined,
+      c.revertTo
     );
     await writeCtoRosterAudit({
       userId: actor.id,
@@ -2792,7 +2826,9 @@ export async function applyTaskingSyncFor(
         shiftTime: c.fromTime,
       }),
       newValue: JSON.stringify({ shiftCode: c.toCode, shiftTime: c.storeTime }),
-      detail: `From the CTO Weekly Tasking: ${c.teamName} starts at ${c.toTime}`,
+      detail: c.backTo
+        ? `From the CTO Weekly Tasking: ${c.teamName} has no shift, back to ${c.backTo === "o" ? "Rest on-call" : "a rest day"}`
+        : `From the CTO Weekly Tasking: ${c.teamName} starts at ${c.toTime}${c.fromRest ? " (was a rest day)" : c.fromOnCall ? " (was Rest on-call)" : ""}`,
     });
   }
   const byMember = new Map<number, SyncChange[]>();

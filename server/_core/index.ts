@@ -25,7 +25,7 @@ import {
 } from "../db";
 import { ENV } from "./env";
 import { sdk } from "./sdk";
-import { requireSignedIn } from "../uploadAccess";
+import { requireFileAccess } from "../storedFileAccess";
 import { registerHealthRoute } from "../healthz";
 
 // Fail fast rather than silently signing every session with an empty key.
@@ -118,7 +118,11 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.use(
     "/manus-storage",
-    requireSignedIn(req => sdk.authenticateRequest(req))
+    requireFileAccess(
+      req => sdk.authenticateRequest(req),
+      // The stored key is everything after /manus-storage/.
+      req => req.path
+    )
   );
   registerStorageProxy(app);
   registerLocalUploadsRoute(app);
@@ -139,7 +143,15 @@ async function startServer() {
   ];
   app.use("/api/oauth", authRateLimiter);
   app.use((req, res, next) => {
-    if (RATE_LIMITED_TRPC_PATHS.some(p => req.path.startsWith(p))) {
+    // A batch is one request with several calls, named after the first one
+    // ("/api/trpc/passkey.loginOptions,auth.login"): look at every call.
+    const calls = req.path.startsWith("/api/trpc/")
+      ? req.path
+          .slice("/api/trpc/".length)
+          .split(",")
+          .map(c => `/api/trpc/${c}`)
+      : [req.path];
+    if (calls.some(c => RATE_LIMITED_TRPC_PATHS.some(p => c.startsWith(p)))) {
       return authRateLimiter(req, res, next);
     }
     next();

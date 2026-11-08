@@ -16,7 +16,9 @@ import { makeRequest, type GeocodingResult } from "../_core/map";
 import {
   aliasMentionCompatible,
   aliasSearchFlags,
+  bareAliasFollowsOtherGivenName,
   mentionIsOtherRegisteredPerson,
+  pickRegisteredForAlias,
 } from "../personAliasMatch";
 
 import type { CommandCode } from "@shared/commands";
@@ -2542,9 +2544,15 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   // Build a set of TGT aliases so we can suppress them from observation-derived persons
   // Maps tgtAlias (uppercased) -> canonical full name
   const tgtAliasToFullName = new Map<string, string>();
+  // Every target that carries an alias (two targets can share a surname).
+  const tgtAliasCandidates = new Map<string, string[]>();
   for (const t of targetRows) {
     if (t.tgt && t.tgt.trim()) {
-      tgtAliasToFullName.set(t.tgt.trim().toUpperCase(), t.targetName);
+      const k = t.tgt.trim().toUpperCase();
+      tgtAliasToFullName.set(k, t.targetName);
+      const list = tgtAliasCandidates.get(k) ?? [];
+      if (!list.includes(t.targetName)) list.push(t.targetName);
+      tgtAliasCandidates.set(k, list);
     }
   }
   // Same idea for registry associates: maps their bracket surname (e.g.
@@ -3146,6 +3154,18 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
       ) {
         canonicalName = undefined;
       }
+      // An alias shared by more than one registered person ("TAN" for both
+      // Grace and Greg) is never resolved by whichever was loaded last: the
+      // mention must fit exactly one of them, and a bare "TAN" fits none.
+      if (canonicalName) {
+        const aliasKey = aliasUsedForTarget.toUpperCase();
+        canonicalName = pickRegisteredForAlias(
+          e.shortForm,
+          aliasUsedForTarget,
+          tgtAliasCandidates.get(aliasKey) ?? [canonicalName],
+          registeredNamesByAlias.get(aliasKey) ?? []
+        );
+      }
       // "Hana PARK" is a different registered person from the target
       // "Soo-Min Hana PARK" even though the given name fits — see
       // mentionIsOtherRegisteredPerson.
@@ -3195,11 +3215,12 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
       if (
         canonicalAssocKey &&
         entityMap.has(canonicalAssocKey) &&
-        aliasMentionCompatible(
+        pickRegisteredForAlias(
           e.shortForm,
           aliasUsedForAssoc,
-          entityMap.get(canonicalAssocKey)!.shortForm
-        )
+          [entityMap.get(canonicalAssocKey)!.shortForm],
+          registeredNamesByAlias.get(aliasUsedForAssoc.toUpperCase()) ?? []
+        ) !== undefined
       ) {
         const snippet =
           row.observation.slice(0, 80) +
@@ -3423,6 +3444,13 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
       tgtAliasToFullName.entries()
     )) {
       const aliasKey = alias.toLowerCase();
+      // A surname shared by more than one registered person can't be credited
+      // to any of them from a bare word: leave it out of the search (each is
+      // still found by their full name or bracket).
+      const sharers = new Set(
+        (registeredNamesByAlias.get(alias) ?? []).map(n => n.toUpperCase())
+      );
+      if (sharers.size > 1) continue;
       if (!sheetDict.has(aliasKey)) {
         const seeded: DictEntry = {
           shortForm: canonicalName, // display as full canonical name
@@ -3597,21 +3625,16 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
               // capitalised word is as likely to be ordinary text ("Then
               // TAN left"), so that case still counts as before.
               const registeredName = preseededEntryName.get(entry);
-              if (registeredName && term === entry.rawShortForm) {
-                const before = row.observation.slice(0, mStart);
-                const prev = before.match(
-                  /([^.!?\n]\s+)([A-Z][a-z]{2,}(?:[-'][A-Za-z]+)?)\s+$/
-                );
-                if (
-                  prev &&
-                  !aliasMentionCompatible(
-                    `${prev[2]} ${term}`,
-                    term,
-                    registeredName
-                  )
-                ) {
-                  continue;
-                }
+              if (
+                registeredName &&
+                term === entry.rawShortForm &&
+                bareAliasFollowsOtherGivenName(
+                  row.observation.slice(0, mStart),
+                  term,
+                  registeredName
+                )
+              ) {
+                continue;
               }
               found = true;
               break;

@@ -47,6 +47,11 @@ vi.mock("./db", () => ({
     updatedAt: new Date(),
   }),
   createRunningSheet: vi.fn().mockResolvedValue(1),
+  // pass-through: no replay id in these tests
+  runOnce: vi.fn(
+    async (_u: number, _k: unknown, _kind: string, make: () => unknown) =>
+      make()
+  ),
   updateRunningSheet: vi.fn().mockResolvedValue(undefined),
   deleteRunningSheet: vi.fn().mockResolvedValue(undefined),
   softDeleteSheet: vi.fn().mockResolvedValue(undefined),
@@ -84,7 +89,6 @@ vi.mock("./db", () => ({
   getAllAuditLogs: vi.fn().mockResolvedValue([]),
   getAllUsers: vi.fn().mockResolvedValue([]),
   listTeams: vi.fn().mockResolvedValue([]),
-  updateUserRole: vi.fn().mockResolvedValue(undefined),
   upsertUser: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),
   getOperations: vi.fn().mockResolvedValue([]),
@@ -448,6 +452,8 @@ describe("certification.certify", () => {
 describe("certification.uncertify", () => {
   it("allows certifier to uncertify", async () => {
     const { getMembersByRowIds } = await import("./db");
+    // Taking a signature away needs an open sheet in an Active operation.
+    await mockActiveSheetAndOperation();
     vi.mocked(getMembersByRowIds).mockResolvedValueOnce([
       { id: 1, rowId: 1, memberName: "484" },
     ] as never);
@@ -488,24 +494,6 @@ describe("admin.listUsers", () => {
     await expect(caller.admin.listUsers()).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
-  });
-});
-
-describe("admin.updateUserRole", () => {
-  it("allows admin to update user role", async () => {
-    const caller = appRouter.createCaller(makeCtx("admin"));
-    const result = await caller.admin.updateUserRole({
-      userId: 2,
-      role: "member",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("throws FORBIDDEN for non-admin", async () => {
-    const caller = appRouter.createCaller(makeCtx("member"));
-    await expect(
-      caller.admin.updateUserRole({ userId: 2, role: "observer" })
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

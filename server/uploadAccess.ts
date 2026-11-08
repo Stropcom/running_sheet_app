@@ -9,9 +9,10 @@
 // browser sends the login cookie by itself with <img>, <iframe> and download
 // requests to the same site, so nothing on the screens changes.
 //
-// This is "signed in", not "may see this operation": mapping a file back to its
-// operation is a separate step. Files are never deleted when a photo is removed
-// in the app, so an address stays valid; it just needs a login now.
+// Signed in is the first check; the second (server/storedFileAccess.ts) is "may
+// this person open the operation the file belongs to": another Command's
+// Restricted operation is closed to people it was not shared with. Files are
+// never deleted when a photo is removed in the app, so an address stays valid.
 
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 

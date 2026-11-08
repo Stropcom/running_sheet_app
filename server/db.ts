@@ -4,6 +4,7 @@
  * every `import { … } from "./db"` elsewhere in the server is unchanged.
  */
 export { withDedicatedConnection, getDb } from "./db/core";
+export { runOnce } from "./db/offlineActions";
 export {
   getUserByUsername,
   getUserById,
@@ -21,7 +22,8 @@ export {
   listTeamIdsWithOnlineMembers,
   mustShareLocation,
   deleteTeam,
-  updateUserRole,
+  bumpSessionVersion,
+  completeForcedPasswordChange,
   archiveUser,
   restoreUser,
   getInvestigatorAllowedOperationIds,
@@ -404,6 +406,7 @@ export {
   scanFindingKey,
   getDismissedFindingKeys,
   dismissScanFinding,
+  isInRecycleBin,
 } from "./db/recycleBin";
 export type {
   RecycleBinItem,

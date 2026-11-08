@@ -133,6 +133,28 @@ export function isFeatureOwner(user: {
   return user.role === "admin" && user.cin === COMMAND_FEATURES_OWNER_CIN;
 }
 
+/**
+ * Why this person may not make this change to an account, or null when they may.
+ *
+ * The owner is whoever is an admin with CIN 459, so anyone who can change that
+ * account's CIN (or take the CIN) becomes the owner and gets the owner-only
+ * switches (Command features, passkeys, Document AI, Zero data). So: only the
+ * owner may change, archive, restore or delete the owner's account, and only the
+ * owner may give a CIN of 459 to anyone.
+ */
+export function ownerAccountProblem(
+  actor: { cin?: string | null; role?: string | null },
+  target: { cin?: string | null; role?: string | null } | undefined,
+  newCin?: string | null
+): string | null {
+  if (isFeatureOwner(actor)) return null;
+  if (target && target.cin?.trim().toUpperCase() === COMMAND_FEATURES_OWNER_CIN)
+    return "Only the owner can change the owner's account.";
+  if (newCin && newCin.trim().toUpperCase() === COMMAND_FEATURES_OWNER_CIN)
+    return "That CIN is reserved for the owner.";
+  return null;
+}
+
 /** Which feature a server request belongs to (null: not switchable). */
 export function featureForPath(path: string): FeatureKey | null {
   if (path === "reports.weeklyTasking") return "tasking";

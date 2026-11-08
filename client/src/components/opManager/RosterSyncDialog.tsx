@@ -9,6 +9,9 @@ import {
 } from "@/components/ui/dialog";
 import type { SyncGroup } from "@shared/taskingRosterSync";
 
+const onDuty = (g: SyncGroup) =>
+  g.members - g.fromRest - g.fromOnCall - g.backToRest - g.backToOnCall;
+
 const dayLabel = (date: string) =>
   new Date(`${date}T00:00:00Z`).toLocaleDateString("en-AU", {
     weekday: "short",
@@ -43,8 +46,10 @@ export function RosterSyncDialog({
         <DialogHeader>
           <DialogTitle>Update the roster too?</DialogTitle>
           <DialogDescription>
-            The tasking has different start times from the roster for the people
-            on duty (today and later). Update the roster to match?
+            The tasking and the roster do not agree for these days (today and
+            later): a different start time, a team working on a day the roster
+            has it off, or a team that no longer has a shift. Update the roster
+            to match?
           </DialogDescription>
         </DialogHeader>
         <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
@@ -56,13 +61,46 @@ export function RosterSyncDialog({
               <div className="font-semibold">
                 {g.teamName} · {dayLabel(g.date)}
               </div>
-              <div className="text-muted-foreground">
-                {g.members} on duty: {g.fromTimes} to{" "}
-                <span className="font-semibold text-foreground">
-                  {g.toTime}
-                </span>
-                {g.typeChanges > 0 && (
-                  <> ({g.typeChanges} change between Day and Arvo)</>
+              <div className="space-y-0.5 text-muted-foreground">
+                {g.fromRest > 0 && (
+                  <div>
+                    {g.fromRest} on a rest day to{" "}
+                    <span className="font-semibold text-foreground">
+                      {g.toTime}
+                    </span>
+                  </div>
+                )}
+                {g.fromOnCall > 0 && (
+                  <div>
+                    {g.fromOnCall} on Rest on-call to{" "}
+                    <span className="font-semibold text-foreground">
+                      {g.toTime}
+                    </span>{" "}
+                    (on-call shift, so they stay on call)
+                  </div>
+                )}
+                {g.backToRest > 0 && (
+                  <div>
+                    {g.backToRest} back to a rest day (the team has no shift
+                    now)
+                  </div>
+                )}
+                {g.backToOnCall > 0 && (
+                  <div>
+                    {g.backToOnCall} back to Rest on-call (the team has no shift
+                    now)
+                  </div>
+                )}
+                {onDuty(g) > 0 && (
+                  <div>
+                    {onDuty(g)} on duty: {g.fromTimes} to{" "}
+                    <span className="font-semibold text-foreground">
+                      {g.toTime}
+                    </span>
+                    {g.typeChanges > 0 && (
+                      <> ({g.typeChanges} change between Day and Arvo)</>
+                    )}
+                  </div>
                 )}
               </div>
             </li>
@@ -72,7 +110,8 @@ export function RosterSyncDialog({
           Yes changes {members === 1 ? "1 person's" : `${members} people's`}{" "}
           shift start on the roster and sends each of them the in-app notice
           that their roster changed. A start at or after 12:00 becomes an Arvo
-          shift.
+          shift, a rest day becomes a Day (or Arvo, or Admin) shift, and On Call
+          becomes the on-call version of it.
         </p>
         <DialogFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={onNo}>

@@ -57,12 +57,14 @@ export const opManagerRouter = router({
         rows: z.array(
           z.object({
             id: z.number().optional(),
-            category: z.string(),
+            // Lengths match the columns (op_manager_priority_rows), so a too-long
+            // entry is refused up front instead of failing the insert.
+            category: z.string().max(64),
             priority: z.number(),
             operationId: z.number().nullable().optional(),
-            operationName: z.string().nullable().optional(),
-            team: z.string().nullable().optional(),
-            requestType: z.string().nullable().optional(),
+            operationName: z.string().max(255).nullable().optional(),
+            team: z.string().max(64).nullable().optional(),
+            requestType: z.string().max(128).nullable().optional(),
             sortOrder: z.number(),
           })
         ),
@@ -110,10 +112,11 @@ export const opManagerRouter = router({
         contacts: z.array(
           z.object({
             id: z.number().optional(),
-            role: z.string(),
+            // Lengths match op_manager_supervisor_contacts.
+            role: z.string().max(128),
             userId: z.number().nullable().optional(),
-            customName: z.string().nullable().optional(),
-            phone: z.string().nullable().optional(),
+            customName: z.string().max(255).nullable().optional(),
+            phone: z.string().max(32).nullable().optional(),
             sortOrder: z.number(),
           })
         ),

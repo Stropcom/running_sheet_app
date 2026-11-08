@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   aliasMentionCompatible,
   aliasSearchFlags,
+  bareAliasFollowsOtherGivenName,
+  givenNameWords,
   mentionIsOtherRegisteredPerson,
+  pickRegisteredForAlias,
 } from "./personAliasMatch";
 
 const GRACE = "Grace Olivia TAN, born 3 March 1992 (TAN)";
@@ -154,5 +157,111 @@ describe("mentionIsOtherRegisteredPerson", () => {
     expect(
       mentionIsOtherRegisteredPerson("Hana PARK", "PARK", TARGET, [])
     ).toBe(false);
+  });
+});
+
+// ─── Audit stage 5: links the app must not invent ───────────────────────────
+
+describe("surname removal is whole-word only", () => {
+  it("keeps the given name 'Stan' when the surname TAN is removed", () => {
+    expect(givenNameWords("Stan TAN", "TAN")).toEqual(["Stan"]);
+  });
+  it("so Susan TAN is not the same person as Stan TAN", () => {
+    expect(aliasMentionCompatible("Susan TAN", "TAN", "Stan TAN (TAN)")).toBe(
+      false
+    );
+    expect(aliasMentionCompatible("Stan TAN", "TAN", "Stan TAN (TAN)")).toBe(
+      true
+    );
+  });
+  it("still removes the surname when it stands alone, and works for P.HILL", () => {
+    expect(givenNameWords("Grace Olivia TAN", "TAN")).toEqual([
+      "Grace",
+      "Olivia",
+    ]);
+    expect(givenNameWords("Phil HILL", "P.HILL")).toEqual(["Phil"]);
+  });
+});
+
+describe("pickRegisteredForAlias — a surname two registered people share", () => {
+  const GRACE_T = "Grace TAN (TAN)";
+  const GREG_A = "Greg TAN (TAN)";
+  const both = [GRACE_T, GREG_A];
+
+  it("one registered person: the existing rule (bare alias or fitting name)", () => {
+    expect(pickRegisteredForAlias("TAN", "TAN", [GRACE_T], [GRACE_T])).toBe(
+      GRACE_T
+    );
+    expect(
+      pickRegisteredForAlias("Lawrence TAN", "TAN", [GRACE_T], [GRACE_T])
+    ).toBeUndefined();
+  });
+  it("two registered people: a bare TAN is nobody in particular", () => {
+    expect(
+      pickRegisteredForAlias("TAN", "TAN", [GRACE_T], both)
+    ).toBeUndefined();
+  });
+  it("two registered people: a full given name picks exactly that person", () => {
+    expect(pickRegisteredForAlias("Grace TAN", "TAN", [GRACE_T], both)).toBe(
+      GRACE_T
+    );
+  });
+  it("two registered people: an initial that fits both is nobody (G TAN)", () => {
+    expect(
+      pickRegisteredForAlias("G TAN", "TAN", [GRACE_T], both)
+    ).toBeUndefined();
+  });
+  it("two registered people: an initial that fits one picks that one (Gr TAN is too short, G is both; Gra fits Grace)", () => {
+    expect(pickRegisteredForAlias("Gra TAN", "TAN", [GRACE_T], both)).toBe(
+      GRACE_T
+    );
+  });
+  it("it does not matter which was loaded first or last", () => {
+    expect(
+      pickRegisteredForAlias(
+        "Grace TAN",
+        "TAN",
+        [GREG_A, GRACE_T],
+        [GREG_A, GRACE_T]
+      )
+    ).toBe(GRACE_T);
+  });
+});
+
+describe("bareAliasFollowsOtherGivenName — a surname at the start of a sentence", () => {
+  const GRACE_REG = "Grace Olivia TAN (TAN)";
+  it("'Lawrence TAN departed' at the head of a row is not Grace", () => {
+    expect(bareAliasFollowsOtherGivenName("Lawrence ", "TAN", GRACE_REG)).toBe(
+      true
+    );
+    expect(
+      bareAliasFollowsOtherGivenName(
+        "Vehicle stopped. Lawrence ",
+        "TAN",
+        GRACE_REG
+      )
+    ).toBe(true);
+  });
+  it("mid-sentence 'met Lawrence TAN' is not Grace either", () => {
+    expect(
+      bareAliasFollowsOtherGivenName("She met Lawrence ", "TAN", GRACE_REG)
+    ).toBe(true);
+  });
+  it("'Grace TAN' and a bare 'TAN' are the registered Grace", () => {
+    expect(bareAliasFollowsOtherGivenName("Grace ", "TAN", GRACE_REG)).toBe(
+      false
+    );
+    expect(bareAliasFollowsOtherGivenName("", "TAN", GRACE_REG)).toBe(false);
+    expect(
+      bareAliasFollowsOtherGivenName("Vehicle stopped. ", "TAN", GRACE_REG)
+    ).toBe(false);
+  });
+  it("an opening word that is not a name ('Then TAN left') still counts as Grace", () => {
+    expect(bareAliasFollowsOtherGivenName("Then ", "TAN", GRACE_REG)).toBe(
+      false
+    );
+    expect(bareAliasFollowsOtherGivenName("Later ", "TAN", GRACE_REG)).toBe(
+      false
+    );
   });
 });

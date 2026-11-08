@@ -924,7 +924,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await expect(page.locator(".tcv-pa").first()).toBeVisible();
     for (const [label, marker] of [
       ["Schedule tables", ".tcv-table"],
-      ["Day tiles", ".tcv-ta"],
+      ["Calendar", ".tcv-ta"],
       ["Timeline", ".tcv-cb"],
     ] as const) {
       await picker.click();
@@ -962,7 +962,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     });
     const timeline = layouts.getByRole("checkbox", { name: "Timeline" });
     const banded = layouts.getByRole("checkbox", { name: "Banded columns" });
-    const tiles = layouts.getByRole("checkbox", { name: "Day tiles" });
+    const tiles = layouts.getByRole("checkbox", { name: "Calendar" });
     await expect(timeline).toBeChecked();
     await banded.click();
     await expect(banded).toBeChecked();
@@ -983,7 +983,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     expect(html).toContain("CTO Weekly Tasking");
     expect(html).toContain("Weekly Tasking Calendar · Banded columns");
     expect(html).toContain("Weekly Tasking Calendar · Timeline");
-    expect(html).not.toContain("Weekly Tasking Calendar · Day tiles");
+    expect(html).not.toContain("Weekly Tasking Calendar · Calendar");
     expect(html).toContain("02 Jan – 08 Jan 2040");
     expect(html).toContain("0400 111 222");
     expect(html).toContain("RAVEN");
@@ -2611,8 +2611,13 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
       page.getByRole("button", { name: "Split" }).first()
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(/Saved \d+ changes?\./)).toBeVisible();
+    await page
+      .getByRole("button", { name: /^Save( draft)?$/ })
+      .first()
+      .click();
+    await expect(
+      page.getByText(/Saved \d+ changes?\.|Draft saved/)
+    ).toBeVisible();
     // (If the roster has people in these teams it asks about their start times.)
     await page
       .getByRole("dialog", { name: "Update the roster too?" })
@@ -2644,7 +2649,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     await page.getByRole("option", { name: "Schedule tables" }).click();
     await expect(page.locator(".tcv-table tr.bl")).toHaveCount(2);
     await picker.click();
-    await page.getByRole("option", { name: "Day tiles" }).click();
+    await page.getByRole("option", { name: "Calendar" }).click();
     await expect(page.locator(".tcv-tl.merged")).toHaveCount(1);
     await picker.click();
     await page.getByRole("option", { name: "Timeline" }).click();
@@ -2675,8 +2680,13 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
       .click();
     await page.getByRole("button", { name: "Split" }).first().click();
     await expect(page.locator(".tcv-pa-col.bl")).toHaveCount(0);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(/Saved \d+ changes?\./)).toBeVisible();
+    await page
+      .getByRole("button", { name: /^Save( draft)?$/ })
+      .first()
+      .click();
+    await expect(
+      page.getByText(/Saved \d+ changes?\.|Draft saved/)
+    ).toBeVisible();
     await page
       .getByRole("dialog", { name: "Update the roster too?" })
       .getByRole("button", { name: "No" })
@@ -2820,7 +2830,7 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
   }
 });
 
-test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or letter key", async ({
+test("CTO Weekly Tasking on a phone: only Calendar and Timeline, no colour or letter key", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -2838,7 +2848,7 @@ test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or l
       shiftTime: "0700-1500",
       primaryTask: "RAVEN",
     });
-    // A saved Banded columns choice (made on a laptop) shows as Day tiles on a phone.
+    // A saved Banded columns choice (made on a laptop) shows as Calendar on a phone.
     await page.addInitScript(() =>
       localStorage.setItem("runlog.taskingView", "panel-banded")
     );
@@ -2846,18 +2856,15 @@ test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or l
     await page.goto("/operation-manager");
     await page.getByText(/CTO Weekly Tasking — 07 May/).click();
     const picker = page.getByRole("combobox", { name: "Calendar view" });
-    await expect(picker).toContainText("Day tiles");
-    await expect(page.locator(".tcv-legend")).toHaveCount(0);
+    await expect(picker).toContainText("Calendar");
     await picker.click();
-    await expect(page.getByRole("option")).toHaveText([
-      "Day tiles",
-      "Timeline",
-    ]);
+    await expect(page.getByRole("option")).toHaveText(["Calendar", "Timeline"]);
     await page.keyboard.press("Escape");
 
-    // A laptop still has all four, and the key.
+    // A laptop still has all four layouts, and no colour key (it was taken
+    // out of the screen view).
     await page.setViewportSize({ width: 1400, height: 900 });
-    await expect(page.locator(".tcv-legend")).toHaveCount(1);
+    await expect(page.locator(".tcv-legend")).toHaveCount(0);
     await page.getByRole("combobox", { name: "Calendar view" }).click();
     await expect(page.getByRole("option")).toHaveCount(4);
   } finally {
@@ -2891,6 +2898,57 @@ test("Calendar: month grid by default, List view is selectable and remembered", 
     "aria-pressed",
     "true"
   );
+});
+
+test("Team Duty Roster on a phone: the month sits in the frozen corner, follows the scroll and stays in full screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/cto-roster");
+  const corner = page.getByTestId("roster-month-corner");
+  await expect(corner).toBeVisible();
+  await expect(corner).toHaveText(/^[A-Z][a-z]{2} \d{4}$/);
+  const before = (await corner.textContent()) ?? "";
+  // Scroll the grid a few weeks sideways: the corner month follows.
+  await page.evaluate(() => {
+    const el = document.querySelector(".overflow-auto.cursor-grab");
+    if (el) el.scrollLeft += 2400;
+  });
+  await expect(corner).not.toHaveText(before);
+  // Still there in Full screen, where the month picker is hidden.
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.getByText("Showing", { exact: true })).toHaveCount(0);
+  await expect(corner).toBeVisible();
+});
+
+test("Team Duty Roster full screen: a phone turned sideways has zoom / Today / Exit in the header, a portrait phone keeps the strip", async ({
+  page,
+}) => {
+  const bar = page.getByRole("group", { name: "Roster full screen controls" });
+  // Sideways (landscape, both header layouts): the controls are in the header
+  // bar, at the very top, not in a strip over the grid.
+  for (const [width, height] of [
+    [844, 390],
+    [740, 360],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.goto("/cto-roster");
+    await page.getByRole("button", { name: "Full screen" }).click();
+    await expect(bar).toBeVisible();
+    await expect(bar).toHaveCount(1);
+    const box = await bar.boundingBox();
+    expect(box?.y ?? 99).toBeLessThan(40);
+    await bar.getByRole("button", { name: "Exit full screen" }).click();
+    await expect(page.getByText("Team Duty Roster")).toBeVisible();
+  }
+  // Portrait: still the strip on the page, under the header.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/cto-roster");
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(bar).toBeVisible();
+  await expect(bar).toHaveCount(1);
+  const portrait = await bar.boundingBox();
+  expect(portrait?.y ?? 0).toBeGreaterThan(55);
 });
 
 test("Team Duty Roster: Full screen hides the toolbar, keeps zoom / Today / Exit in the header, Esc and Exit put it back", async ({
@@ -3024,7 +3082,7 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await expect(saveBar).toContainText("1 change");
     await expect(saveBar).toContainText("0700–1500 to 0900–1700");
     await expect(
-      page.getByRole("button", { name: "Save and re-post" })
+      page.getByRole("button", { name: "Save and re-post" }).first()
     ).toBeVisible();
 
     // Cancel puts it back and leaves edit mode.
@@ -3072,8 +3130,11 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect(bar).toContainText("0800–1600");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText("Saved 1 change.")).toBeVisible();
+    await page
+      .getByRole("button", { name: /^Save( draft)?$/ })
+      .first()
+      .click();
+    await expect(page.getByText(/Saved 1 change\.|Draft saved/)).toBeVisible();
     await expect(saveBar).toHaveCount(0);
     // Save leaves edit mode.
     await expect(
@@ -3289,6 +3350,109 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     await page.getByRole("button", { name: /Post & Notify/ }).click();
     await expect(whoToNotify).toBeVisible();
     await expect(question).toHaveCount(0);
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+
+    // A team's rest day on the roster that the tasking now has working: the
+    // question is asked too, and Yes makes it a working shift.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "r",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("on a rest day to 14:00");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(page.getByText(/Roster updated: 1 shift/)).toBeVisible();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "a",
+      shiftTime: "14:00",
+    });
+
+    // The team's shift is taken off the tasking again (RDO): the roster goes
+    // back to the rest day it was, after the question.
+    const tasked = async (shiftTime: string) =>
+      call("opManager.saveTaskingCell", {
+        weekStart: W,
+        dayIndex: 0,
+        teamRow: "surv1",
+        shiftTime,
+        primaryTask: shiftTime === "RDO" ? null : "RAVEN",
+      });
+    await tasked("RDO");
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("back to a rest day");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(page.getByText(/Roster updated: 1 shift/)).toBeVisible();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "r",
+      shiftTime: null,
+    });
+
+    // A shift anyone set by hand is not touched: with the roster on a Day
+    // shift the team being RDO on the tasking asks nothing.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "d",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(whoToNotify).toBeVisible();
+    await expect(question).toHaveCount(0);
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+
+    // Rest on-call ("o") works the same way: it becomes Arvo on-call, and goes
+    // back to Rest on-call when the tasking has no shift again.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "o",
+      shiftTime: null,
+      memberName: "E2E Officer",
+    });
+    await tasked("1400-2200");
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("on Rest on-call to 14:00");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "aoc",
+      shiftTime: "14:00",
+    });
+    await tasked("RDO");
+    await openWeek();
+    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await expect(question).toContainText("back to Rest on-call");
+    await question
+      .getByRole("button", { name: "Yes, update the roster" })
+      .click();
+    await expect(whoToNotify).toBeVisible();
+    await whoToNotify.getByRole("button", { name: "Cancel" }).click();
+    expect(await rosterShift()).toMatchObject({
+      shiftCode: "o",
+      shiftTime: null,
+    });
   } finally {
     await call("ctoRoster.roster.updateShift", {
       memberId: member.id,
@@ -3397,26 +3561,74 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
     );
     await page.mouse.up();
     await expect(bar).toContainText("0800–1700");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-
     const question = page.getByRole("dialog", {
       name: "Update the roster too?",
     });
+    const rosterRow = async () =>
+      (
+        (await get("ctoRoster.roster.getRange", {
+          startDate: W,
+          endDate: W,
+        })) as {
+          memberId: number;
+          shiftCode: string;
+          shiftTime: string | null;
+        }[]
+      ).find(r => r.memberId === member.id);
+
+    // The week is not posted, so it is a draft: the button says Save draft,
+    // and saving only saves. No roster question, no change to the roster.
+    await expect(page.getByTestId("week-draft-badge")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Save draft" }).first()
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Save draft" }).first().click();
+    await expect(page.getByText(/Draft saved/)).toBeVisible();
+    await expect(question).toHaveCount(0);
+    expect(await rosterRow()).toMatchObject({
+      shiftCode: "d",
+      shiftTime: null,
+    });
+
+    // Once posted, Save is a plain Save and asks the roster question.
+    await call("opManager.postWeek", { weekStart: W, userIds: [] });
+    await page.reload();
+    await page.getByText(/CTO Weekly Tasking — 11 Jun/).click();
+    await expect(page.getByTestId("week-draft-badge")).toHaveCount(0);
+    await editBtn.click();
+    {
+      const b = (await bar.boundingBox())!;
+      const l = (await bar.locator("xpath=..").boundingBox())!;
+      const h = l.width / 19;
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width / 2 + h / 2, b.y + b.height / 2, {
+        steps: 4,
+      });
+      await page.mouse.move(b.x + b.width / 2 + h, b.y + b.height / 2, {
+        steps: 4,
+      });
+      await page.mouse.up();
+    }
+    await expect(bar).toContainText("0900–1800");
+    await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(
+      0
+    );
+    await page
+      .getByRole("button", { name: /^Save( draft)?$/ })
+      .first()
+      .click();
     await expect(question).toBeVisible();
-    await expect(question).toContainText("06:00 to 08:00");
+    await expect(question).toContainText("06:00 to 09:00");
     await question
       .getByRole("button", { name: "Yes, update the roster" })
       .click();
     await expect(page.getByText(/Roster updated: 1 shift/)).toBeVisible();
 
-    // Still a Day shift (08:00 is before midday), now starting at 08:00.
-    const rows = (await get("ctoRoster.roster.getRange", {
-      startDate: W,
-      endDate: W,
-    })) as { memberId: number; shiftCode: string; shiftTime: string | null }[];
-    expect(rows.find(r => r.memberId === member.id)).toMatchObject({
+    // Still a Day shift (09:00 is before midday), now starting at 09:00.
+    expect(await rosterRow()).toMatchObject({
       shiftCode: "d",
-      shiftTime: "08:00",
+      shiftTime: "09:00",
     });
 
     // Every save asks again: slide on, Save, No; slide on, Save, No; and then
@@ -3437,17 +3649,20 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
         steps: 4,
       });
       await page.mouse.up();
-      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page
+        .getByRole("button", { name: /^Save( draft)?$/ })
+        .first()
+        .click();
     };
-    await slideLater(1); // 09:00
-    await expect(question).toBeVisible();
-    await question.getByRole("button", { name: "No" }).click();
-    await expect(question).toHaveCount(0); // closed, the bar is free again
     await slideLater(1); // 10:00
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
+    await expect(question).toHaveCount(0); // closed, the bar is free again
+    await slideLater(1); // 11:00
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "No" }).click();
     await expect(question).toHaveCount(0);
-    await slideLater(-1); // 09:00 again, answered No before
+    await slideLater(-1); // 10:00 again, answered No before
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
     await expect(question).toHaveCount(0);
@@ -3549,7 +3764,7 @@ test("CTO Weekly Tasking: an EA breach on the roster shows as a red dot on the t
     for (const layout of [
       "Banded columns",
       "Schedule tables",
-      "Day tiles",
+      "Calendar",
       "Timeline",
     ]) {
       await picker.click();
@@ -3666,7 +3881,10 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
 
     // An 8-hour Admin shift at another start (0600-1400) gains its hour back
     // when changed to an operation.
-    const wed = page.locator(".tcv-bar", { hasText: "0600–1400" });
+    // (Team 1's Admin bar only: PTT and Capability's standard shift is 0600-1400.)
+    const wed = page
+      .locator(".tcv-bar", { hasText: "0600–1400" })
+      .filter({ hasText: "Admin" });
     await expect(wed).toHaveCount(1);
     // Scroll it into view first and let the scroll settle: a scroll that lands
     // after the click would close the menu again.
@@ -3946,7 +4164,7 @@ test("CTO Weekly Tasking Timeline on a phone and an iPad: a finger slides a bar 
   }
 });
 
-test("CTO Weekly Tasking Timeline on a phone: the time sits at the right by the team count and never prints over long or two operation names", async ({
+test("CTO Weekly Tasking Timeline: the time sits at the right by the team count on a phone, tablet and laptop, and never prints over long or two operation names", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -3992,34 +4210,44 @@ test("CTO Weekly Tasking Timeline on a phone: the time sits at the right by the 
     await page.getByText(/CTO Weekly Tasking — 12 Nov/).click();
     await page.getByRole("combobox", { name: "Calendar view" }).click();
     await page.getByRole("option", { name: "Timeline" }).click();
-    await expect(page.locator(".tcv-bar")).toHaveCount(4);
-    const clashes = await page.evaluate(() => {
-      const out: string[] = [];
-      for (const bar of Array.from(document.querySelectorAll(".tcv-bar"))) {
-        const t = bar.querySelector(".t");
-        if (!t) continue;
-        const tb = t.getBoundingClientRect();
-        const count = bar.querySelector(".tcv-count, .tcv-count-pair");
-        // The time is at the right, after the operations and before the count.
-        for (const e of Array.from(
-          bar.querySelectorAll(".tcv-op, .ab, .tcv-count, .tcv-count-pair")
-        )) {
-          const r = e.getBoundingClientRect();
-          const apart =
-            r.right <= tb.left + 0.5 ||
-            r.left >= tb.right - 0.5 ||
-            r.bottom <= tb.top ||
-            r.top >= tb.bottom;
-          if (!apart) out.push(`${bar.textContent} / ${e.className}`);
+    // The four saved bars, and PTT and Capability's standard shift Monday to Friday.
+    await expect(page.locator(".tcv-bar")).toHaveCount(14);
+    for (const [width, height] of [
+      [390, 844],
+      [820, 1180],
+      [1400, 900],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await expect(page.locator(".tcv-bar")).toHaveCount(14);
+      const clashes = await page.evaluate(() => {
+        const out: string[] = [];
+        for (const bar of Array.from(document.querySelectorAll(".tcv-bar"))) {
+          const t = bar.querySelector(".t");
+          if (!t) continue;
+          const tb = t.getBoundingClientRect();
+          const count = bar.querySelector(".tcv-count, .tcv-count-pair");
+          // The time is at the right, after the operations and before the count.
+          for (const e of Array.from(
+            bar.querySelectorAll(".tcv-op, .ab, .tcv-count, .tcv-count-pair")
+          )) {
+            const r = e.getBoundingClientRect();
+            const apart =
+              r.right <= tb.left + 0.5 ||
+              r.left >= tb.right - 0.5 ||
+              r.bottom <= tb.top ||
+              r.top >= tb.bottom;
+            if (!apart) out.push(`${bar.textContent} / ${e.className}`);
+          }
+          const bb = bar.getBoundingClientRect();
+          if (count && tb.right > count.getBoundingClientRect().left + 0.5)
+            out.push(`${bar.textContent}: time is not before the count`);
+          if (tb.left < bb.left)
+            out.push(`${bar.textContent}: time outside bar`);
         }
-        const bb = bar.getBoundingClientRect();
-        if (count && tb.right > count.getBoundingClientRect().left + 0.5)
-          out.push(`${bar.textContent}: time is not before the count`);
-        if (tb.left < bb.left) out.push(`${bar.textContent}: time outside bar`);
-      }
-      return out;
-    });
-    expect(clashes).toEqual([]);
+        return out;
+      });
+      expect(clashes, `at ${width}px`).toEqual([]);
+    }
   } finally {
     await call("opManager.deleteWeek", { weekStart: W });
   }
@@ -4078,13 +4306,18 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await edit.click();
     await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("0600-1500");
     await expect(
-      page.getByRole("button", { name: "Save", exact: true })
+      page.getByRole("button", { name: /^Save( draft)?$/ }).first()
     ).toBeDisabled();
 
     // Banded: a shift from the drop-down, and an operation from the menu.
     await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
     await expect(summary).toContainText("1 change");
     await expect(summary).toContainText("0600–1500 to 1300–2200");
+    // The banner has its own Save (as well as the one at the top), on every
+    // screen size, so an admin never has to scroll up to save.
+    await expect(
+      summary.getByRole("button", { name: /^Save( draft)?$/ })
+    ).toBeVisible();
     await page
       .getByRole("button", { name: "Primary operation T1 · Mon" })
       .click();
@@ -4097,8 +4330,8 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await page.getByLabel("Shift T2 · Wed").selectOption("0600-1500");
     await expect(summary).toContainText("3 changes");
 
-    // Day tiles: tap a team line for the editor; the shift chips change it.
-    await choose("Day tiles");
+    // Calendar view: tap a team line for the editor; the shift chips change it.
+    await choose("Calendar");
     await page.getByRole("button", { name: "Edit Team 2 Thu" }).click();
     await page.getByRole("button", { name: /^1000–1800/ }).click();
     await page.getByRole("button", { name: "Done" }).click();
@@ -4136,8 +4369,11 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
 
     // Save: kept, and edit mode ends.
     await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText("Saved 1 change.")).toBeVisible();
+    await page
+      .getByRole("button", { name: /^Save( draft)?$/ })
+      .first()
+      .click();
+    await expect(page.getByText(/Saved 1 change\.|Draft saved/)).toBeVisible();
     await expect(edit).toBeVisible();
     await expect(page.locator(".tcv-sel")).toHaveCount(0);
     await page.reload();
@@ -4163,7 +4399,56 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
   }
 });
 
-test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Details and no Delete; the details page has no Tasking tab and Save takes you back to the full view", async ({
+test("CTO Weekly Tasking: PTT and Capability start the week at 0600-1400 Monday to Friday and RDO at the weekend, even when only other cells were saved", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-12-03"; // a Monday, a made-up week
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    // Only one Team 1 cell is saved, so PTT and Capability have no saved cells.
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+    });
+    await call("opManager.savePriorityBoard", {
+      weekStart: W,
+      rows: [
+        { category: "WC", priority: 1, operationName: "RAVEN", sortOrder: 0 },
+      ],
+    });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 03 Dec/).click();
+    await page
+      .getByRole("button", { name: "Edit Tasking", exact: true })
+      .click();
+    for (const team of ["PTT", "CAP"]) {
+      await expect(page.getByLabel(`Shift ${team} · Mon`)).toHaveValue(
+        "0600-1400"
+      );
+      await expect(page.getByLabel(`Shift ${team} · Fri`)).toHaveValue(
+        "0600-1400"
+      );
+      await expect(page.getByLabel(`Shift ${team} · Sat`)).toHaveValue("RDO");
+      await expect(page.getByLabel(`Shift ${team} · Sun`)).toHaveValue("RDO");
+    }
+    // Showing them is not a change: there is nothing unsaved.
+    await expect(
+      page.getByRole("region", { name: "Unsaved timeline changes" })
+    ).toHaveCount(0);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});
+
+test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Priorities and no Delete; the details page has no Tasking tab and Save takes you back to the full view", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -4187,11 +4472,13 @@ test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Det
       page.getByRole("button", { name: "Edit Tasking", exact: true })
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Edit Contacts & Details/ })
+      page.getByRole("button", { name: /Edit Contacts & Priorities/ })
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Delete" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: /Edit Contacts & Details/ }).click();
+    await page
+      .getByRole("button", { name: /Edit Contacts & Priorities/ })
+      .click();
     await expect(page.getByRole("tab", { name: "On-Call" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Priority" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Tasking" })).toHaveCount(0);
@@ -4200,7 +4487,8 @@ test("CTO Weekly Tasking: the full view has Edit Tasking and Edit Contacts & Det
 
     // Save (on any tab) saves on-call, contacts and priority, then shows the full view.
     await page
-      .getByRole("button", { name: "Save", exact: true })
+      .getByRole("button", { name: /^Save( draft)?$/ })
+      .first()
       .first()
       .click();
     await expect(

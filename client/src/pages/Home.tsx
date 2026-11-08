@@ -529,7 +529,8 @@ export default function Home() {
       <CreateOperationDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={() => utils.operation.list.invalidate()}
+        // (the dialog itself already refreshes the list — see CreateOperationDialog)
+        onCreated={() => {}}
       />
 
       {/* Delete Confirmation */}

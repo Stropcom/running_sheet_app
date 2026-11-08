@@ -101,7 +101,7 @@ export type SyncAction =
   | { type: "createTarget";        localId: string; payload: Omit<DraftTarget,    "localId" | "serverId" | "synced"> }
   | { type: "createSheet";         localId: string; payload: Omit<DraftSheet,     "localId" | "serverId" | "synced"> }
   | { type: "createRow";           localId: string; payload: Omit<DraftRow,       "localId" | "serverId" | "synced"> }
-  | { type: "updateRow";           localId: string; payload: { time?: string; observation?: string } }
+  | { type: "updateRow";           localId: string; payload: { time?: string; observation?: string; members?: string[] } }
   | { type: "deleteRow";           localId: string }
   | { type: "addRowToServerSheet"; localId: string; payload: { sheetServerId: number; time?: string; observation?: string; members: string[] } }
   | { type: "updateServerRow";     serverId: number; payload: { time?: string; observation?: string } }
@@ -113,6 +113,10 @@ export type SyncAction =
 export interface SyncQueueEntry {
   id?: number;           // auto-increment key
   action: SyncAction;
+  /** The signed-in user who queued it. Only that user's own sign-in replays
+   *  it, so work typed under one account never lands under another. Entries
+   *  from before this was recorded have none and replay as before. */
+  userId?: number;
   createdAt: number;
   attempts: number;
   lastError?: string;
@@ -279,10 +283,29 @@ export async function deleteDraftRow(localId: string): Promise<void> {
 
 // ── Sync Queue ─────────────────────────────────────────────────────────────────
 
+// Who is signed in on this device right now (set by OfflineProvider once the
+// server has said who it is) — stamped on every queued action.
+let currentOfflineUserId: number | undefined;
+export function setOfflineUser(id: number | undefined): void {
+  currentOfflineUserId = id;
+}
+
 export async function enqueueSyncAction(action: SyncAction): Promise<void> {
   const db = await getDB();
-  const entry: SyncQueueEntry = { action, createdAt: Date.now(), attempts: 0 };
+  const entry: SyncQueueEntry = {
+    action,
+    createdAt: Date.now(),
+    attempts: 0,
+    ...(currentOfflineUserId !== undefined ? { userId: currentOfflineUserId } : {}),
+  };
   await db.add("syncQueue", entry);
+}
+
+/** Queued actions that were tried and failed (they stay until they work or
+ *  the officer discards them). */
+export async function getFailedQueueEntries(): Promise<SyncQueueEntry[]> {
+  const db = await getDB();
+  return (await db.getAll("syncQueue")).filter((e) => e.attempts > 0 && e.lastError);
 }
 
 export async function getSyncQueue(): Promise<SyncQueueEntry[]> {
@@ -327,30 +350,46 @@ export async function getDraftCounts(): Promise<{
   return { operations: ops, targets, sheets, rows, total: ops + targets + sheets + rows + queued };
 }
 
+/** Local ids a queued action still points at. */
+function localIdsOf(a: SyncAction): string[] {
+  const ids: string[] = [];
+  const x = a as unknown as Record<string, unknown> & { payload?: Record<string, unknown> };
+  for (const v of [x.localId, x.pendingLocalId]) if (typeof v === "string") ids.push(v);
+  const p = x.payload;
+  if (p)
+    for (const k of ["operationLocalId", "targetLocalId", "sheetLocalId"])
+      if (typeof p[k] === "string") ids.push(p[k] as string);
+  return ids;
+}
+
 /**
- * Remove all drafts that have been successfully synced.
- * Called after a successful sync to clean up the local store so
- * getDraftCounts() returns 0 and the DraftModeBanner dismisses.
+ * Remove drafts that have been successfully synced.
+ * Called after a sync to clean up the local store so getDraftCounts() reflects
+ * what is really still waiting.
  *
- * Clears:
- *  - draftOperations / draftTargets / draftSheets / draftRows with synced:true
- *  - syncQueue entirely (all entries were replayed by runSync)
+ * Clears synced draftOperations / draftTargets / draftSheets / draftRows —
+ * except one a still-waiting queued action points at (a failed row still needs
+ * to find its sheet's real id). The sync queue itself is NOT emptied: runSync
+ * removes each action as it succeeds, so a failed action, or one added while
+ * the sync was running, stays for the next try.
  */
 export async function clearSyncedDrafts(): Promise<void> {
   const db = await getDB();
-  const [ops, targets, sheets, rows] = await Promise.all([
+  const [ops, targets, sheets, rows, queue] = await Promise.all([
     db.getAll("draftOperations"),
     db.getAll("draftTargets"),
     db.getAll("draftSheets"),
     db.getAll("draftRows"),
+    db.getAll("syncQueue"),
   ]);
+  const stillNeeded = new Set(queue.flatMap((q) => localIdsOf(q.action)));
+  const gone = <T extends { localId: string; synced: boolean }>(d: T) =>
+    d.synced && !stillNeeded.has(d.localId);
   await Promise.all([
-    ...ops.filter((o) => o.synced).map((o) => db.delete("draftOperations", o.localId)),
-    ...targets.filter((t) => t.synced).map((t) => db.delete("draftTargets", t.localId)),
-    ...sheets.filter((s) => s.synced).map((s) => db.delete("draftSheets", s.localId)),
-    ...rows.filter((r) => r.synced).map((r) => db.delete("draftRows", r.localId)),
-    // Clear the entire sync queue — every entry was already replayed by runSync()
-    db.clear("syncQueue"),
+    ...ops.filter(gone).map((o) => db.delete("draftOperations", o.localId)),
+    ...targets.filter(gone).map((t) => db.delete("draftTargets", t.localId)),
+    ...sheets.filter(gone).map((s) => db.delete("draftSheets", s.localId)),
+    ...rows.filter(gone).map((r) => db.delete("draftRows", r.localId)),
   ]);
 }
 

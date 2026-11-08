@@ -4,12 +4,15 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { loadFeatureMatrix } from "../commandFeatures";
 import { loadDataEpoch } from "../dataEpoch";
+import { consumeLoginAttempt } from "../loginAttempts";
 import { featuresFor, isFeatureOwner } from "@shared/commandFeatures";
 import { getSessionCookieOptions } from "../_core/cookies";
 import { decidePasswordSignIn, warningText } from "@shared/passkeyRules";
 import { accountOf, listDevices, loadPasskeySettings } from "../passkey";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import {
+  bumpSessionVersion,
+  completeForcedPasswordChange,
   createAuditLog,
   getUserByUsername,
   updateUser,
@@ -20,8 +23,11 @@ import { startSignedInSession, signedInUserShape } from "./_helpers";
 
 export const authRouter = router({
   me: publicProcedure.query(async opts => {
-    const user = opts.ctx.user;
-    if (!user) return user;
+    const row = opts.ctx.user;
+    if (!row) return row;
+    // Never send the password hash to the browser (it is also kept in the
+    // browser's storage with this response).
+    const { passwordHash: _passwordHash, ...user } = row;
     // Also says whether their team forces location sharing on (the app
     // turns Show & Share on and locks it) — read here, not from the team
     // list, because map-only Investigator accounts can't list teams.
@@ -43,6 +49,16 @@ export const authRouter = router({
       z.object({ username: z.string().min(1), password: z.string().min(1) })
     )
     .mutation(async ({ input, ctx }) => {
+      // One attempt counted per call (a batch can carry many); see
+      // server/loginAttempts.ts.
+      if (
+        process.env.NODE_ENV !== "test" &&
+        !consumeLoginAttempt(ctx.req.ip ?? ctx.req.socket?.remoteAddress ?? "?")
+      )
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many sign-in attempts. Try again in a few minutes.",
+        });
       let user;
       try {
         user = await getUserByUsername(input.username.trim().toLowerCase());
@@ -148,10 +164,30 @@ export const authRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // This is the first-sign-in change (a new account, or an admin reset).
+      // Once that is done, changing a password needs the old one (Profile).
+      if (!ctx.user.mustChangePassword)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Use Change password in your profile.",
+        });
       const passwordHash = await bcrypt.hash(input.newPassword, 12);
-      await updateUser(ctx.user.id, {
-        passwordHash,
-        mustChangePassword: false,
+      // Conditional, so two requests at once cannot both use the one change.
+      const newSessionVersion = await completeForcedPasswordChange(
+        ctx.user.id,
+        passwordHash
+      );
+      if (newSessionVersion === null)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Use Change password in your profile.",
+        });
+      // Their older sign-ins ended with the change; this browser carries on
+      // with a fresh one.
+      await startSignedInSession(ctx, {
+        username: ctx.user.username,
+        name: ctx.user.name,
+        sessionVersion: newSessionVersion,
       });
       await createAuditLog({
         sheetId: 0,
@@ -167,6 +203,11 @@ export const authRouter = router({
 
   logout: publicProcedure.mutation(async ({ ctx }) => {
     if (ctx.user) {
+      // Ends every sign-in this account has, so a copy of this cookie (or an
+      // old tab on another device) stops working too.
+      await bumpSessionVersion(ctx.user.id).catch(err =>
+        console.warn("[Auth] could not end the account's sign-ins:", err)
+      );
       await createAuditLog({
         sheetId: 0,
         userId: ctx.user.id,

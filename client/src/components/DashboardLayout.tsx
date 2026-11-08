@@ -7,6 +7,11 @@ import {
 import { RosterFullscreenBar } from "@/components/roster/RosterZoomControl";
 import { useRosterFullscreen } from "@/lib/rosterFullscreen";
 import { useAuth } from "@/_core/hooks/useAuth";
+import {
+  looksOffline,
+  offlineReopenView,
+  readLastOfficer,
+} from "@shared/offlineReopen";
 import { BannerOperation } from "@/components/BannerOperation";
 import { PasskeyBanner } from "@/components/PasskeyBanner";
 import { useCommandFeatures } from "@/lib/commandFeatures";
@@ -1472,7 +1477,7 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { loading, user, error: authError } = useAuth();
   const [, setLocation] = useLocation();
   // Investigator accounts are map-only (see server/_core/trpc.ts's
   // INVESTIGATOR_ALLOWED_PATHS, the real enforcement — this is just the
@@ -1581,9 +1586,35 @@ export default function DashboardLayout({
     }
   }, [isInvestigator, investigatorPath, user?.mustChangePassword, setLocation]);
 
+  // Opened with no connection: show the drafts saved on this device for the
+  // last officer instead of a dead sign-in prompt (shared/offlineReopen.ts).
+  const [reopenPath] = useLocation();
+  const reopenView = offlineReopenView({
+    signedIn: Boolean(user),
+    online: !looksOffline(
+      typeof navigator === "undefined" ? true : navigator.onLine,
+      authError
+    ),
+    lastOfficer: readLastOfficer(),
+    path: reopenPath,
+  });
   if (loading) return <DashboardLayoutSkeleton />;
 
   if (user?.mustChangePassword) return <DashboardLayoutSkeleton />;
+
+  if (reopenView === "drafts" || reopenView === "go-drafts") {
+    const officer = readLastOfficer();
+    return (
+      <div className="min-h-screen bg-background pt-10">
+        <div className="bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900">
+          Offline — showing the drafts saved on this device for CIN{" "}
+          {officer?.cin}. You will need to sign in when you are back online;
+          nothing is sent until then.
+        </div>
+        <div className="p-4">{reopenView === "drafts" ? children : null}</div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
@@ -2094,9 +2125,10 @@ function DashboardLayoutContent({
               already has it. */}
           <div className="flex items-center gap-2">
             {/* Roster full screen: its few controls live here on a laptop
-                (narrower screens get a strip on the page instead). */}
+                (a portrait tablet or a small phone gets a strip on the page
+                instead; a phone turned sideways has room, so it is here). */}
             {rosterFullscreen && (
-              <div className="mr-2 hidden lg:block">
+              <div className="roster-fs-header mr-2">
                 <RosterFullscreenBar variant="header" />
               </div>
             )}
@@ -2574,6 +2606,13 @@ function DashboardLayoutContent({
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                {/* Roster full screen, phone turned sideways: the same
+                    controls as the laptop header (see index.css). */}
+                {rosterFullscreen && (
+                  <div className="roster-fs-header mr-1">
+                    <RosterFullscreenBar variant="bar" />
+                  </div>
+                )}
                 {!isInvestigator && (
                   <NotificationBell
                     className="h-11 w-11 hover:bg-accent"

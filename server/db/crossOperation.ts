@@ -1,3 +1,4 @@
+import { intelScope } from "../intelScope";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { formatIntelVehicle } from "@shared/addressFormat";
@@ -699,7 +700,14 @@ export async function getIntelTargetProfile(
   const target = await getTargetById(targetId);
   if (!target) return null;
 
-  const opLinks = await db
+  // Operations this person cannot open (another Command's Restricted ones, in a
+  // profile): what they hold stays out of the profile — the operation's own
+  // background text, its sheets and their titles, and the counts.
+  const hiddenOps = intelScope.getStore()?.hiddenOperationIds;
+  const isHiddenOp = (id: number | null | undefined) =>
+    id != null && !!hiddenOps?.has(id);
+
+  const opLinksAll = await db
     .select({
       id: operations.id,
       name: operations.name,
@@ -714,16 +722,23 @@ export async function getIntelTargetProfile(
       )
     );
 
-  const linkedSheetRows = await db
-    .select({
-      id: runningSheets.id,
-      title: runningSheets.title,
-      operationId: runningSheets.operationId,
-    })
-    .from(runningSheets)
-    .where(
-      and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt))
-    );
+  const opLinks = opLinksAll.filter(o => !isHiddenOp(o.id));
+
+  const linkedSheetRows = (
+    await db
+      .select({
+        id: runningSheets.id,
+        title: runningSheets.title,
+        operationId: runningSheets.operationId,
+      })
+      .from(runningSheets)
+      .where(
+        and(
+          eq(runningSheets.targetId, targetId),
+          isNull(runningSheets.deletedAt)
+        )
+      )
+  ).filter(s => !isHiddenOp(s.operationId));
 
   const opNames: Record<number, string> = {};
   for (const op of opLinks) opNames[op.id] = op.name;
@@ -766,19 +781,21 @@ export async function getIntelTargetProfile(
   );
   let mentionedSheets: IntelTargetProfile["mentionedSheets"] = [];
   if (mentionedSheetIds.length) {
-    const mentionedSheetRows = await db
-      .select({
-        id: runningSheets.id,
-        title: runningSheets.title,
-        operationId: runningSheets.operationId,
-      })
-      .from(runningSheets)
-      .where(
-        and(
-          inArray(runningSheets.id, mentionedSheetIds),
-          isNull(runningSheets.deletedAt)
+    const mentionedSheetRows = (
+      await db
+        .select({
+          id: runningSheets.id,
+          title: runningSheets.title,
+          operationId: runningSheets.operationId,
+        })
+        .from(runningSheets)
+        .where(
+          and(
+            inArray(runningSheets.id, mentionedSheetIds),
+            isNull(runningSheets.deletedAt)
+          )
         )
-      );
+    ).filter(s => !isHiddenOp(s.operationId));
     const extraOpIds2 = Array.from(
       new Set(
         mentionedSheetRows.map(s => s.operationId).filter(id => !opNames[id])

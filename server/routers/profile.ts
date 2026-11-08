@@ -4,11 +4,13 @@ import { z } from "zod";
 import { CHROME_STYLES, COLOR_PALETTES } from "@shared/const";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
+  bumpSessionVersion,
   createAuditLog,
   getUserById,
   updateUser,
   listOperationShares,
 } from "../db";
+import { startSignedInSession } from "./_helpers";
 
 export const profileRouter = router({
   me: protectedProcedure.query(async ({ ctx }) => {
@@ -57,6 +59,12 @@ export const profileRouter = router({
         });
       const newHash = await bcrypt.hash(input.newPassword, 12);
       await updateUser(ctx.user.id, { passwordHash: newHash });
+      // Every other sign-in ends; this browser carries on with a fresh one.
+      await startSignedInSession(ctx, {
+        username: ctx.user.username,
+        name: ctx.user.name,
+        sessionVersion: await bumpSessionVersion(ctx.user.id),
+      });
       await createAuditLog({
         sheetId: 0,
         userId: ctx.user.id,

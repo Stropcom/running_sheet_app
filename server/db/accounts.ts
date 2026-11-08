@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { isLoggedIn, type TeamMapVisibility } from "@shared/teamMap";
 
@@ -291,13 +291,53 @@ export async function teamNameMap(): Promise<Map<number, string>> {
   return out;
 }
 
-export async function updateUserRole(
-  userId: number,
-  role: "observer" | "member" | "admin"
-) {
+/** Ends every sign-in this person has (a copied cookie, another device): the
+ * number each sign-in carries no longer matches. Returns the new number, which
+ * a sign-in issued right after (their current browser) should carry. */
+export async function bumpSessionVersion(userId: number): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(users).set({ role }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({ sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, userId));
+  const [row] = await db
+    .select({ v: users.sessionVersion })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row?.v ?? 0;
+}
+
+/**
+ * The one forced password change (a new account, or a password an admin set):
+ * only succeeds while the account is still flagged as having to change it, so two
+ * requests at once cannot both use it. Ends their older sign-ins. Returns the new
+ * session number, or null when there was nothing to change.
+ */
+export async function completeForcedPasswordChange(
+  userId: number,
+  passwordHash: string
+): Promise<number | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [res] = await db
+    .update(users)
+    .set({
+      passwordHash,
+      mustChangePassword: false,
+      sessionVersion: sql`${users.sessionVersion} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(users.id, userId), eq(users.mustChangePassword, true)));
+  if (!res || (res as { affectedRows?: number }).affectedRows === 0)
+    return null;
+  const [row] = await db
+    .select({ v: users.sessionVersion })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row?.v ?? 0;
 }
 
 export async function archiveUser(userId: number, archivedByCIN: string) {

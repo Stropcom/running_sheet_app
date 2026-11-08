@@ -25,6 +25,8 @@ import {
   getAllOperations,
   setOperationStatus,
   softDeleteOperation,
+  runOnce,
+  isInRecycleBin,
 } from "../db";
 
 import { adminProcedure } from "./_helpers";
@@ -77,6 +79,8 @@ export const operationRouter = router({
         /** Admins only — see the checks below. */
         command: z.enum(COMMAND_CODES).optional(),
         restricted: z.boolean().optional(),
+        /** From the offline sync: makes this create happen once (db/offlineActions.ts). */
+        clientActionId: z.string().max(100).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -88,30 +92,37 @@ export const operationRouter = router({
             "Only an admin can set an operation's Command or mark it Restricted.",
         });
       }
-      const id = await createOperation({
-        name: input.name,
-        promisNumber: input.promisNumber ?? null,
-        imsNumber: input.imsNumber ?? null,
-        investigationUnit: input.investigationUnit ?? null,
-        // An operation belongs to its creator's Command unless an admin
-        // says otherwise.
-        command: input.command ?? ctx.user.command,
-        restricted: input.restricted ?? false,
-        createdBy: ctx.user.id,
-      });
-      if (input.restricted) {
-        await createAuditLog({
-          sheetId: 0,
-          userId: ctx.user.id,
-          userName: ctx.user.cin ?? "Unknown",
-          userCIN: ctx.user.cin ?? undefined,
-          action: "operation_updated",
-          details: `Operation "${input.name}" (ID ${id}) created as Restricted`,
-          createdAt: Date.now(),
-        });
-      }
-      invalidateAccessCache();
-      return { id };
+      return runOnce(
+        ctx.user.id,
+        input.clientActionId,
+        "operation",
+        async () => {
+          const id = await createOperation({
+            name: input.name,
+            promisNumber: input.promisNumber ?? null,
+            imsNumber: input.imsNumber ?? null,
+            investigationUnit: input.investigationUnit ?? null,
+            // An operation belongs to its creator's Command unless an admin
+            // says otherwise.
+            command: input.command ?? ctx.user.command,
+            restricted: input.restricted ?? false,
+            createdBy: ctx.user.id,
+          });
+          if (input.restricted) {
+            await createAuditLog({
+              sheetId: 0,
+              userId: ctx.user.id,
+              userName: ctx.user.cin ?? "Unknown",
+              userCIN: ctx.user.cin ?? undefined,
+              action: "operation_updated",
+              details: `Operation "${input.name}" (ID ${id}) created as Restricted`,
+              createdAt: Date.now(),
+            });
+          }
+          invalidateAccessCache();
+          return { id };
+        }
+      );
     }),
 
   update: protectedProcedure
@@ -197,6 +208,12 @@ export const operationRouter = router({
   hardDelete: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
+      // Permanent delete is for operations already in the Recycle Bin.
+      if (!(await isInRecycleBin("operation", input.id)))
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "That operation is not in the Recycle Bin.",
+        });
       await deleteOperation(input.id);
       return { success: true };
     }),

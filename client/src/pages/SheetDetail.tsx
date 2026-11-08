@@ -1,4 +1,8 @@
 import { useMyTeams } from "@/lib/teams";
+import {
+  rowEditChangesContent,
+  signatureRemovalWarning,
+} from "@shared/rowEditSignatures";
 import { fillRoute } from "@shared/parkingRoute";
 import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
@@ -3434,6 +3438,22 @@ export default function SheetDetail({
         rowDate?: string;
         observation?: string;
       }) => {
+        // A part-signed row loses its signatures when its content changes
+        // (server rule, shared/rowEditSignatures.ts) — ask first.
+        const current = rows?.find(r => r.id === input.id);
+        const signedBy = (current?.certifications ?? []).map(
+          c => c.certifiedByCIN
+        );
+        if (
+          isOnline &&
+          current &&
+          signedBy.length > 0 &&
+          rowEditChangesContent(current, input) &&
+          !confirm(signatureRemovalWarning(signedBy))
+        ) {
+          invalidateRows(); // put the row back as it was saved
+          return;
+        }
         pushUndoEntry(input);
         if (isOnline) {
           _updateRowOnline.mutate(input);

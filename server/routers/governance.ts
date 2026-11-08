@@ -18,6 +18,7 @@ import {
   completeSheetSummary,
   reopenSheetSummary,
 } from "../db";
+import { assertCanCompleteSummary } from "./_helpers";
 
 /** RS Governance Folder */
 export const governanceRouter = router({
@@ -123,6 +124,16 @@ export const governanceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // Ticking "Summary complete" completes the summary, so it takes the
+      // same permission as the Summary tab's Complete button: the listed Team
+      // Leader or an Admin. (Unticking is the same as reopening the summary,
+      // which any member can do.)
+      if (
+        input.summaryNotification === true ||
+        (input.toggledField === "summaryNotification" &&
+          input.toggledValue === true)
+      )
+        await assertCanCompleteSummary(ctx.user, input.sheetId);
       const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
       const userName = ctx.user.name ?? ctx.user.username ?? "Unknown";
       // Build CIN + Name update: set when ticking, clear when unticking

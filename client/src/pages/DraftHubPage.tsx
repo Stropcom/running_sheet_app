@@ -15,6 +15,7 @@
  * permanently stuck at the top of the page.
  */
 
+import { perthMinutesAndDate } from "@shared/rowTime";
 import { useEffect, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -120,8 +121,8 @@ export default function DraftHubPage() {
 
   // New sheet dialog
   const [showNewSheet, setShowNewSheet] = useState(false);
-  const [newSheetDate, setNewSheetDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
+  const [newSheetDate, setNewSheetDate] = useState(
+    () => perthMinutesAndDate(new Date()).dateISO
   );
   const [newSheetOpKey, setNewSheetOpKey] = useState<string>(""); // "draft:<localId>" or "server:<id>"
   const [newSheetCins, setNewSheetCins] = useState("");
@@ -251,7 +252,7 @@ export default function DraftHubPage() {
       });
       await refreshDraftCounts();
       setShowNewSheet(false);
-      setNewSheetDate(new Date().toISOString().slice(0, 10));
+      setNewSheetDate(perthMinutesAndDate(new Date()).dateISO);
       setNewSheetCins("");
       setNewSheetOpKey("");
       toast.success(`Sheet "${draft.title}" saved as draft`);

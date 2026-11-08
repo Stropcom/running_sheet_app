@@ -4,6 +4,7 @@ import { TARGET_BACKGROUND_MAX } from "@shared/targetBackground";
 import {
   filterByIntelligenceScope,
   filterByOperationAccess,
+  hiddenIntelligenceFor,
   scopeRegistryTargets,
   toAccessUser,
 } from "../operationAccess";
@@ -33,6 +34,7 @@ import {
   ensureTargetFullyLinked,
   getLinkedOperationsForTarget,
   softDeleteTarget,
+  runOnce,
 } from "../db";
 
 import { readDocxTables } from "../documentImport/docxTableReader";
@@ -191,6 +193,8 @@ export const targetRouter = router({
           // CLAUDE.md/the OperationPicker in AddTargetDialog, the only
           // client-side path to this procedure.
           linkToOperationId: z.number(),
+          /** From the offline sync: makes this create happen once. */
+          clientActionId: z.string().max(100).optional(),
           // The document's free-text narrative, when this target came
           // from a document import — stored on the (target, operation)
           // link as its "{Operation name} background".
@@ -220,54 +224,57 @@ export const targetRouter = router({
           ...targetStatusFieldsSchema,
         })
       )
-      .mutation(async ({ input, ctx }) => {
-        const {
-          linkToOperationId,
-          background,
-          registryBackground,
-          documentSnapshotJson,
-          documentSourceFileName,
-          documentSourceFileBase64,
-          documentSourceFileMimeType,
-          ...data
-        } = input;
-        const result = await createRegistryTarget({
-          ...data,
-          createdBy: ctx.user.id,
-        });
-        await linkTargetToOperation(result.id, linkToOperationId, background);
-        if (registryBackground?.trim()) {
-          await saveTargetBackgroundWithAudit(
-            ctx.user,
-            { id: result.id, name: data.name },
-            registryBackground
-          );
-        }
-        if (documentSnapshotJson) {
-          let sourceFileUrl: string | null = null;
-          let renderablePdfUrl: string | null = null;
-          if (documentSourceFileBase64) {
-            const stored = await storeTargetDocumentSourceFile({
-              targetId: result.id,
-              fileName: documentSourceFileName,
-              base64: documentSourceFileBase64,
-              mimeType: documentSourceFileMimeType,
-            });
-            sourceFileUrl = stored.sourceFileUrl;
-            renderablePdfUrl = stored.renderablePdfUrl;
-          }
-          await recordTargetDocumentImport({
-            targetId: result.id,
-            operationId: linkToOperationId,
-            uploadedByCIN: ctx.user.cin ?? null,
-            snapshotJson: documentSnapshotJson,
-            sourceFileName: documentSourceFileName,
-            sourceFileUrl,
-            renderablePdfUrl,
+      .mutation(async ({ input, ctx }) =>
+        runOnce(ctx.user.id, input.clientActionId, "target", async () => {
+          const {
+            clientActionId: _clientActionId,
+            linkToOperationId,
+            background,
+            registryBackground,
+            documentSnapshotJson,
+            documentSourceFileName,
+            documentSourceFileBase64,
+            documentSourceFileMimeType,
+            ...data
+          } = input;
+          const result = await createRegistryTarget({
+            ...data,
+            createdBy: ctx.user.id,
           });
-        }
-        return result;
-      }),
+          await linkTargetToOperation(result.id, linkToOperationId, background);
+          if (registryBackground?.trim()) {
+            await saveTargetBackgroundWithAudit(
+              ctx.user,
+              { id: result.id, name: data.name },
+              registryBackground
+            );
+          }
+          if (documentSnapshotJson) {
+            let sourceFileUrl: string | null = null;
+            let renderablePdfUrl: string | null = null;
+            if (documentSourceFileBase64) {
+              const stored = await storeTargetDocumentSourceFile({
+                targetId: result.id,
+                fileName: documentSourceFileName,
+                base64: documentSourceFileBase64,
+                mimeType: documentSourceFileMimeType,
+              });
+              sourceFileUrl = stored.sourceFileUrl;
+              renderablePdfUrl = stored.renderablePdfUrl;
+            }
+            await recordTargetDocumentImport({
+              targetId: result.id,
+              operationId: linkToOperationId,
+              uploadedByCIN: ctx.user.cin ?? null,
+              snapshotJson: documentSnapshotJson,
+              sourceFileName: documentSourceFileName,
+              sourceFileUrl,
+              renderablePdfUrl,
+            });
+          }
+          return result;
+        })
+      ),
 
     /** Create a new target, linked to an existing Associate confirmed to
      * be the same real person — the "Yes, same person — link and copy"
@@ -649,11 +656,22 @@ export const targetRouter = router({
       .input(
         z.object({ targetId: z.number(), operationId: z.number().optional() })
       )
-      .query(async ({ input }) => {
-        return listTargetDocumentImportsForTarget(
+      .query(async ({ input, ctx }) => {
+        const imports = await listTargetDocumentImportsForTarget(
           input.targetId,
           input.operationId
         );
+        // A target in two operations shows the readings from each, except from
+        // another Command's Restricted operation that this person was not given.
+        const hidden = await hiddenIntelligenceFor(
+          toAccessUser(ctx.user),
+          "profile"
+        );
+        return hidden.size === 0
+          ? imports
+          : imports.filter(
+              i => i.operationId == null || !hidden.has(i.operationId)
+            );
       }),
 
     /** Parses an uploaded .docx or .pdf target-profile document into a

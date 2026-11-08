@@ -512,6 +512,8 @@ export {
   updateSheetIntelManualLine,
   deleteSheetIntelManualLine,
   getSheetNewEntities,
+  getSheetIntelData,
+  type SheetIntelData,
   type SheetIntelLineFields,
   type SheetNewEntities,
 } from "./db/sheetIntel";

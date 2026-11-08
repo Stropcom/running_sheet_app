@@ -1,6 +1,13 @@
 import { eq, inArray } from "drizzle-orm";
 
 import {
+  buildSheetIntel,
+  leftOutOfSheet,
+  type SheetIntelLine as SheetIntelLineView,
+} from "@shared/sheetIntel";
+import type { LeftOutSentence } from "@shared/intelCues";
+
+import {
   runningSheets,
   sheetIntelLines,
   sheetRows,
@@ -14,6 +21,7 @@ import {
   toPerthDateISO,
 } from "./reports";
 import { getSheetSummary, upsertSheetSummary } from "./governance";
+import { getRowsBySheetId } from "./operations";
 
 // ─── New Intelligence on the Supervisor Summary ──────────────────────────────
 // The automatic lines are worked out from the rows every time (shared/
@@ -264,4 +272,35 @@ export async function getSheetNewEntities(
   out.vehicles.sort();
   out.locations.sort();
   return out;
+}
+
+// ─── Everything the New Intelligence section shows for one sheet ─────────────
+
+export interface SheetIntelData {
+  lines: SheetIntelLineView[];
+  newThisShift: SheetNewEntities;
+  leftOut: Array<LeftOutSentence & { rowId: number; time: string | null }>;
+  /** The summary is complete, so the section is locked. */
+  locked: boolean;
+}
+
+/** The automatic lines (from the rows), the hand-added lines and the unticked
+ * list put together — the one answer the Supervisor Summary screen, the
+ * Deployment Rollup (screen and export) and the Intelligence Package all read. */
+export async function getSheetIntelData(
+  sheetId: number
+): Promise<SheetIntelData> {
+  const [rows, manual, hidden, record, newThisShift] = await Promise.all([
+    getRowsBySheetId(sheetId),
+    getSheetIntelManualLines(sheetId),
+    getSheetIntelHiddenKeys(sheetId),
+    getSheetSummary(sheetId),
+    getSheetNewEntities(sheetId),
+  ]);
+  return {
+    lines: buildSheetIntel({ rows, manualLines: manual, hiddenKeys: hidden }),
+    newThisShift,
+    leftOut: leftOutOfSheet(rows),
+    locked: !!record?.completedAt,
+  };
 }

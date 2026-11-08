@@ -39,7 +39,7 @@ import {
   addSheetIntelManualLine,
   updateSheetIntelManualLine,
   deleteSheetIntelManualLine,
-  getSheetNewEntities,
+  getSheetIntelData,
 } from "../db";
 import { formatRowTime } from "@shared/rowTime";
 import {
@@ -560,30 +560,17 @@ export const summaryRouter = router({
     .query(async ({ input, ctx }) => {
       const sheet = await getRunningSheetById(input.sheetId);
       if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
-      const [rows, manual, hidden, record, newThisShift] = await Promise.all([
-        getRowsBySheetId(input.sheetId),
-        getSheetIntelManualLines(input.sheetId),
-        getSheetIntelHiddenKeys(input.sheetId),
-        getSheetSummary(input.sheetId),
-        getSheetNewEntities(input.sheetId),
-      ]);
+      const data = await getSheetIntelData(input.sheetId);
       const me = intelUserCIN(ctx.user);
       const isAdmin = ctx.user.role === "admin";
-      const lines = buildSheetIntel({
-        rows,
-        manualLines: manual,
-        hiddenKeys: hidden,
-      }).map(l => ({
-        ...l,
-        // The officer who added a hand-added line, or an admin, may edit or
-        // remove it (while the summary is open).
-        editable: l.source === "manual" && (isAdmin || l.addedByCIN === me),
-      }));
       return {
-        lines,
-        newThisShift,
-        leftOut: leftOutOfSheet(rows),
-        locked: !!record?.completedAt,
+        ...data,
+        lines: data.lines.map(l => ({
+          ...l,
+          // The officer who added a hand-added line, or an admin, may edit or
+          // remove it (while the summary is open).
+          editable: l.source === "manual" && (isAdmin || l.addedByCIN === me),
+        })),
       };
     }),
 

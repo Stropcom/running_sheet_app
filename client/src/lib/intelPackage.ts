@@ -7,6 +7,7 @@
 // and each section contributes only its body HTML.
 
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { SHEET_INTEL_PDF_CSS } from "@/lib/sheetIntelPdf";
 
 export const PKG_BLUE_DARK = "#1e3a8a";
 export const PKG_BLUE_MID = "#93c5fd";
@@ -109,6 +110,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 /* Rollup blocks wrap their sections in .content; inside a package section
    that padding is already supplied by .pkg-section. */
 .pkg-section .content { padding:0 0 18px; }
+${SHEET_INTEL_PDF_CSS}
 .summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${PKG_BLUE_DARK}; }
 .summary-table th { background:${PKG_BLUE_LIGHT} !important; color:${PKG_BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${PKG_BLUE_DARK}; border-right:1px solid #c7d5ee; }
 .summary-table th:last-child, .summary-table td:last-child { border-right:none; }

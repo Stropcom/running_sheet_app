@@ -1,3 +1,5 @@
+import { SheetIntelReadOnly } from "@/components/SheetIntelReadOnly";
+import { SHEET_INTEL_PDF_CSS } from "@/lib/sheetIntelPdf";
 import { useMyTeams } from "@/lib/teams";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { OperationRegionFields } from "@/components/OperationRegionFields";
@@ -1057,7 +1059,7 @@ type RollupRow = {
 // Same dark-blue-banner / light-blue-section visual language as the
 // Supervisor Summary export (SheetSummary.tsx's exportSummaryToPDF) — every
 // row here is that same set of sections (Deployment/Vehicle/Investigator/
-// Special Projects/Objectives/Critical Decisions/Summary/Issues), just one
+// Special Projects/Objectives/Critical Decisions/Issues/Summary/New Intelligence), just one
 // block per sheet with a page break between sheets instead of one sheet at
 // a time.
 function buildRollupExportPdf(params: {
@@ -1127,6 +1129,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .numbered-list li:last-child { margin-bottom:0; }
 .numbered-list li::before { content:counter(item); flex-shrink:0; width:16px; height:16px; border-radius:50%; background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px; }
 .muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
+${SHEET_INTEL_PDF_CSS}
 .summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
 .summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
 .summary-table th:last-child, .summary-table td:last-child { border-right:none; }
@@ -1253,6 +1256,11 @@ function DeploymentRollupCard({
     );
   const { data: vehicles, isLoading: vehiclesLoading } =
     trpc.summary.getVehicles.useQuery(
+      { sheetId: r.sheetId },
+      { enabled: expanded }
+    );
+  const { data: intel, isLoading: intelLoading } =
+    trpc.summary.getIntel.useQuery(
       { sheetId: r.sheetId },
       { enabled: expanded }
     );
@@ -1407,6 +1415,18 @@ function DeploymentRollupCard({
             )}
           </RollupSection>
 
+          <RollupSection title="Issues">
+            {hasIssues ? (
+              <p className="text-xs text-foreground whitespace-pre-wrap">
+                {r.issues}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">
+                None recorded.
+              </p>
+            )}
+          </RollupSection>
+
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-primary mb-1.5 px-1">
               Summary
@@ -1456,11 +1476,11 @@ function DeploymentRollupCard({
             )}
           </div>
 
-          <RollupSection title="Issues">
-            {hasIssues ? (
-              <p className="text-xs text-foreground whitespace-pre-wrap">
-                {r.issues}
-              </p>
+          <RollupSection title="New Intelligence">
+            {intelLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : intel ? (
+              <SheetIntelReadOnly data={intel} />
             ) : (
               <p className="text-xs text-muted-foreground italic">
                 None recorded.

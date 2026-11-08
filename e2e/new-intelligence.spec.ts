@@ -246,3 +246,69 @@ test("Weekly Report: Actions and items this week — heading, one grey line, day
   await pop.close();
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
+
+test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor Summary — Issues above Summary, New Intelligence last, read only", async ({
+  page,
+}) => {
+  const { opId, sheetId } = await createOperationAndSheet(page);
+  await addRowWithObservation(
+    page,
+    "FRASER retrieved the brown suitcase from the boot.",
+    "brown suitcase"
+  );
+  // The roll-up lists a sheet once its Summary tab has been opened; wait for
+  // the row to be saved (the summary then shows its line).
+  await page.goto(`/summary/${sheetId}`);
+  await expect(async () => {
+    await page.reload();
+    await expect(
+      page.getByTestId("new-intelligence").getByTestId("intel-line")
+    ).toHaveCount(1, { timeout: 3000 });
+  }).toPass({ timeout: 20000 });
+  // Give the summary an Issues entry (an empty Issues section is not printed).
+  const issues = page
+    .getByText("Issues", { exact: true })
+    .locator("xpath=following::textarea[1]");
+  await issues.fill("Radio dropped out twice.");
+  await page.waitForResponse(
+    r => /summary\.update/.test(r.url()) && r.status() === 200
+  );
+
+  await page.goto(`/operation/${opId}`);
+  await page.getByRole("tab", { name: "Deployment Summaries" }).click();
+  await page
+    .getByRole("button", { name: /\d{1,2} \w+ \d{2}/ })
+    .first()
+    .click();
+  const intel = page.getByTestId("rollup-intel");
+  await expect(intel).toBeVisible();
+  await expect(intel).toContainText("Brown suitcase");
+  await expect(intel.locator("mark").first()).toContainText(/suitcase/i);
+  // Read only: no ticks, no Add item, no Edit.
+  await expect(intel.getByRole("checkbox")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add item" })).toHaveCount(0);
+
+  // Section order inside the card: Issues, then Summary, then New Intelligence.
+  const text = await page.locator("main, body").first().innerText();
+  const at = (s: string) => text.search(new RegExp(`^${s}$`, "im"));
+  expect(at("Issues")).toBeGreaterThan(0);
+  expect(at("Issues")).toBeLessThan(at("Summary"));
+  expect(at("Summary")).toBeLessThan(at("New Intelligence"));
+
+  // The export carries it too, in the same order.
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  const popupP = page.waitForEvent("popup");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Export PDF" })
+    .click();
+  const pop = await popupP;
+  await pop.waitForLoadState();
+  const html = await pop.content();
+  const i = (s: string) => html.indexOf(`>${s}<`);
+  expect(i("Issues")).toBeGreaterThan(0);
+  expect(i("Issues")).toBeLessThan(i("Summary"));
+  expect(i("Summary")).toBeLessThan(i("New Intelligence"));
+  expect(html.slice(i("New Intelligence"))).toContain("Brown suitcase");
+  await pop.close();
+});

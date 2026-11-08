@@ -3,8 +3,11 @@
 //
 // One block per running sheet — the same set of sections the Supervisor
 // Summary export uses (Deployment / Vehicle / Investigator / Special
-// Projects / Objectives / Critical Decisions / Summary / Issues). Only the
+// Projects / Objectives / Critical Decisions / Issues / Summary / New
+// Intelligence). Only the
 // body is built here; each document supplies its own cover and shell.
+
+import { sheetIntelPdfBody, type SheetIntelPdfData } from "./sheetIntelPdf";
 
 export type RollupExportRow = {
   sheetId: number;
@@ -32,6 +35,8 @@ export type RollupExportRow = {
     text: string;
   }[];
   vehicles: { key: string; label: string }[];
+  /** The sheet's New Intelligence (the ticked lines are written). */
+  intel: SheetIntelPdfData | null;
 };
 
 export function parseRollupJsonArray<T>(raw: string | null | undefined): T[] {
@@ -54,8 +59,7 @@ export function formatRollupDate(
   sheetDate: string | null,
   createdAt: Date | string
 ): string {
-  const ymd =
-    sheetDate ?? new Date(createdAt).toISOString().slice(0, 10);
+  const ymd = sheetDate ?? new Date(createdAt).toISOString().slice(0, 10);
   const [y, m, d] = ymd.split("-");
   return y && m && d ? `${d}-${m}-${y}` : ymd;
 }
@@ -166,8 +170,9 @@ export function buildRollupSheetBlocksHtml(rows: RollupExportRow[]): string {
           ${section("Special Projects", specialProjectsHtml)}
           ${section("Objectives", objectivesHtml)}
           ${section("Critical Decisions", criticalDecisionsHtml)}
-          ${section("Summary", summaryHtml)}
           ${section("Issues", r.issues?.trim() ? `<p>${esc(r.issues)}</p>` : "")}
+          ${section("Summary", summaryHtml)}
+          ${section("New Intelligence", sheetIntelPdfBody(r.intel))}
         </div>
       </div>`;
     })

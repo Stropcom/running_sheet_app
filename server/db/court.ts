@@ -1,6 +1,11 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
-import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "../wipcVault";
+import {
+  vaultEncrypt,
+  vaultDecrypt,
+  fingerprintVaultKey,
+  countUndecryptable,
+} from "../wipcVault";
 
 import {
   wipcMembers,
@@ -101,6 +106,28 @@ export async function verifyWipcVaultKeyOrThrow(): Promise<void> {
   const [existing] = await db.select().from(wipcVaultKeyCheck).limit(1);
 
   if (!existing) {
+    // No key check on file yet — but encrypted members may already be: a
+    // database restored without that table, or a check row deleted. The key
+    // being given must open them BEFORE it is recorded as the key of record;
+    // a mistyped key must never become the one every later start checks
+    // against while real protected members become unreadable.
+    const [members, officers] = await Promise.all([
+      db.select({ v: wipcMembers.fullName }).from(wipcMembers),
+      db.select({ v: wipcOfficerProfiles.fullName }).from(wipcOfficerProfiles),
+    ]);
+    const unreadable = countUndecryptable([
+      ...members.map(r => r.v),
+      ...officers.map(r => r.v),
+    ]);
+    if (unreadable > 0) {
+      throw new Error(
+        `WIPC_VAULT_KEY cannot open ${unreadable} WIPC record(s) already stored, and no key check is on file yet. ` +
+          "Refusing to start: recording this key would make it the key of record and leave those " +
+          "records unreadable. Set WIPC_VAULT_KEY to the key that encrypted them and restart. " +
+          "(If those records are known-disposable test data, clear the wipc_officer_profiles and " +
+          "wipc_members tables first, then restart.)"
+      );
+    }
     await db.insert(wipcVaultKeyCheck).values({
       keyFingerprint: fingerprint,
       canaryValue: vaultEncrypt("WIPC_VAULT_KEY_OK"),

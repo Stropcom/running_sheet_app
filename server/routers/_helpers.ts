@@ -94,6 +94,33 @@ export async function guardActiveSheet(sheetId: number) {
 }
 
 /**
+ * Who may complete a sheet's summary: the listed Team Leader of that sheet, or
+ * an Admin. One rule, used by the Summary tab's Complete button and by the
+ * governance "Summary complete" tick, so neither is a way round the other.
+ */
+export async function assertCanCompleteSummary(
+  user: { role?: string | null; cin?: string | null },
+  sheetId: number
+) {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+  if (user.role === "admin") return;
+  let sheetCins: { cin: string; isTeamLeader?: boolean }[] = [];
+  try {
+    sheetCins = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+  } catch {
+    sheetCins = [];
+  }
+  const userCin = user.cin ?? "";
+  if (!sheetCins.some(c => c.isTeamLeader && c.cin === userCin))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Only the listed Team Leader or an Admin can complete this summary.",
+    });
+}
+
+/**
  * For signing: the sheet and its operation must still exist (not in the
  * Recycle Bin). Signing stays possible once an operation has moved to Before
  * Court; only taking a signature away needs the full guardActiveSheet.

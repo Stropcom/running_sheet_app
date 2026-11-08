@@ -11,6 +11,7 @@ import {
   max,
   count,
 } from "drizzle-orm";
+import { liveChangedSinceSeed } from "@shared/ctoRosterMerge";
 import {
   getDb,
   getAllUsers as getAllRunLogUsers,
@@ -1223,7 +1224,6 @@ export async function getCtoRosterDraftMergeDiff(draftId: number): Promise<{
     const draftTime = ds.shiftTime ?? null;
     if (draftCode === liveCode && draftTime === liveTime) continue;
     if (liveCode === "l" || liveCode === "c") continue;
-    const seededCode = snapshot[key]?.shiftCode ?? "";
     diff.push({
       memberId: ds.memberId,
       memberName: nameByMemberId.get(ds.memberId) ?? String(ds.memberId),
@@ -1232,7 +1232,7 @@ export async function getCtoRosterDraftMergeDiff(draftId: number): Promise<{
       draftTime,
       liveCode,
       liveTime,
-      isConflict: liveCode !== seededCode,
+      isConflict: liveChangedSinceSeed(live, snapshot[key]),
     });
   }
   return {
@@ -1284,10 +1284,12 @@ export async function mergeCtoRosterDraft(
   const mergeableMemberIds = rosterCommand()
     ? new Set((await getAllCtoRosterMembers()).map(m => m.id))
     : null;
-  let applied = 0,
-    skipped = 0,
+  // Pass 1 — decide everything, change nothing. A merge either works
+  // completely or does nothing: if any conflicting cell is still unresolved
+  // the whole merge is refused before a single shift is written.
+  let skipped = 0,
     conflicts = 0;
-  const affectedMemberIds = new Set<number>();
+  const toApply: typeof draftShiftRows = [];
   for (const ds of draftShiftRows) {
     if (mergeableMemberIds && !mergeableMemberIds.has(ds.memberId)) {
       skipped++;
@@ -1307,8 +1309,7 @@ export async function mergeCtoRosterDraft(
       skipped++;
       continue;
     }
-    const seededCode = snapshot[key]?.shiftCode ?? "";
-    if (liveCode !== seededCode) {
+    if (liveChangedSinceSeed(live, snapshot[key])) {
       const res = resolutionMap.get(key);
       if (!res) {
         conflicts++;
@@ -1319,6 +1320,16 @@ export async function mergeCtoRosterDraft(
         continue;
       }
     }
+    toApply.push(ds);
+  }
+  if (conflicts > 0)
+    throw new Error(
+      `${conflicts} unresolved conflict(s). Resolve all conflicts before merging.`
+    );
+
+  // Pass 2 — write.
+  const affectedMemberIds = new Set<number>();
+  for (const ds of toApply) {
     await upsertCtoRosterShift(
       ds.memberId,
       ds.shiftDate,
@@ -1328,14 +1339,13 @@ export async function mergeCtoRosterDraft(
       ds.isActing,
       ds.shiftTime ?? undefined
     );
-    applied++;
     affectedMemberIds.add(ds.memberId);
   }
-  if (conflicts > 0)
-    throw new Error(
-      `${conflicts} unresolved conflict(s). Resolve all conflicts before merging.`
-    );
-  return { applied, skipped, affectedMemberIds: Array.from(affectedMemberIds) };
+  return {
+    applied: toApply.length,
+    skipped,
+    affectedMemberIds: Array.from(affectedMemberIds),
+  };
 }
 
 // ── Standalone draft teams/members (free-text — see schema comment) ────────────

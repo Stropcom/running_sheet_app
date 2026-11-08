@@ -68,3 +68,63 @@ describe("two people enter the same place one after the other", () => {
     expect(w[0].names).toBe("PARK and DOYLE");
   });
 });
+
+// ─── Walking in through a gate or door of an address ────────────────────────
+// "… walked in the front gate of 15 Victoria Street and continued out of
+// sight." was not read as an entry, so the logger left them "in the vehicle"
+// and the flag said "in <rego>" although the row said they had gone inside.
+describe("walked in the front gate of an address", () => {
+  const VALE_ARRIVED =
+    "Vehicle 1VAL75, VALE driver, FRASER front passenger and WATANABE rear passenger, arrived at 15 Victoria Street, SOUTH PERTH WA (15 Victoria Street) and parked on the street.";
+  const WHOLE_ROW =
+    VALE_ARRIVED +
+    "\n\nVALE, FRASER and WATANABE exited the vehicle, FRASER went to the boot retrieved the brown suitcase.\n\nVALE, FRASER and WATANABE walked in the front gate of 15 Victoria Street and continued out of sight.";
+
+  it("the people are inside the address, not in the vehicle", () => {
+    const r = scan([WHOLE_ROW]);
+    expect(r.walkIns).toHaveLength(1);
+    expect(r.walkIns[0].names).toBe("VALE, FRASER and WATANABE");
+    expect(r.walkIns[0].location).toBe("15 Victoria Street");
+    for (const p of r.placements) {
+      expect(p.rego).toBe("");
+      expect(p.at).toBe("15 Victoria Street");
+    }
+    const pos = locateTarget({
+      token: "VALE",
+      arrivals: [],
+      departures: [],
+      walkIns: r.walkIns,
+      headingTo: r.headingTo,
+      placements: r.placements,
+    } as any);
+    expect(pos?.state).toBe("inside");
+  });
+
+  it("works as a row of its own, with 'through' and without 'continued out of sight'", () => {
+    for (const t of [
+      "VALE, FRASER and WATANABE walked in the front gate of 15 Victoria Street and continued out of sight.",
+      "VALE, FRASER and WATANABE walked through the front gate of 15 Victoria Street.",
+      "VALE walked into the front door of 15 Victoria Street.",
+    ]) {
+      const r = scan([VALE_ARRIVED, t]);
+      expect(r.walkIns[0]?.location).toBe("15 Victoria Street");
+    }
+  });
+
+  it("after 'exited the vehicle,' the place is the address, not 'in the front gate of …'", () => {
+    const r = scan([
+      VALE_ARRIVED,
+      "VALE and FRASER exited the vehicle, walked in the front gate of 15 Victoria Street and continued out of sight.",
+    ]);
+    expect(r.walkIns[0]?.location).toBe("15 Victoria Street");
+  });
+
+  it("walking in a gate with no place named, or through a car park, is not an entry", () => {
+    expect(
+      scan([VALE_ARRIVED, "VALE walked in the front gate."]).walkIns
+    ).toHaveLength(0);
+    expect(
+      scan([VALE_ARRIVED, "VALE walked through the car park."]).walkIns
+    ).toHaveLength(0);
+  });
+});

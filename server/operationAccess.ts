@@ -57,14 +57,23 @@ interface AccessData {
 }
 let cache: { at: number; data: AccessData } | null = null;
 const TTL_MS = 2000;
+// Bumped on every invalidation. A load that started BEFORE the invalidation
+// (a poll that was already reading the tables when an operation was created)
+// finishes afterwards with a snapshot that doesn't have the change; it must
+// not be stored, or the next request — the list refresh right after creating
+// an operation — is served that stale snapshot and the new operation is
+// missing from the screen until something else refreshes it.
+let generation = 0;
 
 /** Call after anything that changes who can reach what. */
 export function invalidateAccessCache() {
   cache = null;
+  generation++;
 }
 
 export async function loadAccessData(): Promise<AccessData> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.data;
+  const startedAt = generation;
   const db = await getDb();
   if (!db) return { ops: [], shares: [] };
   const [ops, shares] = await Promise.all([
@@ -86,7 +95,7 @@ export async function loadAccessData(): Promise<AccessData> {
       level: s.level,
     })),
   };
-  cache = { at: Date.now(), data };
+  if (startedAt === generation) cache = { at: Date.now(), data };
   return data;
 }
 

@@ -3,6 +3,7 @@ import {
   OperationSearchHits,
   type SearchRowHit,
 } from "@/components/OperationSearchHits";
+import { issuesToShow } from "@shared/summaryIssues";
 import { SheetIntelReadOnly } from "@/components/SheetIntelReadOnly";
 import { SHEET_INTEL_PDF_CSS } from "@/lib/sheetIntelPdf";
 import { useMyTeams } from "@/lib/teams";
@@ -1258,7 +1259,7 @@ function DeploymentRollupCard({
   const criticalDecisions = parseRollupJsonArray<string>(
     r.criticalDecisions
   ).filter(c => c.trim());
-  const hasIssues = !!(r.issues && r.issues.trim());
+  const issues = issuesToShow(r.issues);
 
   const { data: entries, isLoading: entriesLoading } =
     trpc.summary.getEntries.useQuery(
@@ -1427,10 +1428,12 @@ function DeploymentRollupCard({
           </RollupSection>
 
           <RollupSection title="Issues">
-            {hasIssues ? (
-              <p className="text-xs text-foreground whitespace-pre-wrap">
-                {r.issues}
-              </p>
+            {issues.length > 0 ? (
+              <ol className="list-decimal list-inside space-y-1 text-xs text-foreground">
+                {issues.map((d, i) => (
+                  <li key={i}>{d}</li>
+                ))}
+              </ol>
             ) : (
               <p className="text-xs text-muted-foreground italic">
                 None recorded.

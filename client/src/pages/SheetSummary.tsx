@@ -51,6 +51,7 @@ import {
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { IntelDetailInput } from "@/components/IntelDetailInput";
+import { issuesToShow, parseIssues } from "@shared/summaryIssues";
 import { useOffline } from "@/contexts/OfflineContext";
 import { SheetIntelSection } from "@/components/SheetIntelSection";
 import {
@@ -576,6 +577,11 @@ function exportSummaryToPDF(params: {
     ? `<ol class="numbered-list">${objectives.map(o => `<li>${esc(o)}</li>`).join("")}</ol>`
     : `<p class="muted-note">None recorded.</p>`;
 
+  const issues = issuesToShow(form.issues);
+  const issuesHtml = issues.length
+    ? `<ol class="numbered-list">${issues.map(i => `<li>${esc(i)}</li>`).join("")}</ol>`
+    : `<p class="muted-note">None recorded.</p>`;
+
   const criticalDecisionsHtml = criticalDecisions.length
     ? `<ol class="numbered-list">${criticalDecisions.map(d => `<li>${esc(d)}</li>`).join("")}</ol>`
     : `<p class="muted-note">None recorded.</p>`;
@@ -712,7 +718,7 @@ ${SHEET_INTEL_PDF_CSS}
   ${section("Special Projects", specialProjectsHtml)}
   ${section("Objectives", objectivesHtml)}
   ${section("Critical Decisions", criticalDecisionsHtml)}
-  ${section("Issues", form.issues.trim() ? `<p>${esc(form.issues)}</p>` : "")}
+  ${section("Issues", issuesHtml)}
   ${plainSection("Summary", summaryHtml)}
   ${section("New Intelligence", sheetIntelPdfBody(intel))}
   <div class="footer-note">
@@ -1091,6 +1097,22 @@ export default function SheetSummaryPage() {
   function removeCriticalDecision(idx: number) {
     const next = criticalDecisions.filter((_, i) => i !== idx);
     handleChange("criticalDecisions", JSON.stringify(next), false);
+  }
+
+  // ── Issues (dynamic multi-line list, like Critical Decisions) ──────────────
+  // Older summaries hold one piece of plain text; it shows as one issue and is
+  // only rewritten as a list when edited (shared/summaryIssues.ts).
+  const issues = parseIssues(form.issues);
+  function addIssue() {
+    handleChange("issues", JSON.stringify([...issues, ""]), false);
+  }
+  function setIssue(idx: number, value: string) {
+    const next = issues.map((d, i) => (i === idx ? value : d));
+    handleChange("issues", JSON.stringify(next));
+  }
+  function removeIssue(idx: number) {
+    const next = issues.filter((_, i) => i !== idx);
+    handleChange("issues", JSON.stringify(next), false);
   }
 
   // ── Summary entries (per-RS-row, append-only sync) ─────────────────────────
@@ -1710,12 +1732,43 @@ export default function SheetSummaryPage() {
                 )}
               </div>
 
-              <FieldTextarea
-                label="Issues"
-                value={form.issues}
-                onChange={v => handleChange("issues", v)}
-                disabled={isLocked}
-              />
+              {/* Issues — dynamic multi-line list */}
+              <div>
+                <SectionLabel>Issues</SectionLabel>
+                <div className="space-y-2">
+                  {issues.map((d, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                      <Textarea
+                        value={d}
+                        onChange={e => setIssue(idx, e.target.value)}
+                        disabled={isLocked}
+                        rows={2}
+                        className="text-sm resize-none"
+                      />
+                      {!isLocked && (
+                        <button
+                          type="button"
+                          onClick={() => removeIssue(idx)}
+                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-1.5"
+                          aria-label="Remove issue"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {!isLocked && (
+                  <button
+                    type="button"
+                    onClick={addIssue}
+                    className="mt-2 flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Issue
+                  </button>
+                )}
+              </div>
 
               {/* Summary — one editable/deletable line per RS row, append-only synced */}
               <div>

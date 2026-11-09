@@ -265,11 +265,17 @@ test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor S
       page.getByTestId("new-intelligence").getByTestId("intel-line")
     ).toHaveCount(1, { timeout: 3000 });
   }).toPass({ timeout: 20000 });
-  // Give the summary an Issues entry (an empty Issues section is not printed).
+  // Issues is a list like Objectives and Critical Decisions: "Add Issue".
+  await page.getByRole("button", { name: "Add Issue" }).click();
   const issues = page
     .getByText("Issues", { exact: true })
     .locator("xpath=following::textarea[1]");
   await issues.fill("Radio dropped out twice.");
+  await page.getByRole("button", { name: "Add Issue" }).click();
+  await page
+    .getByText("Issues", { exact: true })
+    .locator("xpath=following::textarea[2]")
+    .fill("Vehicle low on fuel.");
   await page.waitForResponse(
     r => /summary\.update/.test(r.url()) && r.status() === 200
   );
@@ -280,6 +286,8 @@ test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor S
     .getByRole("button", { name: /\d{1,2} \w+ \d{2}/ })
     .first()
     .click();
+  await expect(page.getByText("Radio dropped out twice.")).toBeVisible();
+  await expect(page.getByText("Vehicle low on fuel.")).toBeVisible();
   const intel = page.getByTestId("rollup-intel");
   await expect(intel).toBeVisible();
   await expect(intel).toContainText("Brown suitcase");

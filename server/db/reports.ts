@@ -27,6 +27,7 @@ import { scopeEntities } from "@shared/operationAccess";
 import { holdsPriority, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
+import { issuesToShow } from "@shared/summaryIssues";
 import {
   aggregateWeeklyIntel,
   buildSheetIntel,
@@ -2050,9 +2051,9 @@ export async function getWeeklyActivityReport(
           criticalDecisionsByGroup.set(key, []);
         criticalDecisionsByGroup.get(key)!.push({ date, text: d.trim() });
       }
-      if (summary.issues?.trim()) {
+      for (const issue of issuesToShow(summary.issues)) {
         if (!issuesByGroup.has(key)) issuesByGroup.set(key, []);
-        issuesByGroup.get(key)!.push({ date, text: summary.issues.trim() });
+        issuesByGroup.get(key)!.push({ date, text: issue });
       }
     }
   }

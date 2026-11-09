@@ -7,6 +7,7 @@
 // Intelligence). Only the
 // body is built here; each document supplies its own cover and shell.
 
+import { issuesToShow } from "@shared/summaryIssues";
 import { sheetIntelPdfBody, type SheetIntelPdfData } from "./sheetIntelPdf";
 
 export type RollupExportRow = {
@@ -120,6 +121,11 @@ export function buildRollupSheetBlocksHtml(rows: RollupExportRow[]): string {
         ? `<ol class="numbered-list">${criticalDecisions.map(d => `<li>${esc(d)}</li>`).join("")}</ol>`
         : `<p class="muted-note">None recorded.</p>`;
 
+      const issues = issuesToShow(r.issues);
+      const issuesHtml = issues.length
+        ? `<ol class="numbered-list">${issues.map(i => `<li>${esc(i)}</li>`).join("")}</ol>`
+        : `<p class="muted-note">None recorded.</p>`;
+
       const summaryHtml = r.entries.length
         ? `<table class="summary-table">
             <thead><tr><th style="width:70px">Time</th><th style="width:28%">Address</th><th>Observation</th></tr></thead>
@@ -170,7 +176,7 @@ export function buildRollupSheetBlocksHtml(rows: RollupExportRow[]): string {
           ${section("Special Projects", specialProjectsHtml)}
           ${section("Objectives", objectivesHtml)}
           ${section("Critical Decisions", criticalDecisionsHtml)}
-          ${section("Issues", r.issues?.trim() ? `<p>${esc(r.issues)}</p>` : "")}
+          ${section("Issues", issuesHtml)}
           ${section("Summary", summaryHtml)}
           ${section("New Intelligence", sheetIntelPdfBody(r.intel))}
         </div>

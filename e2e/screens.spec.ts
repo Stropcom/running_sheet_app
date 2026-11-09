@@ -4655,3 +4655,22 @@ test("CTO Weekly Tasking list on a phone: the title stays on one line, the New b
   }
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
+
+test("Typing a measurement (30cm) does not bracket it as a vehicle, and a real rego still does", async ({
+  page,
+}) => {
+  await createOperationAndSheet(page);
+  // A second row starts empty (the first comes with "Surveillance commenced…").
+  await addRowWithObservation(page, "Surveillance commenced.", "commenced");
+  await openNewRowCell(page);
+  const box = page.locator("textarea").first();
+  // Typed key by key, so the Space-bar rego bracket gets its chance to fire.
+  await box.pressSequentially("The package was approx 30cm x 30cm x 30cm ", {
+    delay: 15,
+  });
+  await expect(box).not.toHaveValue(/\(Vehicle/);
+  await expect(box).toHaveValue(/approx 30cm x 30cm x 30cm/);
+  // Control: a real plate typed the same way is still bracketed.
+  await box.pressSequentially("then 1ZQK91 ", { delay: 15 });
+  await expect(box).toHaveValue(/1ZQK91 \(Vehicle 1ZQK91\)/);
+});

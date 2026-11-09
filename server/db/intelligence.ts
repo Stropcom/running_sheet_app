@@ -2,6 +2,7 @@ import { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
 
 import { flattenNestedBrackets } from "@shared/nestedBrackets";
 
+import { isMeasurementWord } from "@shared/measurementWord";
 import { snippetAround } from "@shared/searchSnippet";
 
 import { and, eq, inArray, isNull, like, or, sql } from "drizzle-orm";
@@ -535,6 +536,10 @@ export function extractEntitiesFromText(text: string): Array<{
     // without altering the stored observation text itself.
     const placeholderCandidate = shortForm.replace(/^vehicle\s+/i, "").trim();
     if (/^(?:U[MFCP]|YC|UCO)\d+$/i.test(placeholderCandidate)) continue;
+    // "(Vehicle 30CM)": the sheet's space-bar rego bracket once took a
+    // measurement ("approx 30cm") for a plate. Never a vehicle — and, like the
+    // placeholder above, this clears it for a row already recorded that way.
+    if (isMeasurementWord(placeholderCandidate)) continue;
     // Any "unidentified <male|female|child|person|adult|juvenile|youth>
     // (CODE)" is a placeholder for someone who has not been identified, whatever
     // short name it was given — never recorded in the Intelligence folder.

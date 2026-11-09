@@ -1,3 +1,5 @@
+import { isMeasurementWord } from "./measurementWord";
+
 // What a vehicle registration looks like inside free text. One definition, so
 // the server's vehicle matching (server/db.ts) and the client's tracked-target
 // rule (shared/trackedTarget.ts) can never read a plate differently.
@@ -10,8 +12,13 @@
 export const VEHICLE_REGO_PATTERN =
   /\b(?=[A-Za-z0-9]{4,10}\b)(?=[A-Za-z0-9]*[0-9])(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}\b/;
 
-/** The registration in `text`, upper-cased, or null. */
+/** The registration in `text`, upper-cased, or null. A measurement such as
+ * "30cm" is not one (shared/measurementWord.ts). */
 export function regoIn(text: string | null | undefined): string | null {
-  const m = (text ?? "").match(VEHICLE_REGO_PATTERN);
-  return m ? m[0].toUpperCase() : null;
+  const re = new RegExp(VEHICLE_REGO_PATTERN.source, "g");
+  const t = text ?? "";
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)))
+    if (!isMeasurementWord(m[0])) return m[0].toUpperCase();
+  return null;
 }

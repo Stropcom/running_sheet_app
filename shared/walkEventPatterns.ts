@@ -281,10 +281,16 @@ export const PERSON_EXIT_VEHICLE_WALK_PATTERN = new RegExp(
  * cut off — a lazy capture can otherwise swallow the start of the same
  * sentence ("BAIG exited A, walked across the road,"). */
 export function cleanWalkerNames(raw: string): string {
-  return raw
-    .replace(/\s*,?\s*(?:and\s+)?(?:then\s+)?\b(?:exited|walked)\b.*$/i, "")
-    .replace(/[\s,]+$/, "")
-    .trim();
+  return (
+    raw
+      .replace(/\s*,?\s*(?:and\s+)?(?:then\s+)?\b(?:exited|walked)\b.*$/i, "")
+      // "SANTOS, carrying the package, exited …": the carrying / holding /
+      // wearing clause is not part of who it is — only the names are.
+      .replace(/\s*,\s*[a-z]+ing\b[^,]*/g, "")
+      .replace(/,\s+and\b/g, " and")
+      .replace(/[\s,]+$/, "")
+      .trim()
+  );
 }
 
 /** A location written as a full address ("13 Denford Street, KENWICK WA

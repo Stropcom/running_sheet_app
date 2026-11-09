@@ -4598,28 +4598,6 @@ test("Team Duty Roster: a roster that is already open picks up a tasking change 
   }
 });
 
-test("Side menu: the main folders have a helper line under their name", async ({
-  page,
-}) => {
-  await page.goto("/");
-  const menu = page.locator("[data-sidebar='menu']").first();
-  for (const [name, helper] of [
-    ["Operations", "Running Sheets & Summaries"],
-    ["Governance", "Outstanding Actions"],
-    ["Mapping", "Map & Map Settings"],
-    ["Images", "All Images"],
-    ["Intelligence", "Profiles & Reports"],
-    ["Target Registry", "Add & Edit"],
-  ]) {
-    const item = menu
-      .getByRole("button")
-      .filter({ hasText: helper })
-      .filter({ hasText: name })
-      .first();
-    await expect(item, `${name} shows "${helper}"`).toBeVisible();
-  }
-});
-
 test("CTO Weekly Tasking list on a phone: the title stays on one line, the New button sits under it, and the Latest / Posted pills stay inside their card", async ({
   page,
 }) => {

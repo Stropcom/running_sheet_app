@@ -4619,3 +4619,61 @@ test("Side menu: the main folders have a helper line under their name", async ({
     await expect(item, `${name} shows "${helper}"`).toBeVisible();
   }
 });
+
+test("CTO Weekly Tasking list on a phone: the title stays on one line, the New button sits under it, and the Latest / Posted pills stay inside their card", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch();
+    const json = await resp.json();
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      if (name !== "opManager.listAllWeeks") return;
+      delete entry.error;
+      entry.result = {
+        data: {
+          json: [
+            { weekStart: "2026-11-09", posted: true, postedAt: 1794000000000 },
+            { weekStart: "2026-11-02", posted: false, postedAt: null },
+          ],
+        },
+      };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await page.goto("/operation-manager");
+  const card = page
+    .getByRole("button")
+    .filter({ hasText: "CTO Weekly Tasking —" })
+    .first();
+  await expect(card).toBeVisible();
+
+  // One line for the heading (it used to wrap to three beside the button).
+  const heading = page.getByRole("heading", { name: "CTO Weekly Tasking" });
+  const hb = (await heading.boundingBox())!;
+  expect(hb.height).toBeLessThan(34);
+  // The New button is under the heading, not squeezed beside it.
+  const newBtn = (await page
+    .getByRole("button", { name: "New CTO Weekly Tasking" })
+    .first()
+    .boundingBox())!;
+  expect(newBtn.y).toBeGreaterThanOrEqual(hb.y + hb.height - 1);
+
+  // Every pill is inside its card; nothing runs under the delete button.
+  const cb = (await card.boundingBox())!;
+  for (const pill of await card.locator("span.rounded-full").all()) {
+    const pb = (await pill.boundingBox())!;
+    expect(pb.x).toBeGreaterThanOrEqual(cb.x);
+    expect(pb.x + pb.width).toBeLessThanOrEqual(cb.x + cb.width);
+  }
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});

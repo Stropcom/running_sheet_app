@@ -4597,3 +4597,25 @@ test("Team Duty Roster: a roster that is already open picks up a tasking change 
       await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
   }
 });
+
+test("Side menu: the main folders have a helper line under their name", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const menu = page.locator("[data-sidebar='menu']").first();
+  for (const [name, helper] of [
+    ["Operations", "Running Sheets & Summaries"],
+    ["Governance", "Outstanding Actions"],
+    ["Mapping", "Map & Map Settings"],
+    ["Images", "All Images"],
+    ["Intelligence", "Profiles & Reports"],
+    ["Target Registry", "Add & Edit"],
+  ]) {
+    const item = menu
+      .getByRole("button")
+      .filter({ hasText: helper })
+      .filter({ hasText: name })
+      .first();
+    await expect(item, `${name} shows "${helper}"`).toBeVisible();
+  }
+});

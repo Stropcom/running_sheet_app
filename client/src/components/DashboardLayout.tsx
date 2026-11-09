@@ -277,7 +277,7 @@ function SortableNavItem({
               Operations
             </span>
             <span className="text-[10px] text-sidebar-foreground/40 font-normal leading-tight">
-              Running Sheets
+              Running Sheets & Summaries
             </span>
           </span>
           {gripHandle}
@@ -297,11 +297,13 @@ function SortableNavItem({
           className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-400/50 shadow-sm"
         >
           <ClipboardCheck className="h-4 w-4 text-purple-400" />
-          <span
-            className={`flex-1 ${location === "/governance" || location.startsWith("/governance") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
-          >
-            Governance
-          </span>
+          <NavTitle
+            active={
+              location === "/governance" || location.startsWith("/governance")
+            }
+            title="Governance"
+            sub="Outstanding Actions"
+          />
           {gripHandle}
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -400,11 +402,11 @@ function SortableNavItem({
           className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-teal-400/50 shadow-sm"
         >
           <Map className="h-4 w-4 text-teal-400" />
-          <span
-            className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
-          >
-            Mapping
-          </span>
+          <NavTitle
+            active={location === "/intelligence/mapping"}
+            title="Mapping"
+            sub="Map & Map Settings"
+          />
           {gripHandle}
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -420,11 +422,11 @@ function SortableNavItem({
           className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-cyan-400/50 shadow-sm"
         >
           <Image className="h-4 w-4 text-cyan-400" />
-          <span
-            className={`flex-1 ${location === "/images" || location.startsWith("/images") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
-          >
-            Images
-          </span>
+          <NavTitle
+            active={location === "/images" || location.startsWith("/images")}
+            title="Images"
+            sub="All Images"
+          />
           {gripHandle}
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -466,11 +468,15 @@ function SortableNavItem({
           className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-violet-400/50 shadow-sm"
         >
           <FolderSearch className="h-4 w-4 text-violet-400" />
-          <span
-            className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
-          >
-            Intelligence
-          </span>
+          <NavTitle
+            active={
+              location === "/intelligence" ||
+              (location.startsWith("/intelligence") &&
+                !location.startsWith("/intelligence/mapping"))
+            }
+            title="Intelligence"
+            sub="Profiles & Reports"
+          />
           {gripHandle}
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -489,11 +495,14 @@ function SortableNavItem({
           className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-rose-400/50 shadow-sm"
         >
           <BookOpen className="h-4 w-4 text-rose-400" />
-          <span
-            className={`flex-1 ${location === "/target-registry" || location.startsWith("/target-registry") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
-          >
-            Target Registry
-          </span>
+          <NavTitle
+            active={
+              location === "/target-registry" ||
+              location.startsWith("/target-registry")
+            }
+            title="Target Registry"
+            sub="Add & Edit"
+          />
           {gripHandle}
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -830,6 +839,35 @@ function SortableNavItem({
 // border) used by every SortableNavTile below, so each item only needs to
 // supply its icon/colour/label/active state — same pattern as the list rows'
 // per-item if-chain, just rendered as a tile instead of a row.
+/** A sidebar entry's name with a short helper line under it — the same two-line
+ * look as Operations / "Running Sheets & Summaries". */
+function NavTitle({
+  active,
+  title,
+  sub,
+}: {
+  active: boolean;
+  title: string;
+  sub: string;
+}) {
+  return (
+    <span className="flex-1 flex flex-col gap-0">
+      <span
+        className={
+          active
+            ? "text-sidebar-foreground font-medium text-sm leading-tight"
+            : "text-sidebar-foreground/80 text-sm leading-tight"
+        }
+      >
+        {title}
+      </span>
+      <span className="text-[10px] text-sidebar-foreground/40 font-normal leading-tight">
+        {sub}
+      </span>
+    </span>
+  );
+}
+
 function NavTileShell({
   icon,
   label,

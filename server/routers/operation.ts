@@ -20,6 +20,7 @@ import {
   getOperationById,
   getOperations,
   deepSearchOperations,
+  searchOperationLines,
   getOperationDeleteStats,
   getOperationsByStatus,
   getAllOperations,
@@ -226,6 +227,13 @@ export const operationRouter = router({
         await deepSearchOperations(input.query),
         m => m.operationId
       );
+    }),
+
+  /** The running sheet lines of one operation that match a search (the search box inside an operation). */
+  searchLines: protectedProcedure
+    .input(z.object({ operationId: z.number(), query: z.string().max(200) }))
+    .query(async ({ input }) => {
+      return searchOperationLines(input.operationId, input.query);
     }),
 
   listByStatus: protectedProcedure

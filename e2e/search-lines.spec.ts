@@ -60,3 +60,40 @@ test("Search finds a running sheet line and opens the sheet at that line", async
   await expect(row).toBeVisible();
   await expect(row).toHaveClass(/row-check-highlight/);
 });
+
+test("Search inside an operation finds the lines too, and opens the sheet at that line", async ({
+  page,
+}) => {
+  const word = `zqbag${Date.now().toString(36)}`;
+  const { opId, sheetId } = await createOperationAndSheet(page);
+  await addRowWithObservation(
+    page,
+    `WATANABE carried a ${word} to the car.`,
+    word
+  );
+  // The row saves when its cell closes; wait until the sheet list can find it.
+  await page.goto(`/operation/${opId}`);
+  const box = page.getByPlaceholder(/Search sheets by title/);
+  await expect(async () => {
+    await box.fill("");
+    await box.fill(word);
+    await expect(page.getByTestId("search-hit")).toHaveCount(1, {
+      timeout: 3000,
+    });
+  }).toPass({ timeout: 20000 });
+  await expect(page.getByTestId("search-hit").locator("mark")).toContainText(
+    word
+  );
+
+  // A word that is nowhere says so, and a title search still filters sheets.
+  await box.fill("zzznothingzzz");
+  await expect(
+    page.getByText(/No running sheet or line matches/)
+  ).toBeVisible();
+  await box.fill(word);
+  await page.getByTestId("search-hit").click();
+  await page.waitForURL(new RegExp(`/sheet/${sheetId}`));
+  await expect(page.locator("tbody tr").filter({ hasText: word })).toHaveClass(
+    /row-check-highlight/
+  );
+});

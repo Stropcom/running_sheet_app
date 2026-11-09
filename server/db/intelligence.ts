@@ -347,6 +347,79 @@ export async function deepSearchOperations(
   });
 }
 
+/** At most this many lines come back from a search inside one operation. */
+export const OPERATION_LINE_SEARCH_MAX = 200;
+
+/**
+ * The running sheet lines of ONE operation that match a search — the same
+ * "contains, any case" match and the same line shape as the Operations page
+ * search (deepSearchOperations), for the search box inside an operation. Live
+ * sheets only; a line is found by its words or by a CIN on it.
+ */
+export async function searchOperationLines(
+  operationId: number,
+  query: string
+): Promise<{ hits: DeepSearchRowHit[]; total: number }> {
+  const db = await getDb();
+  const text = query.trim();
+  if (!db || !text) return { hits: [], total: 0 };
+  const q = `%${text.toLowerCase()}%`;
+
+  const cols = {
+    id: sheetRows.id,
+    sheetId: sheetRows.sheetId,
+    observation: sheetRows.observation,
+    time: sheetRows.time,
+    rowNumber: sheetRows.rowNumber,
+    rowDate: sheetRows.rowDate,
+    sheetTitle: runningSheets.title,
+    sheetDate: runningSheets.sheetDate,
+  };
+  const live = and(
+    eq(runningSheets.operationId, operationId),
+    isNull(runningSheets.deletedAt),
+    isNull(operations.deletedAt)
+  );
+  const byText = await db
+    .select(cols)
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .innerJoin(operations, eq(operations.id, runningSheets.operationId))
+    .where(
+      and(live, like(sql`LOWER(COALESCE(${sheetRows.observation}, ''))`, q))
+    );
+  const byCin = await db
+    .select(cols)
+    .from(rowMembers)
+    .innerJoin(sheetRows, eq(sheetRows.id, rowMembers.rowId))
+    .innerJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .innerJoin(operations, eq(operations.id, runningSheets.operationId))
+    .where(and(live, like(sql`LOWER(${rowMembers.memberName})`, q)));
+
+  type Found = (typeof byText)[number] & { via: "text" | "cin" };
+  const rows = new Map<number, Found>();
+  byText.forEach(r => rows.set(r.id, { ...r, via: "text" }));
+  byCin.forEach(r => {
+    if (!rows.has(r.id)) rows.set(r.id, { ...r, via: "cin" });
+  });
+  // Newest sheet first (higher id), each sheet in the order of its rows.
+  const all = Array.from(rows.values()).sort(
+    (a, b) => b.sheetId - a.sheetId || a.rowNumber - b.rowNumber || a.id - b.id
+  );
+  return {
+    total: all.length,
+    hits: all.slice(0, OPERATION_LINE_SEARCH_MAX).map(r => ({
+      rowId: r.id,
+      sheetId: r.sheetId,
+      sheetTitle: r.sheetTitle,
+      time: r.time ?? null,
+      date: r.rowDate ?? r.sheetDate ?? null,
+      snippet: snippetAround(r.observation ?? "", text),
+      via: r.via,
+    })),
+  };
+}
+
 // What may sit between a business's name and its street address: a shop /
 // unit / level number, or the centre the premises are in. One or two such
 // comma-separated segments.

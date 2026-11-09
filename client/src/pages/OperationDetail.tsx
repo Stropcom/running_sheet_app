@@ -1,3 +1,7 @@
+import {
+  OperationSearchHits,
+  type SearchRowHit,
+} from "@/components/OperationSearchHits";
 import { SheetIntelReadOnly } from "@/components/SheetIntelReadOnly";
 import { SHEET_INTEL_PDF_CSS } from "@/lib/sheetIntelPdf";
 import { useMyTeams } from "@/lib/teams";
@@ -1904,6 +1908,12 @@ export default function OperationDetail() {
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [sheetSearch, setSheetSearch] = useState("");
+  // The same line search as the Operations page, inside this operation: every
+  // running sheet line that has the typed words (or a CIN) on it.
+  const { data: lineSearch } = trpc.operation.searchLines.useQuery(
+    { operationId, query: sheetSearch.trim() },
+    { enabled: sheetSearch.trim().length > 0 }
+  );
   const { viewMode } = useViewMode();
   // Copy/Move sheet dialog state
   const [copyMoveSheet, setCopyMoveSheet] = useState<{
@@ -2433,12 +2443,28 @@ export default function OperationDetail() {
                     <div className="relative mb-1">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                       <Input
-                        placeholder="Search by title, CIN or target…"
+                        placeholder="Search sheets by title, CIN or target, or any line…"
                         value={sheetSearch}
                         onChange={e => setSheetSearch(e.target.value)}
                         className="pl-8 h-9 text-sm"
                       />
                     </div>
+                    {sheetSearch.trim() && lineSearch && (
+                      <OperationSearchHits
+                        hits={lineSearch.hits as SearchRowHit[]}
+                        total={lineSearch.total}
+                        query={sheetSearch.trim()}
+                      />
+                    )}
+                    {sheetSearch.trim() &&
+                      filteredSheets.length === 0 &&
+                      lineSearch &&
+                      lineSearch.total === 0 && (
+                        <p className="text-sm text-muted-foreground italic px-1">
+                          No running sheet or line matches “{sheetSearch.trim()}
+                          ”.
+                        </p>
+                      )}
                     {viewMode === "tile" ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {filteredSheets.map(sheet => {

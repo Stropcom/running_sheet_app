@@ -209,6 +209,7 @@ export type {
 } from "./db/targets";
 export {
   deepSearchOperations,
+  searchOperationLines,
   extractEntitiesFromText,
   mergeContainedEntities,
   vehicleRegoKey,

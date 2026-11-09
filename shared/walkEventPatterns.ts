@@ -193,6 +193,14 @@ export const PERSON_WALKED_IN_PATTERN =
 export const PERSON_ARRIVE_ON_FOOT_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\barrived\s+on\s+foot\s+at\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+(?:continued|then|waited)\b|(?=\.)|$)/;
 
+// "SANTOS exited HSBC Bank Booragoon and walked through Garden City Shopping
+// Centre to the food hall." — walking THROUGH a named centre, mall, hospital,
+// station … means being inside it. The place must be written with capitals and
+// end in a place word, so "walked through the car park" or "through the
+// shopping centre" (no name) is not read as an entry.
+export const PERSON_WALKED_THROUGH_PLACE_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\bwalked\s+through\s+((?:[A-Z][A-Za-z0-9'&.-]*\s+){1,5}(?:Shopping\s+Cent(?:re|er)|Cent(?:re|er)|Mall|Plaza|Arcade|Hospital|Airport|Station|Terminal|Markets?|Complex|Precinct|Village|Square|Hotel|Casino|University|Campus))\b/;
+
 export const PERSON_EXIT_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bexited\s+(?!the\s+vehicle\b|\(?Vehicle\s+[A-Za-z0-9]{5,8}\b)(.+?)\s*,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
 
@@ -1144,6 +1152,23 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         ""
       );
       return;
+    }
+
+    // "… walked through Garden City Shopping Centre [to the food hall]": inside
+    // that named place now. A named destination further on ("towards 13
+    // Denford Street") is left as the walk's heading; only no destination, or a
+    // plain "the food hall" within the place, puts them inside it.
+    const through = text.match(PERSON_WALKED_THROUGH_PLACE_PATTERN);
+    if (
+      through &&
+      !isVehicleSubject(through[1]) &&
+      (!rowDest || rowDest === "[location]" || /^the\s/i.test(rowDest))
+    ) {
+      const walkers = cleanWalkerNames(through[1]);
+      if (walkers) {
+        record(walkers, bracketLabelOrSelf(through[2].trim()), "through");
+        return;
+      }
     }
 
     // Already on foot (no "exited" in the row): back to a vehicle, or on to

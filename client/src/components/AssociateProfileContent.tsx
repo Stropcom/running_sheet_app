@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { RegisteredDetailPanels } from "@/components/RegisteredDetailPanels";
 import { groupDetailEntries } from "@/lib/registeredDetails";
 import {
@@ -181,6 +185,7 @@ ${pdfPageFrameCss(BLUE_MID)}
   <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
   <div class="stat-box"><div class="stat-num">${profile.assocVehicles.length + profile.assocLocations.length}</div><div class="stat-label">Associations</div></div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   ${photos.length ? `<div style="margin-bottom:16px"><div class="section-title">Photos (${photos.length})</div>${buildPhotoGridHtml(photos)}</div>` : ""}
   ${

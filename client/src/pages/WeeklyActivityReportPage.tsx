@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { type WeeklyIntelItem } from "@shared/sheetIntel";
@@ -391,6 +395,7 @@ ${WEEKLY_ACTIONS_CSS}
   <div class="main-title">Weekly Surveillance Report</div>
   <div class="op-date-line">${esc(weekLabel)}</div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER, "14px 0 0")}
 <table class="page-frame">
 <tfoot><tr><td>
   <div class="footer-band">

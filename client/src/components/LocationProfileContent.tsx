@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { useLocation } from "wouter";
 import { useRef } from "react";
 import { HereProvider, isHere, useHere } from "@/lib/currentProfiles";
@@ -117,6 +121,7 @@ ${pdfPageFrameCss("#6ee7b7")}
   <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocVehicles.length}</div><div class="stat-label">Associations</div></div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   ${photos.length ? `<div style="margin-bottom:16px"><div class="section-title">Photos (${photos.length})</div>${buildPhotoGridHtml(photos)}</div>` : ""}
   ${

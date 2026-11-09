@@ -1,4 +1,8 @@
 import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
+import {
   ProfileDropdownRow,
   IntelEntityDropdown,
 } from "@/components/ProfileDropdown";
@@ -213,6 +217,7 @@ ${pdfPageFrameCss(BLUE_MID)}
   <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
   <div class="stat-box"><div class="stat-num">${totalAssoc}</div><div class="stat-label">Total Associations</div></div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   ${
     profile.crossOperationLinks.length

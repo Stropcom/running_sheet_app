@@ -328,3 +328,19 @@ test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor S
   expect(html.slice(i("New Intelligence"))).toContain("Brown suitcase");
   await pop.close();
 });
+
+test("Exported intelligence reports carry the not-a-certified-evidentiary-document notice (Operation Profile)", async ({
+  page,
+}) => {
+  const { opId } = await createOperationAndSheet(page);
+  await page.goto(`/operation/${opId}`);
+  await page.getByRole("tab", { name: "Operation Profile" }).click();
+  const popupP = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Export PDF" }).click();
+  const pop = await popupP;
+  await pop.waitForLoadState();
+  await expect(pop.locator(".disclaimer")).toContainText(
+    "This document is not a certified evidentiary document. All information should be checked and verified against the certified evidentiary running sheets."
+  );
+  await pop.close();
+});

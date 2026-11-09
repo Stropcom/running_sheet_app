@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import {
   ROUTE_GAP,
@@ -140,6 +144,7 @@ tr { break-inside:avoid; }
   <div style="font-size:12px;opacity:0.8;margin-top:4px">${esc(operationName)} &middot; ${esc(longDay(route.dateISO))}</div>
   <div class="gen-time">Generated: ${generatedAt} &middot; ${route.stats.stops} stop${route.stats.stops === 1 ? "" : "s"} at ${route.stats.places} place${route.stats.places === 1 ? "" : "s"}${route.stats.minutesAtPlaces ? ` &middot; ${esc(formatDwell(route.stats.minutesAtPlaces))} recorded at places` : ""}</div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   <div class="section-title">Route</div>
   ${buildDayRouteBodyHtml({ route, mapDataUrl })}

@@ -440,6 +440,9 @@ test("Places Report lists where a target goes, by kind, with the visits behind e
   await page.getByRole("button", { name: "Export PDF" }).click();
   const pop = await popupP;
   await pop.waitForLoadState();
+  await expect(pop.locator(".disclaimer")).toContainText(
+    "not a certified evidentiary document"
+  );
   await expect(pop.locator(".pl-card")).toHaveCount(3);
   await expect(pop.locator(".pl-card").first()).toContainText("Usually");
   await expect(pop.locator(".pl-card svg").first()).toBeVisible();
@@ -773,6 +776,9 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
   await page.getByRole("button", { name: "Export PDF" }).click();
   const pop = await popupP;
   await pop.waitForLoadState();
+  await expect(pop.locator(".disclaimer")).toContainText(
+    "not a certified evidentiary document"
+  );
 
   // The overview leads the report: every operation, every target, the days and
   // times worked and the hours, before the operations' own pages.

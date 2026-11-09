@@ -6,6 +6,10 @@
 // of those together into one document, so the shell and CSS live here once
 // and each section contributes only its body HTML.
 
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { SHEET_INTEL_PDF_CSS } from "@/lib/sheetIntelPdf";
 
@@ -236,6 +240,7 @@ export function buildPackageDocument(params: {
   <div class="op-date-line">${escHtml(coverSubject)}</div>
   <div class="sheet-name">${escHtml(coverMeta)}</div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="cover-body">
   ${summaryPanel}
   ${contents}

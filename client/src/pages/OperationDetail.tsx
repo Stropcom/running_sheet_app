@@ -3,6 +3,10 @@ import {
   OperationSearchHits,
   type SearchRowHit,
 } from "@/components/OperationSearchHits";
+import {
+  SUMMARY_DISCLAIMER,
+  SUMMARY_DISCLAIMER_CSS,
+} from "@shared/summaryDisclaimer";
 import { issuesToShow } from "@shared/summaryIssues";
 import { SheetIntelReadOnly } from "@/components/SheetIntelReadOnly";
 import { SHEET_INTEL_PDF_CSS } from "@/lib/sheetIntelPdf";
@@ -1142,6 +1146,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .numbered-list li::before { content:counter(item); flex-shrink:0; width:16px; height:16px; border-radius:50%; background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px; }
 .muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
 ${SHEET_INTEL_PDF_CSS}
+${SUMMARY_DISCLAIMER_CSS}
 .summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
 .summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
 .summary-table th:last-child, .summary-table td:last-child { border-right:none; }
@@ -1160,8 +1165,9 @@ ${SHEET_INTEL_PDF_CSS}
   <div class="op-date-line">${esc(operationName)}</div>
   <div class="sheet-name">${esc(scopeLine)} &middot; ${rows.length} summar${rows.length !== 1 ? "ies" : "y"}</div>
 </div>
+<div class="disclaimer">${esc(SUMMARY_DISCLAIMER)}</div>
 ${sheetBlocks}
-<div class="footer-note">Generated: ${generatedAt}</div>
+<div class="footer-note">${esc(SUMMARY_DISCLAIMER)}<br>Generated: ${generatedAt}</div>
 <div class="footer-band"><span></span><span class="footer-protected">Protected</span><span>RunLog</span></div>
 ${buildExportPreviewCloseBar()}
 </body></html>`;

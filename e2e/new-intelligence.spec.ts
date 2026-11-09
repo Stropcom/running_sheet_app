@@ -99,6 +99,11 @@ test("New Intelligence: lines from the sheet, tick out of the PDF, add / edit / 
   const pop = await page.waitForEvent("popup");
   await pop.waitForLoadState();
   const html = await pop.content();
+  // Not a certified record: the notice is at the top and repeats in the footer.
+  const notice =
+    "This summary document is not a certified running sheet. All information should be checked and verified against the certified corresponding running sheet.";
+  expect(html.split(notice).length - 1).toBeGreaterThanOrEqual(2);
+  await expect(pop.locator(".disclaimer")).toContainText(notice);
   const at = (s: string) => html.indexOf(s);
   // New Intelligence is last of the sections; Issues now sits above Summary.
   expect(at("New Intelligence")).toBeGreaterThan(0);
@@ -313,6 +318,9 @@ test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor S
   const pop = await popupP;
   await pop.waitForLoadState();
   const html = await pop.content();
+  await expect(pop.locator(".disclaimer")).toContainText(
+    "not a certified running sheet"
+  );
   const i = (s: string) => html.indexOf(`>${s}<`);
   expect(i("Issues")).toBeGreaterThan(0);
   expect(i("Issues")).toBeLessThan(i("Summary"));

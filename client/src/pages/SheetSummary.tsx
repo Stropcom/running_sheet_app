@@ -51,6 +51,10 @@ import {
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { IntelDetailInput } from "@/components/IntelDetailInput";
+import {
+  SUMMARY_DISCLAIMER,
+  SUMMARY_DISCLAIMER_CSS,
+} from "@shared/summaryDisclaimer";
 import { issuesToShow, parseIssues } from "@shared/summaryIssues";
 import { useOffline } from "@/contexts/OfflineContext";
 import { SheetIntelSection } from "@/components/SheetIntelSection";
@@ -672,6 +676,7 @@ tfoot { display:table-footer-group; }
 .footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
 .footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
 ${SHEET_INTEL_PDF_CSS}
+${SUMMARY_DISCLAIMER_CSS}
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .plain-section-title { background:${BLUE_LIGHT} !important; } .chip { background:${BLUE_LIGHT} !important; } .numbered-list li::before { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
 </style></head><body>
 <div class="cover-header">
@@ -683,6 +688,7 @@ ${SHEET_INTEL_PDF_CSS}
 </div>
 <table class="page-frame">
 <tfoot><tr><td>
+  <div class="disclaimer-foot">${esc(SUMMARY_DISCLAIMER)}</div>
   <div class="footer-band">
     <span></span>
     <span class="footer-protected">Protected</span>
@@ -690,6 +696,7 @@ ${SHEET_INTEL_PDF_CSS}
   </div>
 </td></tr></tfoot>
 <tbody><tr><td>
+<div class="disclaimer">${esc(SUMMARY_DISCLAIMER)}</div>
 <div class="content">
   ${section(
     "Deployment",

@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import {
   Fragment,
   useCallback,
@@ -10142,7 +10143,11 @@ export default function IntelligenceMapping() {
                           value={opSearchQuery}
                           onChange={e => setOpSearchQuery(e.target.value)}
                           placeholder="Search operations…"
-                          className="w-full pl-8 pr-2 py-1.5 rounded-lg border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                          className="w-full pl-8 pr-8 py-1.5 rounded-lg border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                        <ClearInputButton
+                          value={opSearchQuery}
+                          onClear={() => setOpSearchQuery("")}
                         />
                       </div>
                       <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">

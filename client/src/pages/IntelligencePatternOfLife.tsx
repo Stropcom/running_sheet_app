@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
@@ -91,6 +95,7 @@ table { border-collapse:collapse; width:100%; }
   <div style="font-size:12px;opacity:0.75;margin-top:4px">${esc(data.operationName)}</div>
   <div class="gen-time">Generated: ${generatedAt} &middot; ${data.observationCount} observations analyzed (${data.geocodedObservationCount} geocoded)</div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   ${gridsHtml}
   <div class="footer"><span>RunLog — Pattern of Life Report</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>

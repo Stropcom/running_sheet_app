@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -152,6 +156,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="op-date-line">${escXml(focusNode.label)}</div>
   <div class="sheet-name">${escXml(operationName ?? "All operations")} &middot; ${hops} hop${hops > 1 ? "s" : ""}</div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   <div class="section">
     <div class="section-title">Focus Entity</div>

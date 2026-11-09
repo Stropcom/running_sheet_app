@@ -440,6 +440,9 @@ test("Places Report lists where a target goes, by kind, with the visits behind e
   await page.getByRole("button", { name: "Export PDF" }).click();
   const pop = await popupP;
   await pop.waitForLoadState();
+  await expect(pop.locator(".disclaimer")).toContainText(
+    "not a certified evidentiary document"
+  );
   await expect(pop.locator(".pl-card")).toHaveCount(3);
   await expect(pop.locator(".pl-card").first()).toContainText("Usually");
   await expect(pop.locator(".pl-card svg").first()).toBeVisible();
@@ -773,6 +776,9 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
   await page.getByRole("button", { name: "Export PDF" }).click();
   const pop = await popupP;
   await pop.waitForLoadState();
+  await expect(pop.locator(".disclaimer")).toContainText(
+    "not a certified evidentiary document"
+  );
 
   // The overview leads the report: every operation, every target, the days and
   // times worked and the hours, before the operations' own pages.
@@ -4590,4 +4596,81 @@ test("Team Duty Roster: a roster that is already open picks up a tasking change 
     if (addedTeam)
       await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
   }
+});
+
+test("CTO Weekly Tasking list on a phone: the title stays on one line, the New button sits under it, and the Latest / Posted pills stay inside their card", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch();
+    const json = await resp.json();
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      if (name !== "opManager.listAllWeeks") return;
+      delete entry.error;
+      entry.result = {
+        data: {
+          json: [
+            { weekStart: "2026-11-09", posted: true, postedAt: 1794000000000 },
+            { weekStart: "2026-11-02", posted: false, postedAt: null },
+          ],
+        },
+      };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await page.goto("/operation-manager");
+  const card = page
+    .getByRole("button")
+    .filter({ hasText: "CTO Weekly Tasking —" })
+    .first();
+  await expect(card).toBeVisible();
+
+  // One line for the heading (it used to wrap to three beside the button).
+  const heading = page.getByRole("heading", { name: "CTO Weekly Tasking" });
+  const hb = (await heading.boundingBox())!;
+  expect(hb.height).toBeLessThan(34);
+  // The New button is under the heading, not squeezed beside it.
+  const newBtn = (await page
+    .getByRole("button", { name: "New CTO Weekly Tasking" })
+    .first()
+    .boundingBox())!;
+  expect(newBtn.y).toBeGreaterThanOrEqual(hb.y + hb.height - 1);
+
+  // Every pill is inside its card; nothing runs under the delete button.
+  const cb = (await card.boundingBox())!;
+  for (const pill of await card.locator("span.rounded-full").all()) {
+    const pb = (await pill.boundingBox())!;
+    expect(pb.x).toBeGreaterThanOrEqual(cb.x);
+    expect(pb.x + pb.width).toBeLessThanOrEqual(cb.x + cb.width);
+  }
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("Typing a measurement (30cm) does not bracket it as a vehicle, and a real rego still does", async ({
+  page,
+}) => {
+  await createOperationAndSheet(page);
+  // A second row starts empty (the first comes with "Surveillance commenced…").
+  await addRowWithObservation(page, "Surveillance commenced.", "commenced");
+  await openNewRowCell(page);
+  const box = page.locator("textarea").first();
+  // Typed key by key, so the Space-bar rego bracket gets its chance to fire.
+  await box.pressSequentially("The package was approx 30cm x 30cm x 30cm ", {
+    delay: 15,
+  });
+  await expect(box).not.toHaveValue(/\(Vehicle/);
+  await expect(box).toHaveValue(/approx 30cm x 30cm x 30cm/);
+  // Control: a real plate typed the same way is still bracketed.
+  await box.pressSequentially("then 1ZQK91 ", { delay: 15 });
+  await expect(box).toHaveValue(/1ZQK91 \(Vehicle 1ZQK91\)/);
 });

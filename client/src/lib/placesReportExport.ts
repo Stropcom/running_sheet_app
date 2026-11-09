@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { KIND_PRINT, kindIconSvg } from "@/lib/placeKindPrint";
 import {
@@ -173,6 +177,7 @@ td { padding:5px 6px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
   <div style="font-size:12px;opacity:0.8;margin-top:4px">${esc(operationName)} &middot; ${esc(periodLabel)}</div>
   <div class="gen-time">Generated: ${generatedAt} &middot; ${places.length} place${places.length === 1 ? "" : "s"}, ${visits} visit${visits === 1 ? "" : "s"}</div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   ${summaryTiles(places, periodLabel)}
   <div class="section-title">Places</div>

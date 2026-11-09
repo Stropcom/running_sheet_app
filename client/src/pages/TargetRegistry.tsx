@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useCommandFeature } from "@/lib/commandFeatures";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
@@ -2792,11 +2793,12 @@ export default function TargetRegistryPage() {
           <div className="relative flex-1 sm:flex-none sm:w-56">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              className="pl-9"
+              className="pl-9 pr-9"
               placeholder="Search targets…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            <ClearInputButton value={search} onClear={() => setSearch("")} />
           </div>
           {/* Filter + Sort share one row even on mobile, rather than each
               stacking onto its own line — Recent drops out below sm since

@@ -1414,7 +1414,7 @@ export default function OperationManagerPage() {
         <div className="min-h-full bg-background text-foreground">
           {/* Header */}
           <div className="border-b border-border bg-card">
-            <div className="px-4 py-3 flex items-center justify-between">
+            <div className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -1424,14 +1424,16 @@ export default function OperationManagerPage() {
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <div className="flex items-center gap-2">
-                  <FolderOpen className="h-5 w-5 text-primary" />
-                  <h1 className="text-lg font-semibold">CTO Weekly Tasking</h1>
+                  <FolderOpen className="h-5 w-5 shrink-0 text-primary" />
+                  <h1 className="whitespace-nowrap text-lg font-semibold">
+                    CTO Weekly Tasking
+                  </h1>
                 </div>
               </div>
               {isAdmin && (
                 <Button
                   size="sm"
-                  className="gap-1"
+                  className="w-full gap-1 sm:w-auto"
                   onClick={() => setNewWeekDialogOpen(true)}
                 >
                   <CalendarPlus className="h-4 w-4" />
@@ -1475,14 +1477,16 @@ export default function OperationManagerPage() {
                         setWeekStart(week.weekStart);
                         setViewMode("view");
                       }}
-                      className="min-w-0 flex-1 text-left rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors px-4 py-3 flex items-center justify-between group"
+                      className="min-w-0 flex-1 text-left rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between group"
                     >
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      <div className="flex min-w-0 items-center gap-3">
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
                         <div>
                           <p className="font-medium text-sm">
                             CTO Weekly Tasking —{" "}
-                            {formatWeekLabel(week.weekStart)}
+                            <span className="whitespace-nowrap">
+                              {formatWeekLabel(week.weekStart)}
+                            </span>
                           </p>
                           {week.postedAt && (
                             <p className="text-xs text-muted-foreground mt-0.5">
@@ -1495,22 +1499,22 @@ export default function OperationManagerPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-2 pl-7 sm:pl-0">
                         {idx === 0 && (
-                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                          <span className="whitespace-nowrap text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
                             Latest
                           </span>
                         )}
                         {week.posted ? (
-                          <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                          <span className="whitespace-nowrap text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
                             <CheckCircle2 className="h-3 w-3" /> Posted
                           </span>
                         ) : (
-                          <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
+                          <span className="whitespace-nowrap text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
                             Draft
                           </span>
                         )}
-                        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors sm:ml-0" />
                       </div>
                     </button>
                     {isAdmin && (

@@ -111,7 +111,7 @@ export const WALK_IN_TOWARDS_PATTERN = new RegExp(
 // vehicle's own plain "115 Bateman Road" address and silently drops the
 // "Walked out" chip for it.
 const WALK_IN_LOCATION_PREFIX_RE =
-  /^(?:the\s+(?:front(?:\s+door)?|back|rear|side)\s+of|the\s+door\s+of|the\s+entrance\s+of|(?:up|down|along)\s+the\s+driveway\s+of|(?:in\s+)?the\s+vicinity\s+of|outside(?:\s+of)?|near|the\s+residence\s+at)\s+/i;
+  /^(?:(?:in|into|through|via)\s+the\s+(?:(?:front|back|rear|side)\s+)?(?:gate|door|entrance|doorway|driveway)\s+of|the\s+(?:front(?:\s+door)?|back|rear|side)\s+of|the\s+door\s+of|the\s+entrance\s+of|(?:up|down|along)\s+the\s+driveway\s+of|(?:in\s+)?the\s+vicinity\s+of|outside(?:\s+of)?|near|the\s+residence\s+at)\s+/i;
 
 // Best-effort destination extraction from a WALK_IN_TOWARDS_PATTERN route
 // clause — e.g. "towards 45 Francis Street" -> "45 Francis Street",
@@ -176,6 +176,15 @@ export const WALK_OUT_PATTERN =
 
 export const PERSON_ENTER_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bentered\s+(?!the\s+vehicle\b)(.+?)\s+and continued out of sight/i;
+
+// "VALE, FRASER and WATANABE walked in the front gate of 15 Victoria Street and
+// continued out of sight." — an entry worded as walking in through a gate,
+// door or entrance of the place ("walked into / through / via the front
+// door of …"). The place must be a named place or street address (starts
+// with a capital or a number), so "walked in the front gate" with no place, or
+// "walked through the car park", is not read as an entry.
+export const PERSON_WALKED_IN_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\bwalked\s+(?:in|into|through|via)\s+the\s+(?:(?:front|back|rear|side)\s+)?(?:gate|door|entrance|doorway)\s+of\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+(?:continued|then)\b|(?=\.)|$)/i;
 
 // "ROCHA arrived on foot at Bus Stop Grange Drive After Gascoyne Way, COOLOONGUP
 // WA (Bus Stop Grange Drive After Gascoyne Way)." — a walker getting to a
@@ -272,10 +281,16 @@ export const PERSON_EXIT_VEHICLE_WALK_PATTERN = new RegExp(
  * cut off — a lazy capture can otherwise swallow the start of the same
  * sentence ("BAIG exited A, walked across the road,"). */
 export function cleanWalkerNames(raw: string): string {
-  return raw
-    .replace(/\s*,?\s*(?:and\s+)?(?:then\s+)?\b(?:exited|walked)\b.*$/i, "")
-    .replace(/[\s,]+$/, "")
-    .trim();
+  return (
+    raw
+      .replace(/\s*,?\s*(?:and\s+)?(?:then\s+)?\b(?:exited|walked)\b.*$/i, "")
+      // "SANTOS, carrying the package, exited …": the carrying / holding /
+      // wearing clause is not part of who it is — only the names are.
+      .replace(/\s*,\s*[a-z]+ing\b[^,]*/g, "")
+      .replace(/,\s+and\b/g, " and")
+      .replace(/[\s,]+$/, "")
+      .trim()
+  );
 }
 
 /** A location written as a full address ("13 Denford Street, KENWICK WA
@@ -1112,6 +1127,22 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         from: "the vehicle",
         ...where,
       });
+      return;
+    }
+
+    // "… walked in the front gate of <place>": inside that place now.
+    const walkedIn = text.match(PERSON_WALKED_IN_PATTERN);
+    if (walkedIn && !isVehicleSubject(walkedIn[1])) {
+      const walkers = cleanWalkerNames(walkedIn[1]);
+      clearHeadingFor(walkers);
+      record(
+        withCompanions(
+          walkers,
+          companionNames(walkedIn[2], walkers, { known: knownSurnames })
+        ),
+        placeName(walkedIn[2]),
+        ""
+      );
       return;
     }
 

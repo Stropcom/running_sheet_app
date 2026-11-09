@@ -6,6 +6,7 @@
  * and the map's RS Quick Entry popup (IntelligenceMapping.tsx), so the
  * trigger/suppression behaviour is identical on both surfaces.
  */
+import { isMeasurementWord } from "@shared/measurementWord";
 import { followsVehicleMake } from "@shared/vehicleModel";
 import {
   shortenRepeatedUnidentified,
@@ -158,6 +159,8 @@ export function detectVehicleMentionTrigger(
   if (word.length < 3 || word.length > 8) return null;
   if (!/[A-Za-z]/.test(word) || !/\d/.test(word)) return null;
   if (NON_VEHICLE_PLACEHOLDER_CODE_RE.test(word)) return null;
+  // "30cm", "5kg", "9pm": digits + letters, but a measurement, not a plate.
+  if (isMeasurementWord(word)) return null;
   const wordStart = cursorPos - word.length;
   if (usedVehicleRegos.has(word.toUpperCase())) return null;
   // "Vehicle 1MEN83" is already a vehicle's short form: a bracket repeating it

@@ -1,3 +1,8 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
+import {
+  OperationSearchHits,
+  type SearchRowHit,
+} from "@/components/OperationSearchHits";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -162,6 +167,8 @@ export default function Home() {
           imsNumber: r.imsNumber,
           investigationUnit: r.investigationUnit,
           matchContexts: r.matchContexts,
+          rowHits: (r.rowHits ?? []) as SearchRowHit[],
+          rowHitCount: r.rowHitCount ?? 0,
           createdAt: new Date(),
           operationStatus: r.operationStatus as
             | "active"
@@ -171,6 +178,8 @@ export default function Home() {
       : displayOps.map(op => ({
           ...op,
           matchContexts: [] as string[],
+          rowHits: [] as SearchRowHit[],
+          rowHitCount: 0,
           operationStatus: "active" as const,
         }));
 
@@ -229,10 +238,11 @@ export default function Home() {
             placeholder="Search operations, sheets, targets, CINs, observations…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 pr-9"
           />
+          <ClearInputButton value={search} onClear={() => setSearch("")} />
           {deepFetching && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground animate-pulse">
+            <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs text-muted-foreground animate-pulse">
               Searching…
             </span>
           )}
@@ -397,6 +407,11 @@ export default function Home() {
                         ))}
                     </div>
                   )}
+                <OperationSearchHits
+                  hits={op.rowHits}
+                  total={op.rowHitCount}
+                  query={search}
+                />
               </div>
             ))}
           </div>
@@ -499,6 +514,11 @@ export default function Home() {
                         )}
                       </div>
                     )}
+                  <OperationSearchHits
+                    hits={op.rowHits}
+                    total={op.rowHitCount}
+                    query={search}
+                  />
                   <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
                     <Calendar className="w-3 h-3" />
                     <span>

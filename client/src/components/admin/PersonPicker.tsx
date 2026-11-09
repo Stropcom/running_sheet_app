@@ -4,6 +4,7 @@
  * capped at 40 so it stays quick, and the picked people as removable chips.
  */
 
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useMemo, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -67,34 +68,44 @@ export function PersonPicker({
           setOpen(false);
       }}
     >
-      <Input
-        value={query}
-        onChange={e => {
-          setQuery(e.target.value);
-          setHi(0);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={e => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setHi(h => Math.min(h + 1, shown.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setHi(h => Math.max(h - 1, 0));
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            if (shown[hi]) toggle(shown[hi].id);
-          } else if (e.key === "Escape") {
-            setOpen(false);
-          }
-        }}
-        placeholder={`Search ${candidates.length} ${candidates.length === 1 ? "person" : "people"} by name or CIN`}
-        aria-label="Find people"
-        aria-expanded={open}
-        role="combobox"
-        aria-controls="person-picker-list"
-      />
+      <div className="relative">
+        <Input
+          value={query}
+          onChange={e => {
+            setQuery(e.target.value);
+            setHi(0);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={e => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setHi(h => Math.min(h + 1, shown.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHi(h => Math.max(h - 1, 0));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              if (shown[hi]) toggle(shown[hi].id);
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          placeholder={`Search ${candidates.length} ${candidates.length === 1 ? "person" : "people"} by name or CIN`}
+          aria-label="Find people"
+          aria-expanded={open}
+          role="combobox"
+          aria-controls="person-picker-list"
+          className="pr-8"
+        />
+        <ClearInputButton
+          value={query}
+          onClear={() => {
+            setQuery("");
+            setHi(0);
+          }}
+        />
+      </div>
 
       {open && (
         <>

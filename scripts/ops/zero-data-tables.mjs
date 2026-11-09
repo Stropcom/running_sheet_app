@@ -59,6 +59,7 @@ export const CLEAR_TABLES = [
   "sub_observation_certifications",
   "sheet_summaries",
   "sheet_summary_entries",
+  "sheet_intel_lines",
   "governance_records",
   "scan_finding_dismissals",
   // Photos and intelligence

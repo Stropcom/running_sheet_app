@@ -4,6 +4,7 @@
  * put in (marked "visiting"); managing who visits lives in VisitingSection.
  */
 
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useState, type ReactNode } from "react";
 import { ChevronRight, Loader2, Pencil, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -248,8 +249,9 @@ export function UserAccessGroups({
             onChange={e => setQuery(e.target.value)}
             placeholder="Search people by name or CIN"
             aria-label="Search people"
-            className="pl-8"
+            className="pl-8 pr-8"
           />
+          <ClearInputButton value={query} onClear={() => setQuery("")} />
         </div>
         <div className="text-xs text-muted-foreground">
           <button

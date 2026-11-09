@@ -1,3 +1,7 @@
+import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
@@ -119,6 +123,7 @@ tfoot { display:table-footer-group; }
   <div class="op-date-line">${esc(operationName)}</div>
   <div class="sheet-name">${targetName ? `${esc(`Target: ${targetName}`)} &middot; ` : ""}${esc(whenLabel)}</div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER, "14px 28px 0")}
 <table class="page-frame">
 <tfoot><tr><td>
   <div class="footer-band">

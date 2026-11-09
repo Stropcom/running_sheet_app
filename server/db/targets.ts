@@ -62,6 +62,7 @@ import {
   getSheetSummaryEntries,
 } from "./governance";
 import { getRowsBySheetId, getRunningSheetById } from "./operations";
+import { getSheetIntelData, type SheetIntelData } from "./sheetIntel";
 
 // ─── Targets ─────────────────────────────────────────────────────────────────
 
@@ -2017,6 +2018,8 @@ export async function getSheetSummariesForOperation(
 export interface RollupExportRow extends OperationSummaryRollupRow {
   entries: SheetSummaryEntry[];
   vehicles: SheetSummaryVehicle[];
+  /** The sheet's New Intelligence (every line; `included` says which are ticked). */
+  intel: SheetIntelData;
 }
 
 /**
@@ -2032,11 +2035,12 @@ export async function getRollupExportData(
   const rows = await getSheetSummariesForOperation(operationId, targetId);
   return Promise.all(
     rows.map(async r => {
-      const [entries, sheet, record, allRows] = await Promise.all([
+      const [entries, sheet, record, allRows, intel] = await Promise.all([
         getSheetSummaryEntries(r.sheetId),
         getRunningSheetById(r.sheetId),
         getSheetSummary(r.sheetId),
         getRowsBySheetId(r.sheetId),
+        getSheetIntelData(r.sheetId),
       ]);
       const target = sheet?.targetId
         ? await getTargetById(sheet.targetId)
@@ -2054,7 +2058,7 @@ export async function getRollupExportData(
         allRows,
         dismissed
       );
-      return { ...r, entries, vehicles };
+      return { ...r, entries, vehicles, intel };
     })
   );
 }

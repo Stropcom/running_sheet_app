@@ -1,4 +1,8 @@
 import {
+  INTEL_REPORT_DISCLAIMER,
+  disclaimerBoxHtml,
+} from "@shared/summaryDisclaimer";
+import {
   formatBail,
   mdlLabel,
   specialProjectsOrNone,
@@ -261,6 +265,7 @@ ${pdfPageFrameCss(BLUE_MID)}
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocVehicles.length + profile.assocLocations.length}</div><div class="stat-label">Associations</div></div>
   <div class="stat-box"><div class="stat-num">${profile.observationCount}</div><div class="stat-label">Observations</div></div>
 </div>
+${disclaimerBoxHtml(INTEL_REPORT_DISCLAIMER)}
 <div class="content">
   ${
     board.length

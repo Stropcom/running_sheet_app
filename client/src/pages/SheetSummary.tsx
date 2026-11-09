@@ -51,7 +51,18 @@ import {
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { IntelDetailInput } from "@/components/IntelDetailInput";
+import {
+  SUMMARY_DISCLAIMER,
+  SUMMARY_DISCLAIMER_CSS,
+} from "@shared/summaryDisclaimer";
+import { issuesToShow, parseIssues } from "@shared/summaryIssues";
 import { useOffline } from "@/contexts/OfflineContext";
+import { SheetIntelSection } from "@/components/SheetIntelSection";
+import {
+  SHEET_INTEL_PDF_CSS,
+  sheetIntelPdfBody,
+  type SheetIntelPdfData,
+} from "@/lib/sheetIntelPdf";
 
 // ─── Field definitions ─────────────────────────────────────────────────────
 
@@ -499,6 +510,8 @@ function exportSummaryToPDF(params: {
    * present they replace the Locations map. */
   dayRouteHtml: string | null;
   egoNetwork: EgoNetworkExportData | null;
+  /** The New Intelligence section (ticked lines only are written). */
+  intel: SheetIntelPdfData | null;
 }) {
   const {
     sheetTitle,
@@ -509,6 +522,7 @@ function exportSummaryToPDF(params: {
     mapImageDataUrl,
     dayRouteHtml,
     egoNetwork,
+    intel,
   } = params;
   const esc = (s: string | null | undefined) =>
     (s ?? "")
@@ -565,6 +579,11 @@ function exportSummaryToPDF(params: {
 
   const objectivesHtml = objectives.length
     ? `<ol class="numbered-list">${objectives.map(o => `<li>${esc(o)}</li>`).join("")}</ol>`
+    : `<p class="muted-note">None recorded.</p>`;
+
+  const issues = issuesToShow(form.issues);
+  const issuesHtml = issues.length
+    ? `<ol class="numbered-list">${issues.map(i => `<li>${esc(i)}</li>`).join("")}</ol>`
     : `<p class="muted-note">None recorded.</p>`;
 
   const criticalDecisionsHtml = criticalDecisions.length
@@ -656,6 +675,8 @@ tfoot { display:table-footer-group; }
 .footer-band span:first-child { text-align:left; }
 .footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
 .footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
+${SHEET_INTEL_PDF_CSS}
+${SUMMARY_DISCLAIMER_CSS}
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .plain-section-title { background:${BLUE_LIGHT} !important; } .chip { background:${BLUE_LIGHT} !important; } .numbered-list li::before { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
 </style></head><body>
 <div class="cover-header">
@@ -667,6 +688,7 @@ tfoot { display:table-footer-group; }
 </div>
 <table class="page-frame">
 <tfoot><tr><td>
+  <div class="disclaimer-foot">${esc(SUMMARY_DISCLAIMER)}</div>
   <div class="footer-band">
     <span></span>
     <span class="footer-protected">Protected</span>
@@ -674,6 +696,7 @@ tfoot { display:table-footer-group; }
   </div>
 </td></tr></tfoot>
 <tbody><tr><td>
+<div class="disclaimer">${esc(SUMMARY_DISCLAIMER)}</div>
 <div class="content">
   ${section(
     "Deployment",
@@ -702,8 +725,9 @@ tfoot { display:table-footer-group; }
   ${section("Special Projects", specialProjectsHtml)}
   ${section("Objectives", objectivesHtml)}
   ${section("Critical Decisions", criticalDecisionsHtml)}
+  ${section("Issues", issuesHtml)}
   ${plainSection("Summary", summaryHtml)}
-  ${section("Issues", form.issues.trim() ? `<p>${esc(form.issues)}</p>` : "")}
+  ${section("New Intelligence", sheetIntelPdfBody(intel))}
   <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
   </div>
@@ -1082,6 +1106,22 @@ export default function SheetSummaryPage() {
     handleChange("criticalDecisions", JSON.stringify(next), false);
   }
 
+  // ── Issues (dynamic multi-line list, like Critical Decisions) ──────────────
+  // Older summaries hold one piece of plain text; it shows as one issue and is
+  // only rewritten as a list when edited (shared/summaryIssues.ts).
+  const issues = parseIssues(form.issues);
+  function addIssue() {
+    handleChange("issues", JSON.stringify([...issues, ""]), false);
+  }
+  function setIssue(idx: number, value: string) {
+    const next = issues.map((d, i) => (i === idx ? value : d));
+    handleChange("issues", JSON.stringify(next));
+  }
+  function removeIssue(idx: number) {
+    const next = issues.filter((_, i) => i !== idx);
+    handleChange("issues", JSON.stringify(next), false);
+  }
+
   // ── Summary entries (per-RS-row, append-only sync) ─────────────────────────
   const [entryDrafts, setEntryDrafts] = useState<Record<number, string>>({});
   const entryTimeoutsRef = useRef<
@@ -1217,6 +1257,13 @@ export default function SheetSummaryPage() {
         toast.error("Couldn't build the ego network — exporting without it.");
       }
 
+      let intel: SheetIntelPdfData | null = null;
+      try {
+        intel = await trpcClient.summary.getIntel.query({ sheetId });
+      } catch {
+        toast.error("Couldn't load New Intelligence — exporting without it.");
+      }
+
       exportSummaryToPDF({
         sheetTitle: sheet?.title ?? "Running Sheet",
         form,
@@ -1226,6 +1273,7 @@ export default function SheetSummaryPage() {
         mapImageDataUrl,
         dayRouteHtml,
         egoNetwork,
+        intel,
       });
     } finally {
       setExportingPdf(false);
@@ -1691,6 +1739,44 @@ export default function SheetSummaryPage() {
                 )}
               </div>
 
+              {/* Issues — dynamic multi-line list */}
+              <div>
+                <SectionLabel>Issues</SectionLabel>
+                <div className="space-y-2">
+                  {issues.map((d, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                      <Textarea
+                        value={d}
+                        onChange={e => setIssue(idx, e.target.value)}
+                        disabled={isLocked}
+                        rows={2}
+                        className="text-sm resize-none"
+                      />
+                      {!isLocked && (
+                        <button
+                          type="button"
+                          onClick={() => removeIssue(idx)}
+                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-1.5"
+                          aria-label="Remove issue"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {!isLocked && (
+                  <button
+                    type="button"
+                    onClick={addIssue}
+                    className="mt-2 flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Issue
+                  </button>
+                )}
+              </div>
+
               {/* Summary — one editable/deletable line per RS row, append-only synced */}
               <div>
                 <SectionLabel>Summary</SectionLabel>
@@ -1771,14 +1857,10 @@ export default function SheetSummaryPage() {
                   </p>
                 )}
               </div>
-
-              <FieldTextarea
-                label="Issues"
-                value={form.issues}
-                onChange={v => handleChange("issues", v)}
-                disabled={isLocked}
-              />
             </div>
+
+            {/* New Intelligence — bottom of the summary; locked with it */}
+            <SheetIntelSection sheetId={sheetId} locked={isLocked} />
           </div>
         )}
       </div>

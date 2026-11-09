@@ -1281,6 +1281,10 @@ export const sheetSummaries = mysqlTable("sheet_summaries", {
   // JSON array of strings, one per critical-decision entry.
   criticalDecisions: text("criticalDecisions"),
   issues: text("issues"),
+  // JSON array of cue keys (see shared/sheetIntel.ts `cueKey`) the supervisor
+  // unticked in the New Intelligence section — those lines stay on screen but
+  // are left out of the PDF and the Weekly Report.
+  intelHiddenKeys: text("intelHiddenKeys"),
   lastEditedByCIN: varchar("lastEditedByCIN", { length: 64 }),
   // Set when the Team Leader (or Admin) ticks "Summary Complete" — locks the
   // summary the same way a closed running sheet locks its rows. Cleared on
@@ -1292,6 +1296,32 @@ export const sheetSummaries = mysqlTable("sheet_summaries", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+// Lines an officer added by hand to the Supervisor Summary's "New Intelligence"
+// section (the automatic ones are worked out from the rows, never stored). The
+// officer who added a line (or an admin) can edit or remove it; once the
+// summary is complete the whole section is locked.
+export const sheetIntelLines = mysqlTable(
+  "sheet_intel_lines",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sheetId: int("sheetId").notNull(),
+    // "items" | "devices" | "money" | "meetings" | "behaviour"
+    category: varchar("category", { length: 16 }).notNull(),
+    heading: varchar("heading", { length: 160 }).notNull(),
+    // The officer's own wording for the line.
+    text: text("text").notNull(),
+    // "HH:mm" or null; timeMinutes sorts the line among the automatic ones.
+    time: varchar("time", { length: 32 }),
+    timeMinutes: int("timeMinutes"),
+    addedByCIN: varchar("addedByCIN", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [index("sheet_intel_lines_sheet_idx").on(table.sheetId)]
+);
+
+export type SheetIntelLine = typeof sheetIntelLines.$inferSelect;
 
 export type SheetSummary = typeof sheetSummaries.$inferSelect;
 export type InsertSheetSummary = typeof sheetSummaries.$inferInsert;

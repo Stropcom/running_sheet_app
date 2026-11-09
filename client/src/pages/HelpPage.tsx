@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
@@ -958,13 +959,14 @@ export default function HelpPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            className="pl-9"
+            className="pl-9 pr-9"
             placeholder="Search help topics…"
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
+          <ClearInputButton value={query} onClear={() => setQuery("")} />
           {trimmedQuery && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+            <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
               {matchedItems} result{matchedItems !== 1 ? "s" : ""}
             </span>
           )}

@@ -1,4 +1,5 @@
 import { Banknote, Briefcase, Eye, Handshake, Smartphone } from "lucide-react";
+import { NewThisShiftGroups } from "@/components/NewThisShiftGroups";
 import {
   highlightSegments,
   intelByCategory,
@@ -42,32 +43,7 @@ export function SheetIntelReadOnly({ data }: { data: SheetIntelReadOnlyData }) {
           <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
             New this shift — first time recorded
           </p>
-          <div className="flex flex-wrap gap-1.5">
-            {nw.persons.map(p => (
-              <span
-                key={`p:${p}`}
-                className="rounded-md border border-blue-900 bg-blue-900/10 px-2 py-0.5 text-xs font-semibold text-blue-900 dark:border-blue-300 dark:text-blue-200"
-              >
-                Person · {p}
-              </span>
-            ))}
-            {nw.vehicles.map(p => (
-              <span
-                key={`v:${p}`}
-                className="rounded-md border border-amber-600 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"
-              >
-                Vehicle · {p}
-              </span>
-            ))}
-            {nw.locations.map(p => (
-              <span
-                key={`l:${p}`}
-                className="rounded-md border border-emerald-600 bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200"
-              >
-                Location · {p}
-              </span>
-            ))}
-          </div>
+          <NewThisShiftGroups data={nw} size="sm" />
         </div>
       )}
       {groups.map(g => {

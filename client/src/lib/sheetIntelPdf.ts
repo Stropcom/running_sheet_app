@@ -33,17 +33,20 @@ export function sheetIntelPdfBody(data: SheetIntelPdfData | null): string {
   if (lines.length === 0 && newCount === 0) return "";
 
   const chip = (label: string, colour: string, bg: string) =>
-    `<span style="display:inline-block;margin:0 6px 6px 0;padding:3px 9px;border-radius:6px;border:1px solid ${colour};background:${bg};color:${colour};font-size:10px;font-weight:700;">${esc(label)}</span>`;
+    `<span style="display:inline-block;margin:0 6px 5px 0;padding:3px 9px;border-radius:6px;border:1px solid ${colour};background:${bg};color:${colour};font-size:10px;font-weight:700;">${esc(label)}</span>`;
+  const group = (
+    title: string,
+    labels: string[],
+    colour: string,
+    bg: string
+  ) =>
+    labels.length
+      ? `<div class="intel-group"><div class="intel-group-label">${esc(title)} <span>${labels.length}</span></div><div>${labels.map(l => chip(l, colour, bg)).join("")}</div></div>`
+      : "";
 
   const newHtml =
     newCount > 0
-      ? `<div class="intel-sub">New this shift &mdash; first time recorded</div><div>${[
-          ...nw.persons.map(p => chip(`Person · ${p}`, "#1e3a8a", "#e4e9f7")),
-          ...nw.vehicles.map(p => chip(`Vehicle · ${p}`, "#b45309", "#fdf0dc")),
-          ...nw.locations.map(p =>
-            chip(`Location · ${p}`, "#047857", "#dcf4ea")
-          ),
-        ].join("")}</div>`
+      ? `<div class="intel-sub">New this shift &mdash; first time recorded</div>${group("Persons", nw.persons, "#1e3a8a", "#e4e9f7")}${group("Vehicles", nw.vehicles, "#b45309", "#fdf0dc")}${group("Locations", nw.locations, "#047857", "#dcf4ea")}`
       : "";
 
   const groups = intelByCategory(lines);
@@ -95,6 +98,9 @@ export function sheetIntelPdfBody(data: SheetIntelPdfData | null): string {
 /** Extra CSS for the section, added to the Supervisor Summary PDF stylesheet. */
 export const SHEET_INTEL_PDF_CSS = `
 .intel-sub { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#475569; margin:2px 0 6px; }
+.intel-group { margin:0 0 6px; }
+.intel-group-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#64748b; margin:0 0 3px; }
+.intel-group-label span { font-weight:600; color:#94a3b8; }
 .intel-cat { border:1px solid #cbd5e1; border-radius:6px; overflow:hidden; margin:0 0 10px; break-inside:avoid; }
 .intel-cat-head { display:flex; justify-content:space-between; background:#f1f5f9 !important; padding:5px 10px; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#1e293b; border-bottom:1px solid #cbd5e1; }
 .intel-line { display:grid; grid-template-columns:62px minmax(0,1fr) auto; gap:10px; padding:7px 10px; border-top:1px solid #e2e8f0; }

@@ -31,6 +31,7 @@ import {
   SECTION_TITLE,
 } from "@/lib/pageKit";
 import { FORM_LABEL } from "@/lib/formKit";
+import { NewThisShiftGroups } from "@/components/NewThisShiftGroups";
 import {
   CUE_CATEGORY_LABELS,
   INTEL_CATEGORY_ORDER,
@@ -374,32 +375,7 @@ export function SheetIntelSection({
           <div className="flex flex-col gap-2">
             <p className={FORM_LABEL}>New this shift — first time recorded</p>
             {anyNew ? (
-              <div className="flex flex-wrap gap-2" data-testid="intel-new">
-                {nw!.persons.map(p => (
-                  <span
-                    key={`p:${p}`}
-                    className="rounded-lg border border-blue-900 bg-blue-900/10 px-2.5 py-1 text-sm font-semibold text-blue-900 dark:border-blue-300 dark:text-blue-200"
-                  >
-                    Person · {p}
-                  </span>
-                ))}
-                {nw!.vehicles.map(p => (
-                  <span
-                    key={`v:${p}`}
-                    className="rounded-lg border border-amber-600 bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"
-                  >
-                    Vehicle · {p}
-                  </span>
-                ))}
-                {nw!.locations.map(p => (
-                  <span
-                    key={`l:${p}`}
-                    className="rounded-lg border border-emerald-600 bg-emerald-100 px-2.5 py-1 text-sm font-semibold text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200"
-                  >
-                    Location · {p}
-                  </span>
-                ))}
-              </div>
+              <NewThisShiftGroups data={nw!} />
             ) : (
               <p className="text-sm text-muted-foreground">
                 No person, vehicle or location is recorded for the first time on

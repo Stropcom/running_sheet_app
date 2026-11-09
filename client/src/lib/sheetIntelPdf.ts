@@ -68,7 +68,7 @@ export function sheetIntelPdfBody(data: SheetIntelPdfData | null): string {
           ? `<span style="${PILL}background:#dcf0f6;color:#0b6e8f;border:1px solid #0b6e8f;">&times;${l.groupCount} on this sheet</span>`
           : "",
         l.doubtful
-          ? `<span style="${PILL}background:#fff4d6;color:#92400e;border:1px solid #92400e;">May have</span>`
+          ? `<span style="${PILL}background:#fff4d6;color:#92400e;border:1px solid #92400e;">${esc(l.doubtWord ?? "May have")}</span>`
           : "",
         l.source === "manual"
           ? `<span style="${PILL}background:#f1f5f9;color:#334155;border:1px solid #94a3b8;">Added by ${esc(l.addedByCIN)}</span>`

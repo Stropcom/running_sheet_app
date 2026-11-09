@@ -237,3 +237,27 @@ describe("intel cues: present-tense hand-overs", () => {
     expect(findIntelCues("Officers were on hand at the scene.")).toEqual([]);
   });
 });
+
+describe("intel cues: the tag uses the officer's own unsure word", () => {
+  const word = (t: string) => findIntelCues(t)[0]?.doubtWord ?? null;
+  it("appeared to → Appeared", () => {
+    expect(
+      word("FRASER appeared to place an item in the boot of 1VAL75.")
+    ).toBe("Appeared");
+  });
+  it("other words are shown as written", () => {
+    expect(word("WATANABE possibly carried a bag.")).toBe("Possibly");
+    expect(word("WATANABE appears to carry a bag.")).toBe("Appears");
+    expect(word("WATANABE may have carried a bag.")).toBe("May have");
+    expect(word("WATANABE seemed to be carrying a bag.")).toBe("Seemed");
+    expect(word("It was believed WATANABE carried a bag.")).toBe("Believed");
+  });
+  it("plain wording has no tag word", () => {
+    expect(word("FRASER carried a bag.")).toBeNull();
+  });
+  it("a word after the cue is used when none comes before", () => {
+    expect(word("A black suitcase, possibly, was placed in the boot.")).toBe(
+      "Possibly"
+    );
+  });
+});

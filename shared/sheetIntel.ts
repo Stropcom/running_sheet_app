@@ -71,6 +71,8 @@ export interface SheetIntelLine {
   matched: string;
   /** Wording is unsure ("appeared to", "possibly"). */
   doubtful: boolean;
+  /** The officer's own unsure word for the tag ("Appeared", "Possibly"). */
+  doubtWord: string | null;
   time: string | null;
   timeMinutes: number | null;
   /** Who added a hand-added line. */
@@ -143,6 +145,7 @@ export function buildSheetIntel(args: {
         sentence: cue.sentence,
         matched: cue.matched,
         doubtful: cue.doubtful,
+        doubtWord: cue.doubtWord,
         time: row.time ?? null,
         timeMinutes: row.timeMinutes ?? null,
         included: !hidden.has(key),
@@ -164,6 +167,7 @@ export function buildSheetIntel(args: {
       sentence: m.text,
       matched: "",
       doubtful: false,
+      doubtWord: null,
       time: m.time ?? null,
       timeMinutes: m.timeMinutes ?? null,
       addedByCIN: m.addedByCIN,

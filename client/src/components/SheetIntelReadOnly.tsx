@@ -96,7 +96,7 @@ export function SheetIntelReadOnly({ data }: { data: SheetIntelReadOnlyData }) {
                     )}
                     {l.doubtful && (
                       <span className="whitespace-nowrap rounded-full border border-amber-600 bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
-                        May have
+                        {l.doubtWord ?? "May have"}
                       </span>
                     )}
                     {l.source === "manual" && (

@@ -40,6 +40,8 @@ export interface IntelCue {
   matched: string;
   /** The sentence is unsure about it ("appeared to", "possibly"). */
   doubtful: boolean;
+  /** The officer's own unsure word, ready for a tag: "Appeared", "Possibly". */
+  doubtWord: string | null;
   /** "firm": the sentence says it happened. "low": a bare mention or a visit
    * with nothing said about what was done. */
   strength: "firm" | "low";
@@ -86,11 +88,29 @@ function negatedBefore(s: string, index: number): boolean {
   return NEGATION.test(before);
 }
 
-function doubtfulAround(s: string, start: number, end: number): boolean {
-  return (
-    DOUBT.test(s.slice(Math.max(0, start - 40), start)) ||
-    DOUBT.test(s.slice(end, end + 25))
-  );
+/** The officer's own unsure word, for a tag on the line: "appeared to" →
+ * "Appeared", "possibly" → "Possibly", "may have" → "May have". */
+export function doubtLabel(raw: string): string {
+  const w = raw
+    .toLowerCase()
+    .replace(/^what\s+/, "")
+    .replace(/\s+to$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
+/** The unsure word near the cue (the closest one before it, else the first one
+ * after it), or null when the wording is plain. */
+function doubtWordAround(s: string, start: number, end: number): string | null {
+  const before = s.slice(Math.max(0, start - 40), start);
+  const global = new RegExp(DOUBT.source, "gi");
+  let last: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = global.exec(before))) last = m[0];
+  if (last) return doubtLabel(last);
+  const after = DOUBT.exec(s.slice(end, end + 25));
+  return after ? doubtLabel(after[0]) : null;
 }
 
 // ─── Wording ─────────────────────────────────────────────────────────────────
@@ -137,8 +157,9 @@ const NOT_AN_ITEM_BOX =
 
 function itemCues(
   s: string
-): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
+): Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] =
+    [];
   ITEM_NOUN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ITEM_NOUN_RE.exec(s))) {
@@ -178,8 +199,9 @@ const CALL_WORDING =
 
 function deviceCues(
   s: string
-): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
+): Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] =
+    [];
   if (NOT_A_DEVICE_PLACE.test(s)) {
     // "phone box" is a place; remove it so the word is not read as a device.
     s = s.replace(new RegExp(NOT_A_DEVICE_PLACE.source, "gi"), " ");
@@ -311,8 +333,9 @@ const ATM_ACTION =
 
 function moneyCues(
   s: string
-): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
+): Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] =
+    [];
   for (const r of MONEY_RULES) {
     const m = r.re.exec(s);
     if (m && !negatedBefore(s, m.index))
@@ -404,8 +427,9 @@ const MEET_RULES: Array<{
 
 function meetingCues(
   s: string
-): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
+): Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] =
+    [];
   for (const r of MEET_RULES) {
     const m = r.re.exec(s);
     if (m && !negatedBefore(s, m.index))
@@ -452,8 +476,9 @@ const BEHAVIOUR_RULES: Array<{ re: RegExp; heading: string }> = [
 
 function behaviourCues(
   s: string
-): Omit<IntelCue, "sentence" | "doubtful" | "group">[] {
-  const out: Omit<IntelCue, "sentence" | "doubtful" | "group">[] = [];
+): Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] {
+  const out: Omit<IntelCue, "sentence" | "doubtful" | "doubtWord" | "group">[] =
+    [];
   for (const r of BEHAVIOUR_RULES) {
     const m = r.re.exec(s);
     if (m && !negatedBefore(s, m.index))
@@ -500,12 +525,14 @@ export function findIntelCues(text: string | null | undefined): IntelCue[] {
     for (const c of found) {
       const at = sentence.toLowerCase().indexOf(c.matched.toLowerCase());
       if (at >= 0 && quotes.some(([a, b]) => at >= a && at < b)) continue;
+      const doubtWord =
+        at >= 0 ? doubtWordAround(sentence, at, at + c.matched.length) : null;
       out.push({
         ...c,
         group: cueGroup(c),
         sentence,
-        doubtful:
-          at >= 0 ? doubtfulAround(sentence, at, at + c.matched.length) : false,
+        doubtful: doubtWord !== null,
+        doubtWord,
       });
     }
   }

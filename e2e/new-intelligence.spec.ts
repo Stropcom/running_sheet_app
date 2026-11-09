@@ -49,13 +49,11 @@ test("New Intelligence: lines from the sheet, tick out of the PDF, add / edit / 
   const section = page.getByTestId("new-intelligence");
   await expect(section).toBeVisible();
 
-  // Two automatic lines, both the same item (a suitcase): a straight ×2.
+  // Two automatic lines, both the same item (a suitcase).
   const lines = section.getByTestId("intel-line");
   await expect(lines).toHaveCount(2);
-  await expect(section.getByTestId("intel-count")).toHaveCount(2);
-  await expect(section.getByTestId("intel-count").first()).toHaveText(
-    /×2 on this sheet/
-  );
+  // No count pill on the lines (taken out in v2.79.8).
+  await expect(section).not.toContainText(/×\d+ on this sheet/);
   // The officer's sentence with the matched words picked out, nothing added.
   await expect(section.locator("mark").first()).toContainText(/suitcase/i);
   await expect(section).not.toContainText(/seen .* before/i);

@@ -64,9 +64,6 @@ export function sheetIntelPdfBody(data: SheetIntelPdfData | null): string {
         )
         .join("");
       const pills = [
-        l.groupCount > 1
-          ? `<span style="${PILL}background:#dcf0f6;color:#0b6e8f;border:1px solid #0b6e8f;">&times;${l.groupCount} on this sheet</span>`
-          : "",
         l.doubtful
           ? `<span style="${PILL}background:#fff4d6;color:#92400e;border:1px solid #92400e;">${esc(l.doubtWord ?? "May have")}</span>`
           : "",

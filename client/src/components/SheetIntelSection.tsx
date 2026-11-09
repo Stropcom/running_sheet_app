@@ -232,14 +232,6 @@ function IntelLineRow({
         </p>
       </div>
       <div className="col-start-3 flex flex-wrap items-center gap-1.5 sm:col-start-auto sm:flex-col sm:items-end">
-        {line.groupCount > 1 && (
-          <span
-            className="whitespace-nowrap rounded-full border border-primary/60 bg-primary/10 px-2 py-0.5 text-xs font-bold tabular-nums text-primary"
-            data-testid="intel-count"
-          >
-            ×{line.groupCount} on this sheet
-          </span>
-        )}
         {line.doubtful && (
           <span className="whitespace-nowrap rounded-full border border-amber-600 bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
             {line.doubtWord ?? "May have"}

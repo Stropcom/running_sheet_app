@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import {
   OperationSearchHits,
   type SearchRowHit,
@@ -237,10 +238,11 @@ export default function Home() {
             placeholder="Search operations, sheets, targets, CINs, observations…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 pr-9"
           />
+          <ClearInputButton value={search} onClear={() => setSearch("")} />
           {deepFetching && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground animate-pulse">
+            <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs text-muted-foreground animate-pulse">
               Searching…
             </span>
           )}

@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useMyTeams } from "@/lib/teams";
 import {
   rowEditChangesContent,
@@ -7273,13 +7274,19 @@ export default function SheetDetail({
                   <div className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <Input
-                        autoFocus
-                        className="h-8 text-sm"
-                        placeholder="Search by name, TGT code or operation…"
-                        value={editTargetSearch}
-                        onChange={e => setEditTargetSearch(e.target.value)}
-                      />
+                      <div className="relative flex-1">
+                        <Input
+                          autoFocus
+                          className="h-8 w-full pr-8 text-sm"
+                          placeholder="Search by name, TGT code or operation…"
+                          value={editTargetSearch}
+                          onChange={e => setEditTargetSearch(e.target.value)}
+                        />
+                        <ClearInputButton
+                          value={editTargetSearch}
+                          onClear={() => setEditTargetSearch("")}
+                        />
+                      </div>
                       <Button
                         size="sm"
                         variant="ghost"

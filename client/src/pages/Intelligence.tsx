@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -2124,11 +2125,12 @@ export default function IntelligencePage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                className="pl-9"
+                className="pl-9 pr-9"
                 placeholder="Search entities, descriptions, observations…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
+              <ClearInputButton value={search} onClear={() => setSearch("")} />
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -2231,10 +2233,14 @@ export default function IntelligencePage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  className="pl-9"
+                  className="pl-9 pr-9"
                   placeholder="Search operations…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
+                />
+                <ClearInputButton
+                  value={search}
+                  onClear={() => setSearch("")}
                 />
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">

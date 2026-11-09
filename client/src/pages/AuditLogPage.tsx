@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -331,8 +332,9 @@ export default function AuditLogPage() {
               placeholder="Search by user, action, row, or details…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-9"
+              className="pl-9 pr-9"
             />
+            <ClearInputButton value={search} onClear={() => setSearch("")} />
           </div>
         </div>
 

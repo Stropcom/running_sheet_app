@@ -97,3 +97,31 @@ test("Search inside an operation finds the lines too, and opens the sheet at tha
     /row-check-highlight/
   );
 });
+
+test("Every search box has an X that empties it and keeps the cursor in the box", async ({
+  page,
+}) => {
+  const boxes: Array<[string, RegExp]> = [
+    ["/", /Search operations, sheets/],
+    ["/target-registry", /Search targets/],
+    ["/audit", /Search by user, action/],
+    ["/intelligence", /Search (entities, descriptions|operations…)/],
+    ["/help", /Search help topics/],
+  ];
+  for (const [path, placeholder] of boxes) {
+    await page.goto(path);
+    const box = page.getByPlaceholder(placeholder);
+    await expect(box, `${path} search box`).toBeVisible();
+    // No X while the box is empty.
+    await expect(
+      page.getByRole("button", { name: "Clear search" })
+    ).toHaveCount(0);
+    await box.fill("something");
+    const x = page.getByRole("button", { name: "Clear search" });
+    await expect(x, `${path} X`).toBeVisible();
+    await x.click();
+    await expect(box).toHaveValue("");
+    await expect(box).toBeFocused();
+    await expect(x).toHaveCount(0);
+  }
+});

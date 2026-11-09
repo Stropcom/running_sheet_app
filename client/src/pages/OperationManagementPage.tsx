@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -613,11 +614,15 @@ export default function OperationManagementPage() {
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
               <Input
-                className="pl-8 h-8 text-sm"
+                className="pl-8 pr-8 h-8 text-sm"
                 placeholder="Search operations…"
                 value={pickerSearch}
                 onChange={e => setPickerSearch(e.target.value)}
                 autoFocus
+              />
+              <ClearInputButton
+                value={pickerSearch}
+                onClear={() => setPickerSearch("")}
               />
             </div>
             <div className="max-h-64 overflow-y-auto flex flex-col gap-1">

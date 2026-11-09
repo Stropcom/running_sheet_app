@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -962,7 +963,14 @@ export default function WIPCPage() {
                         }}
                         onFocus={() => setShowMemberSearch(true)}
                         placeholder="Search by name, AFP ID or AI known as…"
-                        className="text-sm"
+                        className="pr-8 text-sm"
+                      />
+                      <ClearInputButton
+                        value={memberSearch}
+                        onClear={() => {
+                          setMemberSearch("");
+                          setShowMemberSearch(false);
+                        }}
                       />
                       {showMemberSearch && filteredSavedMembers.length > 0 && (
                         <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">

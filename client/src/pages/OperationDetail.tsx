@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import {
   OperationSearchHits,
   type SearchRowHit,
@@ -840,13 +841,19 @@ function TargetPanel({
         <div className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2 mt-1">
           <div className="flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            <Input
-              autoFocus
-              className="h-8 text-sm"
-              placeholder="Search by name, TGT code or operation…"
-              value={linkSearch}
-              onChange={e => setLinkSearch(e.target.value)}
-            />
+            <div className="relative flex-1">
+              <Input
+                autoFocus
+                className="h-8 w-full pr-8 text-sm"
+                placeholder="Search by name, TGT code or operation…"
+                value={linkSearch}
+                onChange={e => setLinkSearch(e.target.value)}
+              />
+              <ClearInputButton
+                value={linkSearch}
+                onClear={() => setLinkSearch("")}
+              />
+            </div>
             <Button
               size="sm"
               variant="ghost"
@@ -2446,7 +2453,11 @@ export default function OperationDetail() {
                         placeholder="Search sheets by title, CIN or target, or any line…"
                         value={sheetSearch}
                         onChange={e => setSheetSearch(e.target.value)}
-                        className="pl-8 h-9 text-sm"
+                        className="pl-8 pr-9 h-9 text-sm"
+                      />
+                      <ClearInputButton
+                        value={sheetSearch}
+                        onClear={() => setSheetSearch("")}
                       />
                     </div>
                     {sheetSearch.trim() && lineSearch && (
@@ -2889,13 +2900,19 @@ export default function OperationDetail() {
                   <div className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <Input
-                        autoFocus
-                        className="h-8 text-sm"
-                        placeholder="Search by name, TGT code or operation…"
-                        value={targetSearch}
-                        onChange={e => setTargetSearch(e.target.value)}
-                      />
+                      <div className="relative flex-1">
+                        <Input
+                          autoFocus
+                          className="h-8 w-full pr-8 text-sm"
+                          placeholder="Search by name, TGT code or operation…"
+                          value={targetSearch}
+                          onChange={e => setTargetSearch(e.target.value)}
+                        />
+                        <ClearInputButton
+                          value={targetSearch}
+                          onClear={() => setTargetSearch("")}
+                        />
+                      </div>
                       <Button
                         size="sm"
                         variant="ghost"

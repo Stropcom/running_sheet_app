@@ -1,3 +1,4 @@
+import { ClearInputButton } from "@/components/ClearInputButton";
 import { trpc } from "@/lib/trpc";
 import { compressAttachmentImage } from "@/lib/imageCompress";
 import {
@@ -1416,7 +1417,11 @@ export function LinkAttachmentDialog({
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     placeholder="Search…"
-                    className="pl-8 h-9 text-sm bg-background"
+                    className="pl-8 pr-8 h-9 text-sm bg-background"
+                  />
+                  <ClearInputButton
+                    value={search}
+                    onClear={() => setSearch("")}
                   />
                 </div>
 

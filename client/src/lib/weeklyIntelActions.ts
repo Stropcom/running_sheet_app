@@ -10,7 +10,7 @@ const esc = (s: string | null | undefined) =>
 
 /** The Weekly Report's "Actions and items this week" for one target: each item
  * or action, one grey who / what line (the sentence's own wording), Monday to
- * Sunday day boxes and a straight "N times this week". Hand-added lines say who
+ * Sunday day boxes (no count). Hand-added lines say who
  * added them. Returns "" when there are none. */
 export function weeklyActionsHtml(
   items: WeeklyIntelItem[] | undefined
@@ -32,7 +32,7 @@ export function weeklyActionsHtml(
               )
               .join("");
             return `<div class="act-item">
-  <div class="act-top"><span class="act-heading">${esc(i.heading)}</span><span class="act-times">${i.count} time${i.count === 1 ? "" : "s"} this week</span></div>
+  <div class="act-top"><span class="act-heading">${esc(i.heading)}</span></div>
   <div class="act-line">${esc(i.line)}</div>${(i.also ?? []).length ? `<div class="act-line">Also picked up: ${esc(i.also.join(", "))}</div>` : ""}
   <div class="act-foot"><span class="act-days">${boxes}</span>${i.addedByCIN ? `<span class="act-added">Added by ${esc(i.addedByCIN)}</span>` : ""}</div>
 </div>`;
@@ -48,7 +48,6 @@ export const WEEKLY_ACTIONS_CSS = `
 .act-item { border:1px solid #cbd5e1; border-radius:6px; padding:6px 9px; margin:0 0 5px; break-inside:avoid; }
 .act-top { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
 .act-heading { font-size:10.5px; font-weight:700; color:#1e293b; }
-.act-times { font-size:9px; font-weight:700; color:#0b6e8f; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .act-line { font-size:10px; color:#64748b; margin-top:2px; overflow-wrap:anywhere; }
 .act-foot { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:4px; }
 .act-days { display:inline-flex; gap:2px; }

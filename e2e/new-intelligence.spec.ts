@@ -217,8 +217,8 @@ test("Weekly Report: Actions and items this week — heading, one grey line, day
   await expect(actions).toBeVisible();
   await expect(actions).toContainText("Actions and items this week");
   await expect(actions).toContainText("Brown suitcase");
-  await expect(actions).toContainText("3 times this week");
-  await expect(actions).toContainText("1 time this week");
+  // No "N times this week" — the day boxes show which days it happened.
+  await expect(actions).not.toContainText(/times? this week/);
   await expect(actions).toContainText(
     "FRASER retrieved the brown suitcase from the boot"
   );
@@ -236,8 +236,8 @@ test("Weekly Report: Actions and items this week — heading, one grey line, day
   const pop = await popupP;
   await pop.waitForLoadState();
   await expect(pop.locator(".act-item")).toHaveCount(2);
-  await expect(pop.locator(".act-item").first()).toContainText(
-    "3 times this week"
+  await expect(pop.locator(".act-item").first()).not.toContainText(
+    /times? this week/
   );
   await expect(
     pop.locator(".act-item").first().locator(".act-day")

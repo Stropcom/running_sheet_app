@@ -7,7 +7,7 @@ import {
 
 /** "Actions and items this week" in the Weekly Report: for each item or action
  * the heading, one grey who / what line (the sentence's own wording), Monday to
- * Sunday day boxes and a straight "N times this week". */
+ * Sunday day boxes (no count — the boxes show which days). */
 export function WeeklyIntelActions({ items }: { items: WeeklyIntelItem[] }) {
   if (items.length === 0) return null;
   const groups = INTEL_CATEGORY_ORDER.map(c => ({
@@ -33,9 +33,6 @@ export function WeeklyIntelActions({ items }: { items: WeeklyIntelItem[] }) {
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-semibold [overflow-wrap:anywhere]">
                     {i.heading}
-                  </span>
-                  <span className="whitespace-nowrap text-xs font-bold tabular-nums text-primary">
-                    {i.count} time{i.count === 1 ? "" : "s"} this week
                   </span>
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground [overflow-wrap:anywhere]">

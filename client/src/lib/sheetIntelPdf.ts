@@ -1,4 +1,5 @@
 import {
+  foldedLabel,
   highlightSegments,
   intelByCategory,
   type SheetIntelLine,
@@ -56,13 +57,20 @@ export function sheetIntelPdfBody(data: SheetIntelPdfData | null): string {
   <div class="intel-cat-head">${esc(g.label)}<span>${g.lines.length}</span></div>
   ${g.lines
     .map(l => {
-      const text = highlightSegments(l.sentence, l.matched)
+      const text = highlightSegments(
+        l.sentence,
+        l.matched,
+        (l.alsoMatched ?? []).map(a => a.matched)
+      )
         .map(s =>
           s.hit
             ? `<mark style="background:#fff4d6;color:inherit;padding:0 1px;">${esc(s.text)}</mark>`
             : esc(s.text)
         )
         .join("");
+      const also = (l.alsoMatched ?? []).length
+        ? `<div class="intel-also">Also picked up in this sentence: ${esc(l.alsoMatched.map(a => foldedLabel(a, l.category)).join(", "))}</div>`
+        : "";
       const pills = [
         l.doubtful
           ? `<span style="${PILL}background:#fff4d6;color:#92400e;border:1px solid #92400e;">${esc(l.doubtWord ?? "May have")}</span>`
@@ -75,7 +83,7 @@ export function sheetIntelPdfBody(data: SheetIntelPdfData | null): string {
         .join(" ");
       return `<div class="intel-line">
     <div class="intel-time">${esc(l.time ?? "—")}</div>
-    <div class="intel-main"><div class="intel-heading">${esc(l.heading)}</div><div class="intel-src">${text}</div></div>
+    <div class="intel-main"><div class="intel-heading">${esc(l.heading)}</div><div class="intel-src">${text}</div>${also}</div>
     <div class="intel-pills">${pills}</div>
   </div>`;
     })
@@ -104,6 +112,7 @@ export const SHEET_INTEL_PDF_CSS = `
 .intel-cat-head + .intel-line { border-top:none; }
 .intel-time { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:10px; color:#64748b; padding-top:1px; }
 .intel-heading { font-size:11px; font-weight:700; color:#1e293b; }
+.intel-also { font-size:9.5px; color:#64748b; margin-top:2px; padding-left:9px; overflow-wrap:anywhere; }
 .intel-src { font-size:10.5px; color:#475569; margin-top:2px; border-left:2px solid #cbd5e1; padding-left:7px; overflow-wrap:anywhere; }
 .intel-pills { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
 `;

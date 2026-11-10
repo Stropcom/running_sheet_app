@@ -35,6 +35,7 @@ import { NewThisShiftGroups } from "@/components/NewThisShiftGroups";
 import {
   CUE_CATEGORY_LABELS,
   INTEL_CATEGORY_ORDER,
+  foldedLabel,
   highlightSegments,
   intelByCategory,
   type CueCategory,
@@ -185,7 +186,11 @@ function IntelLineRow({
   onRemove: () => void;
 }) {
   const manual = line.source === "manual";
-  const segments = highlightSegments(line.sentence, line.matched);
+  const segments = highlightSegments(
+    line.sentence,
+    line.matched,
+    line.alsoMatched.map(a => a.matched)
+  );
   return (
     <div
       className={`grid grid-cols-[1.25rem_4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-3 py-2.5 sm:grid-cols-[1.25rem_4.5rem_minmax(0,1fr)_auto] ${
@@ -230,6 +235,17 @@ function IntelLineRow({
             )
           )}
         </p>
+        {line.alsoMatched.length > 0 && (
+          <p
+            className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]"
+            data-testid="intel-also"
+          >
+            Also picked up in this sentence:{" "}
+            {line.alsoMatched
+              .map(a => foldedLabel(a, line.category))
+              .join(", ")}
+          </p>
+        )}
       </div>
       <div className="col-start-3 flex flex-wrap items-center gap-1.5 sm:col-start-auto sm:flex-col sm:items-end">
         {line.doubtful && (

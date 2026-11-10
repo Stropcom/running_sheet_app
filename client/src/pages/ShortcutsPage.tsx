@@ -3,6 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Zap,
@@ -159,11 +160,18 @@ export default function ShortcutsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTrigger, setEditTrigger] = useState("");
   const [editExpansion, setEditExpansion] = useState("");
+  const [editStartsRow, setEditStartsRow] = useState(false);
 
-  const startEdit = (s: { id: number; trigger: string; expansion: string }) => {
+  const startEdit = (s: {
+    id: number;
+    trigger: string;
+    expansion: string;
+    startsRow?: boolean;
+  }) => {
     setEditingId(s.id);
     setEditTrigger(s.trigger);
     setEditExpansion(s.expansion);
+    setEditStartsRow(!!s.startsRow);
   };
 
   return (
@@ -310,6 +318,29 @@ export default function ShortcutsPage() {
                                 onChange={e => setEditExpansion(e.target.value)}
                               />
                             </div>
+                            {/* Own row: the chip adds a new row (current time)
+                                that starts with the target's SURNAME, then
+                                this text — for a whole observation about the
+                                target ("on the phone", "texting"). */}
+                            <label className="flex items-start gap-2 text-sm cursor-pointer">
+                              <Checkbox
+                                checked={editStartsRow}
+                                onCheckedChange={v =>
+                                  setEditStartsRow(v === true)
+                                }
+                                className="mt-0.5"
+                                data-testid="shortcut-own-row"
+                              />
+                              <span>
+                                <span className="font-semibold">Own row</span>{" "}
+                                <span className="text-muted-foreground">
+                                  — tapping the chip adds a new row with the
+                                  current time, starting with the target's
+                                  surname, then this text (write it to follow a
+                                  name: "had a mobile phone to his ear …").
+                                </span>
+                              </span>
+                            </label>
                             <div className="flex gap-2 justify-end">
                               <Button
                                 variant="ghost"
@@ -330,6 +361,7 @@ export default function ShortcutsPage() {
                                     id: s.id,
                                     trigger: editTrigger.trim(),
                                     expansion: editExpansion.trim(),
+                                    startsRow: editStartsRow,
                                   })
                                 }
                               >
@@ -348,6 +380,15 @@ export default function ShortcutsPage() {
                             </span>
                             <span className="flex-1 text-sm">
                               {s.expansion}
+                              {s.startsRow && (
+                                <span
+                                  className="ml-2 whitespace-nowrap rounded-full border border-emerald-600 bg-emerald-100 px-2 py-0.5 align-middle text-xs font-bold text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200"
+                                  title="Own row: the chip adds a new row with the current time, starting with the target's surname"
+                                  data-testid={`own-row-${s.trigger}`}
+                                >
+                                  OWN ROW
+                                </span>
+                              )}
                             </span>
                             <div className="flex gap-1 shrink-0 items-center">
                               {/* +RS / -RS toggle — available to all users */}

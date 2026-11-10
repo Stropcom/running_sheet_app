@@ -40,6 +40,9 @@ export const shortcutsRouter = router({
         trigger: z.string().min(1).max(64).optional(),
         expansion: z.string().min(1).optional(),
         showInRs: z.boolean().optional(),
+        /** "Own row": the chip adds a new row starting with the target's
+         * surname (shared/shortcutRow.ts). */
+        startsRow: z.boolean().optional(),
       })
     )
     .mutation(async ({ input }) => {

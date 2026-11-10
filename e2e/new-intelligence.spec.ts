@@ -342,3 +342,37 @@ test("Exported intelligence reports carry the not-a-certified-evidentiary-docume
   );
   await pop.close();
 });
+
+test("New Intelligence: one thing in one sentence is one line, with what was folded in shown", async ({
+  page,
+}) => {
+  const { sheetId } = await createOperationAndSheet(page);
+  // A plain first row, so the row that matters is the last one saved below.
+  await addRowWithObservation(page, "SANTOS arrived at the shop.", "arrived");
+  await addRowWithObservation(
+    page,
+    "SANTOS, carrying the new laptop box, exited the shop and placed the box in the rear seat.",
+    "new laptop box"
+  );
+  // Both rows are saved once they show after a reload.
+  await expect(async () => {
+    await page.reload();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "new laptop box" }).first()
+    ).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 20_000 });
+
+  await page.goto(`/summary/${sheetId}`);
+  const section = page.getByTestId("new-intelligence");
+  await expect(section).toBeVisible();
+  // "new laptop box", the "box" and the "laptop" inside it: one line.
+  const lines = section.getByTestId("intel-line");
+  await expect(lines).toHaveCount(1);
+  await expect(lines.first()).toContainText("New laptop box");
+  // Nothing is dropped: the shorter pickups are named on the line.
+  const also = lines.first().getByTestId("intel-also");
+  await expect(also).toContainText("Also picked up in this sentence");
+  await expect(also).toContainText("Box");
+  await expect(also).toContainText("New laptop (Devices)");
+  await expect(section).toContainText("1 of 1 in the PDF");
+});

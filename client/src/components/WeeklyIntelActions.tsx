@@ -41,6 +41,11 @@ export function WeeklyIntelActions({ items }: { items: WeeklyIntelItem[] }) {
                 <p className="mt-0.5 text-xs text-muted-foreground [overflow-wrap:anywhere]">
                   {i.line}
                 </p>
+                {(i.also ?? []).length > 0 && (
+                  <p className="mt-0.5 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                    Also picked up: {i.also.join(", ")}
+                  </p>
+                )}
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <span
                     className="inline-flex gap-0.5"

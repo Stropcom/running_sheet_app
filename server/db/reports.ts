@@ -27,6 +27,12 @@ import { scopeEntities } from "@shared/operationAccess";
 import { holdsPriority, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
+import { bareAliasOwner } from "@shared/aliasSeeding";
+import {
+  registeredAddressIn,
+  registeredPlatesIn,
+  registeredSuburb,
+} from "@shared/registeredMentions";
 import { issuesToShow } from "@shared/summaryIssues";
 import {
   aggregateWeeklyIntel,
@@ -2178,6 +2184,7 @@ export async function getWeeklyActivityReport(
             group: l.group,
             sentence: l.sentence,
             matched: l.matched,
+            also: l.alsoMatched,
             date,
             addedByCIN: l.source === "manual" ? l.addedByCIN : undefined,
           });
@@ -2633,6 +2640,11 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
       .get(s.targetId)!
       .push({ sheetId: s.sheetId, sheetTitle: s.sheetTitle });
   }
+
+  // The target each sheet was opened for (inverse of targetSheetMap).
+  const sheetTargetIdBySheet = new Map<number, number>();
+  for (const [tid, list] of Array.from(targetSheetMap.entries()))
+    for (const sh of list) sheetTargetIdBySheet.set(sh.sheetId, tid);
 
   // Build a set of TGT aliases so we can suppress them from observation-derived persons
   // Maps tgtAlias (uppercased) -> canonical full name
@@ -3457,6 +3469,55 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
     });
   }
 
+  // ── Registered vehicles and addresses that rows may name in plain text ──────
+  // (shared/registeredMentions.ts.) The target / associate cards put these in
+  // entityMap as card-only entities; a row only counted for one when its own
+  // sheet bracketed it. Rows written by the TGT chip and the Target Logger name
+  // the plate or street plainly, so the sheet loop below also credits those —
+  // exact plate or exact number-led street only.
+  const registeredPlateLabel = new Map<string, string>();
+  const registeredStreets: Array<{
+    street: string;
+    suburb: string | null;
+    key: string;
+  }> = [];
+  {
+    const fromCard = (e: IntelligenceEntity) =>
+      e.occurrences.some(
+        o =>
+          o.rowId === 0 &&
+          /^(Target|Associate) card — /.test(o.observationSnippet)
+      );
+    for (const [key, ent] of Array.from(entityMap.entries())) {
+      if (key.startsWith("vehicle::") && fromCard(ent))
+        registeredPlateLabel.set(key.slice("vehicle::".length), ent.shortForm);
+      else if (key.startsWith("address::") && fromCard(ent))
+        registeredStreets.push({
+          street: key.slice("address::".length),
+          suburb: registeredSuburb(ent.shortForm),
+          key,
+        });
+    }
+    for (const key of Array.from(subjectTargetByKey.keys())) {
+      if (key.startsWith("vehicle::"))
+        registeredPlateLabel.set(
+          key.slice("vehicle::".length),
+          key.slice("vehicle::".length)
+        );
+      else if (key.startsWith("address::"))
+        registeredStreets.push({
+          street: key.slice("address::".length),
+          suburb: null,
+          key,
+        });
+    }
+  }
+  const registeredPlateSet = new Set(registeredPlateLabel.keys());
+  const creditedInRow = (key: string, rowId: number) =>
+    [key, subjectTargetByKey.get(key), entityAliasMap.get(key)?.key].some(
+      k => !!k && !!entityMap.get(k)?.occurrences.some(o => o.rowId === rowId)
+    );
+
   for (const [, sheetRows_] of Array.from(rowsBySheet.entries())) {
     // ── Pass A: build per-sheet entity dictionary from bracketed introductions ──
     // Dictionary key: shortForm.toLowerCase() AND rawShortForm.toLowerCase() (both point to same entry)
@@ -3533,17 +3594,36 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
     // first row without ever bracketing it, because the target card IS the introduction.
     // Without pre-seeding, Pass B would never find these tokens.
     // We register each alias under its lowercase key so Pass B can match it in any row.
-    for (const [alias, canonicalName] of Array.from(
+    // The target this very sheet was opened for (shared/aliasSeeding.ts): its
+    // own TGT alias is the word the team writes for them, so a surname shared
+    // with someone else on the registry still means THIS sheet's target here.
+    const ownTargetId = sheetTargetIdBySheet.get(sheetRows_[0]?.sheetId ?? -1);
+    const ownTargetRow =
+      ownTargetId !== undefined
+        ? targetRows.find(
+            t =>
+              t.targetId === ownTargetId &&
+              (!t.targetType || t.targetType === "person") &&
+              !!t.tgt?.trim()
+          )
+        : undefined;
+    const ownTarget = ownTargetRow
+      ? { name: ownTargetRow.targetName, alias: ownTargetRow.tgt!.trim() }
+      : null;
+    for (const [alias, mappedName] of Array.from(
       tgtAliasToFullName.entries()
     )) {
       const aliasKey = alias.toLowerCase();
-      // A surname shared by more than one registered person can't be credited
-      // to any of them from a bare word: leave it out of the search (each is
-      // still found by their full name or bracket).
       const sharers = new Set(
         (registeredNamesByAlias.get(alias) ?? []).map(n => n.toUpperCase())
       );
-      if (sharers.size > 1) continue;
+      const canonicalName = bareAliasOwner({
+        alias,
+        sharedBy: sharers.size,
+        mappedName,
+        ownTarget,
+      });
+      if (canonicalName === null) continue;
       if (!sheetDict.has(aliasKey)) {
         const seeded: DictEntry = {
           shortForm: canonicalName, // display as full canonical name
@@ -3746,6 +3826,38 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
             row
           );
         }
+      }
+
+      // Plain-text mentions of a REGISTERED plate or street address that the
+      // sheet never bracketed (see registeredMentions above). Skipped for a row
+      // the bracket path already credited, so nothing is counted twice.
+      for (const plate of registeredPlatesIn(
+        row.observation,
+        registeredPlateSet
+      )) {
+        const key = `vehicle::${plate}`;
+        if (creditedInRow(key, row.rowId)) continue;
+        registerOccurrence(
+          {
+            shortForm: registeredPlateLabel.get(plate) ?? plate,
+            fullDescription: `Registered vehicle ${plate.toUpperCase()} named in the row`,
+            type: "vehicle",
+          },
+          row
+        );
+      }
+      for (const reg of registeredStreets) {
+        if (creditedInRow(reg.key, row.rowId)) continue;
+        if (!registeredAddressIn(row.observation, reg.street, reg.suburb))
+          continue;
+        registerOccurrence(
+          {
+            shortForm: reg.street,
+            fullDescription: `Registered address ${reg.street} named in the row`,
+            type: "address",
+          },
+          row
+        );
       }
     }
   }

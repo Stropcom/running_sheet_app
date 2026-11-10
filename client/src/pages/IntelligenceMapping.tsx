@@ -233,6 +233,7 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { useOwnRowShortcut } from "@/hooks/useOwnRowShortcut";
 import {
   VoiceInputButton,
   QE_HEADER_BUTTON_SIZE,
@@ -3450,6 +3451,12 @@ export default function IntelligenceMapping() {
     effectiveOpIdsForMarkersRef.current = effectiveOpIdsForMarkers;
   }, [effectiveOpIdsForMarkers]);
   const utils = trpc.useUtils();
+  // A shortcut marked "Own row" (TP, TEXT …): the chip adds a new row with the
+  // current time, the target's surname first (shared/shortcutRow.ts).
+  const rsOwnRowShortcut = useOwnRowShortcut(sheetId => {
+    void utils.row.list.invalidate({ sheetId });
+    void utils.row.entityChips.invalidate({ sheetId });
+  });
   // Paused while a marker is being dragged/confirmed (movingMarkerId !== null)
   // so the 5s poll can't land mid-move and hand the render effect below a
   // stale (pre-update) position — which snapped the marker straight back to
@@ -13506,6 +13513,8 @@ export default function IntelligenceMapping() {
                                       label: string;
                                       display: string;
                                       getValue: () => string | null;
+                                      shortcutId?: number;
+                                      startsRow?: boolean;
                                     }> = ((generalShortcuts as any[]) ?? [])
                                       .filter(
                                         (s: any) =>
@@ -13522,6 +13531,8 @@ export default function IntelligenceMapping() {
                                           s.trigger as string
                                         ).toUpperCase(),
                                         getValue: () => s.expansion as string,
+                                        shortcutId: s.id as number,
+                                        startsRow: !!s.startsRow,
                                       }));
 
                                     // Full chip list — identical order to SheetDetail fields array
@@ -13529,6 +13540,8 @@ export default function IntelligenceMapping() {
                                       label: string;
                                       display: string;
                                       getValue: () => string | null;
+                                      shortcutId?: number;
+                                      startsRow?: boolean;
                                     }> = [
                                       {
                                         label: "TGT",
@@ -13603,6 +13616,29 @@ export default function IntelligenceMapping() {
                                             key={s.label}
                                             onClick={() => {
                                               const v = s.getValue();
+                                              // "Own row": a new row with the
+                                              // current time, the target's
+                                              // surname first. No person
+                                              // target (or offline): the text
+                                              // goes in like any other chip.
+                                              if (
+                                                s.startsRow &&
+                                                s.shortcutId !== undefined &&
+                                                navigator.onLine &&
+                                                rsSelectedSheetId
+                                              ) {
+                                                rsOwnRowShortcut.press(
+                                                  {
+                                                    sheetId: rsSelectedSheetId,
+                                                    shortcutId: s.shortcutId,
+                                                    label: s.label,
+                                                  },
+                                                  () => {
+                                                    if (v) appendText(v);
+                                                  }
+                                                );
+                                                return;
+                                              }
                                               if (v) appendText(v);
                                             }}
                                             data-qe-chip={s.label}

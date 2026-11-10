@@ -1,6 +1,7 @@
 import { Banknote, Briefcase, Eye, Handshake, Smartphone } from "lucide-react";
 import { NewThisShiftGroups } from "@/components/NewThisShiftGroups";
 import {
+  foldedLabel,
   highlightSegments,
   intelByCategory,
   type CueCategory,
@@ -74,7 +75,11 @@ export function SheetIntelReadOnly({ data }: { data: SheetIntelReadOnlyData }) {
                       {l.heading}
                     </p>
                     <p className="mt-0.5 border-l-2 border-border pl-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                      {highlightSegments(l.sentence, l.matched).map((s, i) =>
+                      {highlightSegments(
+                        l.sentence,
+                        l.matched,
+                        (l.alsoMatched ?? []).map(a => a.matched)
+                      ).map((s, i) =>
                         s.hit ? (
                           <mark
                             key={i}
@@ -87,6 +92,14 @@ export function SheetIntelReadOnly({ data }: { data: SheetIntelReadOnlyData }) {
                         )
                       )}
                     </p>
+                    {(l.alsoMatched ?? []).length > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                        Also picked up in this sentence:{" "}
+                        {l.alsoMatched
+                          .map(a => foldedLabel(a, l.category))
+                          .join(", ")}
+                      </p>
+                    )}
                   </div>
                   <div className="col-start-2 flex flex-wrap items-center gap-1.5 sm:col-start-auto sm:flex-col sm:items-end">
                     {l.doubtful && (

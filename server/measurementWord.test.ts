@@ -80,3 +80,25 @@ describe("the subject of a walk is the name, not what they carry", () => {
     expect(r.headingTo.map(h => h.names)).toEqual(["VALE and FRASER"]);
   });
 });
+
+describe("the walk-in subject is the name too (exited the vehicle, walked to, entered X)", () => {
+  const scan = (obs: string[]) =>
+    scanWalkEvents(
+      obs.map((o, i) => ({ id: i + 1, sheetId: 1, observation: o }))
+    );
+  it("'SANTOS, carrying a black mobile phone, exited the vehicle, walked to, entered X' is SANTOS", () => {
+    const r = scan([
+      "SANTOS, carrying a black mobile phone, exited the vehicle, walked to, entered 67 Samson Street and continued out of sight.",
+    ]);
+    expect(r.walkIns.map(w => [w.names, w.location])).toEqual([
+      ["SANTOS", "67 Samson Street"],
+    ]);
+    expect(r.placements.map(p => p.name)).toEqual(["SANTOS"]);
+  });
+  it("a list of names keeps every name in a walk-in too", () => {
+    const r = scan([
+      "VALE, carrying a bag, and FRASER, holding a phone, exited the vehicle, walked to, entered 67 Samson Street and continued out of sight.",
+    ]);
+    expect(r.walkIns.map(w => w.names)).toEqual(["VALE and FRASER"]);
+  });
+});

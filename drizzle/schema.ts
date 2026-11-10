@@ -1030,6 +1030,11 @@ export const shortcuts = mysqlTable("shortcuts", {
   trigger: varchar("trigger", { length: 64 }).notNull().unique(), // e.g. "sc"
   expansion: text("expansion").notNull(), // e.g. "Surveillance commenced in the vicinity of"
   showInRs: boolean("showInRs").notNull().default(true), // whether this shortcut appears as a chip in RS and RS QE
+  // "Own row": tapping the chip adds a new row (current time) that starts with
+  // the target's SURNAME and then this expansion — for a whole observation
+  // about the target (on the phone, texting) rather than a phrase to drop into
+  // a sentence. See shared/shortcutRow.ts.
+  startsRow: boolean("startsRow").notNull().default(false),
   // Position on the Shortcuts page, and so the order of the chips in the
   // running sheet and RS QE. 0 = never placed (numbered once at startup).
   sortOrder: int("sortOrder").notNull().default(0),

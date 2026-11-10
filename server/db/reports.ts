@@ -28,6 +28,11 @@ import { holdsPriority, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
 import { bareAliasOwner } from "@shared/aliasSeeding";
+import {
+  registeredAddressIn,
+  registeredPlatesIn,
+  registeredSuburb,
+} from "@shared/registeredMentions";
 import { issuesToShow } from "@shared/summaryIssues";
 import {
   aggregateWeeklyIntel,
@@ -3463,6 +3468,55 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
     });
   }
 
+  // ── Registered vehicles and addresses that rows may name in plain text ──────
+  // (shared/registeredMentions.ts.) The target / associate cards put these in
+  // entityMap as card-only entities; a row only counted for one when its own
+  // sheet bracketed it. Rows written by the TGT chip and the Target Logger name
+  // the plate or street plainly, so the sheet loop below also credits those —
+  // exact plate or exact number-led street only.
+  const registeredPlateLabel = new Map<string, string>();
+  const registeredStreets: Array<{
+    street: string;
+    suburb: string | null;
+    key: string;
+  }> = [];
+  {
+    const fromCard = (e: IntelligenceEntity) =>
+      e.occurrences.some(
+        o =>
+          o.rowId === 0 &&
+          /^(Target|Associate) card — /.test(o.observationSnippet)
+      );
+    for (const [key, ent] of Array.from(entityMap.entries())) {
+      if (key.startsWith("vehicle::") && fromCard(ent))
+        registeredPlateLabel.set(key.slice("vehicle::".length), ent.shortForm);
+      else if (key.startsWith("address::") && fromCard(ent))
+        registeredStreets.push({
+          street: key.slice("address::".length),
+          suburb: registeredSuburb(ent.shortForm),
+          key,
+        });
+    }
+    for (const key of Array.from(subjectTargetByKey.keys())) {
+      if (key.startsWith("vehicle::"))
+        registeredPlateLabel.set(
+          key.slice("vehicle::".length),
+          key.slice("vehicle::".length)
+        );
+      else if (key.startsWith("address::"))
+        registeredStreets.push({
+          street: key.slice("address::".length),
+          suburb: null,
+          key,
+        });
+    }
+  }
+  const registeredPlateSet = new Set(registeredPlateLabel.keys());
+  const creditedInRow = (key: string, rowId: number) =>
+    [key, subjectTargetByKey.get(key), entityAliasMap.get(key)?.key].some(
+      k => !!k && !!entityMap.get(k)?.occurrences.some(o => o.rowId === rowId)
+    );
+
   for (const [, sheetRows_] of Array.from(rowsBySheet.entries())) {
     // ── Pass A: build per-sheet entity dictionary from bracketed introductions ──
     // Dictionary key: shortForm.toLowerCase() AND rawShortForm.toLowerCase() (both point to same entry)
@@ -3771,6 +3825,38 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
             row
           );
         }
+      }
+
+      // Plain-text mentions of a REGISTERED plate or street address that the
+      // sheet never bracketed (see registeredMentions above). Skipped for a row
+      // the bracket path already credited, so nothing is counted twice.
+      for (const plate of registeredPlatesIn(
+        row.observation,
+        registeredPlateSet
+      )) {
+        const key = `vehicle::${plate}`;
+        if (creditedInRow(key, row.rowId)) continue;
+        registerOccurrence(
+          {
+            shortForm: registeredPlateLabel.get(plate) ?? plate,
+            fullDescription: `Registered vehicle ${plate.toUpperCase()} named in the row`,
+            type: "vehicle",
+          },
+          row
+        );
+      }
+      for (const reg of registeredStreets) {
+        if (creditedInRow(reg.key, row.rowId)) continue;
+        if (!registeredAddressIn(row.observation, reg.street, reg.suburb))
+          continue;
+        registerOccurrence(
+          {
+            shortForm: reg.street,
+            fullDescription: `Registered address ${reg.street} named in the row`,
+            type: "address",
+          },
+          row
+        );
       }
     }
   }

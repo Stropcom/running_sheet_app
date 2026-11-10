@@ -1037,6 +1037,13 @@
       "when": 1794146053390,
       "tag": "0147_sheet_intel_lines",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "5",
+      "when": 1794291767168,
+      "tag": "0148_shortcut_starts_row",
+      "breakpoints": true
     }
   ]
 }

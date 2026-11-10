@@ -46,6 +46,7 @@ import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { ResizablePhoto } from "@/components/ResizablePhoto";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
 import { CeaseRowButton } from "@/components/CeaseRowButton";
+import { useOwnRowShortcut } from "@/hooks/useOwnRowShortcut";
 import { ceasePlaceFor } from "@shared/ceaseRow";
 import {
   locateTargetFromPending,
@@ -3329,6 +3330,10 @@ export default function SheetDetail({
     onError: e => toast.error(e.message),
   });
 
+  // A shortcut marked "Own row" (TP, TEXT …): one tap adds a row with the
+  // current time that starts with the target's surname.
+  const ownRowShortcut = useOwnRowShortcut(() => invalidateRows());
+
   // Session-scoped undo stack for this officer's own row edits (observation/time),
   // laptop/iPad only. Only ever populated from edits made while online, against
   // rows that were unlocked (not fully certified) at the time of the edit — undo
@@ -5333,7 +5338,12 @@ export default function SheetDetail({
                 });
               } catch {}
             }
-            const fields: { label: string; value: string | null }[] = t
+            const fields: {
+              label: string;
+              value: string | null;
+              shortcutId?: number;
+              startsRow?: boolean;
+            }[] = t
               ? [
                   { label: "TGT", value: t.tgt },
                   { label: "HBF", value: t.hbf },
@@ -5349,6 +5359,8 @@ export default function SheetDetail({
                     .map(s => ({
                       label: s.trigger.toUpperCase(),
                       value: s.expansion,
+                      shortcutId: s.id,
+                      startsRow: !!s.startsRow,
                     })),
                 ]
               : [];
@@ -6431,7 +6443,20 @@ export default function SheetDetail({
                                             label={f.label}
                                             value={f.value}
                                             showValue={isVnShort || !isStandard}
-                                            onInsert={insertIntoFocused}
+                                            onInsert={() =>
+                                              f.startsRow &&
+                                              f.shortcutId !== undefined &&
+                                              isOnline
+                                                ? ownRowShortcut.press(
+                                                    {
+                                                      sheetId,
+                                                      shortcutId: f.shortcutId,
+                                                      label: f.label,
+                                                    },
+                                                    insertIntoFocused
+                                                  )
+                                                : insertIntoFocused()
+                                            }
                                           />
                                         );
                                       })}

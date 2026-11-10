@@ -1447,7 +1447,12 @@ export async function ensureShortcutOrder() {
 
 export async function updateShortcut(
   id: number,
-  data: { trigger?: string; expansion?: string; showInRs?: boolean }
+  data: {
+    trigger?: string;
+    expansion?: string;
+    showInRs?: boolean;
+    startsRow?: boolean;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

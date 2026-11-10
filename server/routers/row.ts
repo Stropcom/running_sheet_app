@@ -5,6 +5,7 @@ import { firstRowFill } from "@shared/firstRow";
 import { ceaseMembers, ceaseRowText } from "@shared/ceaseRow";
 import { rowTimeForNewRow } from "@shared/rowTime";
 import { rowEditChangesContent } from "@shared/rowEditSignatures";
+import { shortcutRowSubject, shortcutRowText } from "@shared/shortcutRow";
 import {
   addRowMember,
   createAuditLog,
@@ -28,6 +29,8 @@ import {
   findMissingLocationSuggestion,
   findVagueVehicleMatch,
   getRunningSheetById,
+  getTargetById,
+  listShortcuts,
   addDaysISO,
   updateSheetRow,
   insertTravelledViaRow,
@@ -424,6 +427,44 @@ export const rowRouter = router({
         }
       );
       return { ...created, complete: text.complete };
+    }),
+
+  // A shortcut marked "Own row" on the Shortcuts page (TP, TEXT …): one tap adds
+  // a new row with the current time that starts with the target's SURNAME and
+  // then the shortcut's expansion, exactly as saved (shared/shortcutRow.ts).
+  // When the sheet has no person target there is no name to put first, so
+  // nothing is created and the screen falls back to inserting the text as an
+  // ordinary chip does.
+  addShortcutRow: protectedProcedure
+    .input(z.object({ sheetId: z.number(), shortcutId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await guardActiveSheet(input.sheetId);
+      const shortcut = (await listShortcuts()).find(
+        s => s.id === input.shortcutId
+      );
+      if (!shortcut || !shortcut.startsRow)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "That shortcut does not start its own row.",
+        });
+      const sheet = await getRunningSheetById(input.sheetId);
+      const target = sheet?.targetId
+        ? await getTargetById(sheet.targetId)
+        : undefined;
+      const text = shortcutRowText(
+        shortcutRowSubject(target),
+        shortcut.expansion
+      );
+      if (!text)
+        return { created: false as const, reason: "no-target" as const };
+      const created = await createRowFor(
+        ctx,
+        { sheetId: input.sheetId, observation: text },
+        {
+          note: `Row added with one tap on the ${shortcut.trigger.toUpperCase()} shortcut`,
+        }
+      );
+      return { ...created, created: true as const, text };
     }),
 
   update: protectedProcedure

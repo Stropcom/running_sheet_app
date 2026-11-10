@@ -33,7 +33,7 @@ export function weeklyActionsHtml(
               .join("");
             return `<div class="act-item">
   <div class="act-top"><span class="act-heading">${esc(i.heading)}</span><span class="act-times">${i.count} time${i.count === 1 ? "" : "s"} this week</span></div>
-  <div class="act-line">${esc(i.line)}</div>
+  <div class="act-line">${esc(i.line)}</div>${(i.also ?? []).length ? `<div class="act-line">Also picked up: ${esc(i.also.join(", "))}</div>` : ""}
   <div class="act-foot"><span class="act-days">${boxes}</span>${i.addedByCIN ? `<span class="act-added">Added by ${esc(i.addedByCIN)}</span>` : ""}</div>
 </div>`;
           })

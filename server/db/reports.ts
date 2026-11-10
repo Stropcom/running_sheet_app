@@ -2184,6 +2184,7 @@ export async function getWeeklyActivityReport(
             group: l.group,
             sentence: l.sentence,
             matched: l.matched,
+            also: l.alsoMatched,
             date,
             addedByCIN: l.source === "manual" ? l.addedByCIN : undefined,
           });

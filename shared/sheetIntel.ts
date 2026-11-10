@@ -11,6 +11,10 @@
 //    nothing can be read as "seen before";
 //  - a supervisor can leave an automatic line out (untick) and add their own;
 //    hand-added lines count like any other and say who added them;
+//  - one thing in one sentence is one line: "new laptop box", the "box" and the
+//    "laptop" inside it are folded into the longest wording (`foldCuesInSentence`),
+//    and what was folded stays on the line ("Also picked up") — grouped, never
+//    dropped;
 //  - plain "met / spoke with" is not listed (too common to mean anything on its
 //    own); hand-overs, exchanges and brief meetings are.
 
@@ -55,6 +59,15 @@ export interface ManualIntelInput {
   addedByCIN: string;
 }
 
+/** A cue folded into a longer one from the same sentence ("laptop" inside "new
+ * laptop box"). Kept on the line so nothing picked up is lost. */
+export interface FoldedCue {
+  category: CueCategory;
+  heading: string;
+  group: string;
+  matched: string;
+}
+
 export interface SheetIntelLine {
   /** Stable id for ticking: "<rowId>:<category>:<group>:<n>" or "m<id>". */
   key: string;
@@ -81,6 +94,9 @@ export interface SheetIntelLine {
   included: boolean;
   /** Straight count of lines of this item or action on the sheet (1 = once). */
   groupCount: number;
+  /** Shorter pickups of the same thing in the same sentence, folded into this
+   * line (never dropped). Empty for hand-added lines. */
+  alsoMatched: FoldedCue[];
 }
 
 const CATEGORY_SET = new Set<string>(INTEL_CATEGORY_ORDER);
@@ -116,6 +132,94 @@ function byTime(
   return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }
 
+// ─── One thing in one sentence is one line ───────────────────────────────────
+
+const CATEGORY_RANK = new Map(INTEL_CATEGORY_ORDER.map((c, i) => [c, i]));
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function wordRe(s: string, flags = "gi"): RegExp {
+  return new RegExp(
+    `(?<![A-Za-z0-9])${escapeRe(s.trim()).replace(/\s+/g, "\\s+")}(?![A-Za-z0-9])`,
+    flags
+  );
+}
+
+function countIn(text: string, term: string): number {
+  return (text.match(wordRe(term)) ?? []).length;
+}
+
+/** `inner` is `outer` or a run of its words ("laptop" in "new laptop box"). */
+function wordsWithin(outer: string, inner: string): boolean {
+  const o = outer.trim();
+  const i = inner.trim();
+  return !!i && wordRe(i, "i").test(o);
+}
+
+/** May `c` be folded into the longer cue `l` of the same sentence?
+ *  - the same kind (items, devices, …) and `c` is just the item's own noun
+ *    ("box" beside "new laptop box" — the same box), or `c`'s words are inside
+ *    `l`'s ("laptop box" beside "new laptop box");
+ *  - an item and a device only when the device word sits inside the item's
+ *    wording ("laptop" inside "new laptop box") and appears nowhere else in the
+ *    sentence — a laptop used on its own later in the sentence stays its own
+ *    line;
+ *  - money, meetings and behaviour never fold into anything else, and nothing
+ *    folds into them. Two different things of the same kind ("red box", "blue
+ *    box") stay two lines. */
+function mayFold(l: IntelCue, c: IntelCue, sentence: string): boolean {
+  const sameKind = l.category === c.category;
+  const objectKinds =
+    (l.category === "items" || l.category === "devices") &&
+    (c.category === "items" || c.category === "devices");
+  if (!sameKind && !objectKinds) return false;
+  const bare = c.matched.trim().toLowerCase();
+  if (
+    sameKind &&
+    l.category === "items" &&
+    c.group === l.group &&
+    bare === c.group
+  )
+    return true;
+  if (!wordsWithin(l.matched, c.matched)) return false;
+  if (sameKind) return true;
+  // Item ↔ device: every mention of the word must be inside the longer wording.
+  const inside =
+    countIn(l.matched, c.matched) * Math.max(1, countIn(sentence, l.matched));
+  return countIn(sentence, c.matched) <= inside;
+}
+
+/** The cues of ONE sentence with each shorter pickup of the same thing folded
+ * into the longest wording. Every input cue ends up either as a leader or in
+ * exactly one leader's `also` — none is dropped. Leaders keep the order they
+ * came in. Pure. */
+export function foldCuesInSentence(
+  cues: IntelCue[]
+): Array<{ cue: IntelCue; also: IntelCue[] }> {
+  if (cues.length < 2) return cues.map(cue => ({ cue, also: [] }));
+  const order = cues
+    .map((cue, i) => ({ cue, i }))
+    .sort((a, b) => {
+      const d = b.cue.matched.trim().length - a.cue.matched.trim().length;
+      if (d !== 0) return d;
+      const r =
+        CATEGORY_RANK.get(a.cue.category)! - CATEGORY_RANK.get(b.cue.category)!;
+      if (r !== 0) return r;
+      return a.i - b.i;
+    });
+  const leaders: Array<{ cue: IntelCue; i: number; also: IntelCue[] }> = [];
+  for (const { cue, i } of order) {
+    const into = leaders.find(l => mayFold(l.cue, cue, cue.sentence));
+    if (into) into.also.push(cue);
+    else leaders.push({ cue, i, also: [] });
+  }
+  return leaders
+    .sort((a, b) => a.i - b.i)
+    .map(({ cue, also }) => ({ cue, also }));
+}
+
 /** Every New Intelligence line of one sheet, in time order, with the straight
  * count of each item or action. `hiddenKeys` are the lines the supervisor
  * unticked. */
@@ -129,12 +233,27 @@ export function buildSheetIntel(args: {
 
   for (const row of args.rows) {
     const seen = new Map<string, number>();
-    for (const cue of findIntelCues(row.observation)) {
-      if (UNLISTED_HEADINGS.has(cue.heading)) continue;
-      const base = `${cue.category}:${cue.group}`;
-      const nth = seen.get(base) ?? 0;
-      seen.set(base, nth + 1);
-      const key = cueKey(row.id, cue, nth);
+    // Keys are worked out over EVERY cue first, so an unticked line keeps its
+    // key whatever gets folded into it.
+    const keyed = findIntelCues(row.observation)
+      .filter(cue => !UNLISTED_HEADINGS.has(cue.heading))
+      .map(cue => {
+        const base = `${cue.category}:${cue.group}`;
+        const nth = seen.get(base) ?? 0;
+        seen.set(base, nth + 1);
+        return { cue, key: cueKey(row.id, cue, nth) };
+      });
+    const keyOf = new Map(keyed.map(k => [k.cue, k.key]));
+    // Fold one sentence at a time (its cues are together, in order).
+    const bySentence = new Map<string, IntelCue[]>();
+    for (const { cue } of keyed) {
+      const list = bySentence.get(cue.sentence);
+      if (list) list.push(cue);
+      else bySentence.set(cue.sentence, [cue]);
+    }
+    const folded = Array.from(bySentence.values()).flatMap(foldCuesInSentence);
+    for (const { cue, also } of folded) {
+      const key = keyOf.get(cue)!;
       lines.push({
         key,
         source: "auto",
@@ -150,6 +269,12 @@ export function buildSheetIntel(args: {
         timeMinutes: row.timeMinutes ?? null,
         included: !hidden.has(key),
         groupCount: 1,
+        alsoMatched: also.map(a => ({
+          category: a.category,
+          heading: a.heading,
+          group: a.group,
+          matched: a.matched,
+        })),
       });
     }
   }
@@ -175,6 +300,7 @@ export function buildSheetIntel(args: {
       // drop it.
       included: true,
       groupCount: 1,
+      alsoMatched: [],
     });
   }
 
@@ -215,20 +341,50 @@ export function intelByCategory(
 
 /** A sentence cut into plain and highlighted pieces, for the screen and the
  * PDF. The match is found without regard to capital letters; if it cannot be
- * found (the officer has since edited the row) nothing is highlighted. */
+ * found (the officer has since edited the row) nothing is highlighted. Words
+ * folded into the line (`also`) are picked out wherever they stand in the
+ * sentence, so "placed the box" is marked beside "new laptop box". */
 export function highlightSegments(
   sentence: string,
-  matched: string
+  matched: string,
+  also: readonly string[] = []
 ): Array<{ text: string; hit: boolean }> {
   if (!matched) return [{ text: sentence, hit: false }];
   const at = sentence.toLowerCase().indexOf(matched.toLowerCase());
   if (at < 0) return [{ text: sentence, hit: false }];
+  const ranges: Array<[number, number]> = [[at, at + matched.length]];
+  for (const term of also) {
+    if (!term.trim()) continue;
+    const re = wordRe(term);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(sentence)))
+      ranges.push([m.index, m.index + m[0].length]);
+  }
+  ranges.sort((x, y) => x[0] - y[0]);
+  const merged: Array<[number, number]> = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push([r[0], r[1]]);
+  }
   const out: Array<{ text: string; hit: boolean }> = [];
-  if (at > 0) out.push({ text: sentence.slice(0, at), hit: false });
-  out.push({ text: sentence.slice(at, at + matched.length), hit: true });
-  if (at + matched.length < sentence.length)
-    out.push({ text: sentence.slice(at + matched.length), hit: false });
+  let pos = 0;
+  for (const [from, to] of merged) {
+    if (from > pos) out.push({ text: sentence.slice(pos, from), hit: false });
+    out.push({ text: sentence.slice(from, to), hit: true });
+    pos = to;
+  }
+  if (pos < sentence.length)
+    out.push({ text: sentence.slice(pos), hit: false });
   return out;
+}
+
+/** "Laptop (Devices)" / "Box" — a folded pickup, named for the line's tag. The
+ * kind is added only when it differs from the line's own. */
+export function foldedLabel(f: FoldedCue, lineCategory: CueCategory): string {
+  return f.category === lineCategory
+    ? f.heading
+    : `${f.heading} (${CUE_CATEGORY_LABELS[f.category]})`;
 }
 
 // ─── Weekly Report: the "who / what" line ────────────────────────────────────
@@ -283,6 +439,8 @@ export interface WeeklyIntelInput {
   /** The sentence (or the hand-added wording) and what triggered it. */
   sentence: string;
   matched: string;
+  /** Pickups folded into this line (see `foldCuesInSentence`). */
+  also?: FoldedCue[];
   /** The calendar day it happened (YYYY-MM-DD). */
   date: string;
   addedByCIN?: string;
@@ -298,6 +456,9 @@ export interface WeeklyIntelItem {
   dates: string[];
   /** Straight count: how many lines of it this week. */
   count: number;
+  /** What else those lines picked up in the same sentences (folded in, never
+   * dropped), as tag text, in first-seen order. */
+  also: string[];
   /** Set when every line of it was hand-added: who added the first one. */
   addedByCIN?: string;
 }
@@ -323,12 +484,17 @@ export function aggregateWeeklyIntel(
         line: manual ? i.sentence : whoWhatClause(i.sentence, i.matched),
         dates: [],
         count: 0,
+        also: [],
         addedByCIN: manual ? i.addedByCIN : undefined,
       };
       byGroup.set(k, item);
       allManual.set(k, true);
     }
     item.count++;
+    for (const f of i.also ?? []) {
+      const label = foldedLabel(f, i.category);
+      if (!item.also.includes(label)) item.also.push(label);
+    }
     if (!item.dates.includes(i.date)) item.dates.push(i.date);
     if (!manual) allManual.set(k, false);
   }

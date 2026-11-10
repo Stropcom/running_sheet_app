@@ -1791,6 +1791,40 @@ test("Top banner: the operation name is a Show & Share switch, green while on", 
   expect(await flag()).toBe("false");
 });
 
+test("Top banner: the operation name shows on an iPad held sideways and clears the RunLog wordmark", async ({
+  page,
+}) => {
+  const created = await createOperationAndSheet(page);
+  await page.goto("/");
+  await page.evaluate(opId => {
+    localStorage.setItem(
+      "runlog_map_settings",
+      JSON.stringify({ selectedOpIds: [opId], opsExplicitlySet: true })
+    );
+  }, created.opId);
+  const banner = page
+    .locator("header.app-chrome button[aria-pressed]")
+    .filter({ hasText: /smoke/i });
+  const wordmark = page
+    .locator("header.app-chrome span")
+    .filter({ hasText: /^RunLog$/ });
+  // 1024 / 1080 / 1180 / 1194 are the iPad widths held sideways.
+  for (const width of [1024, 1080, 1180, 1194]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/intelligence/mapping");
+    await expect(banner).toBeVisible();
+    const b = (await banner.boundingBox())!;
+    const w = (await wordmark.boundingBox())!;
+    // Clear of the wordmark, and inside the screen.
+    expect(b.x).toBeGreaterThanOrEqual(w.x + w.width + 8);
+    expect(b.x + b.width).toBeLessThanOrEqual(width);
+  }
+  // Held upright there is no room for it, as before.
+  await page.setViewportSize({ width: 820, height: 1100 });
+  await page.goto("/intelligence/mapping");
+  await expect(banner).toBeHidden();
+});
+
 test("The first row of a sheet comes with the opening and the whole team on it", async ({
   page,
 }) => {
@@ -3767,12 +3801,7 @@ test("CTO Weekly Tasking: an EA breach on the roster shows as a red dot on the t
       /EA breach/
     );
     const picker = page.getByRole("combobox", { name: "Calendar view" });
-    for (const layout of [
-      "Team Rows",
-      "Team Tables",
-      "Calendar",
-      "Timeline",
-    ]) {
+    for (const layout of ["Team Rows", "Team Tables", "Calendar", "Timeline"]) {
       await picker.click();
       await page.getByRole("option", { name: layout }).click();
       await expect(page.getByTestId("tasking-breach-dot")).toHaveCount(1);

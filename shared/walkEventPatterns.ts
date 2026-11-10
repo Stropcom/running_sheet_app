@@ -1105,7 +1105,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     const inMatch = text.match(WALK_IN_PATTERN);
     if (inMatch) {
       record(
-        inMatch[1].trim(),
+        cleanWalkerNames(inMatch[1].trim()),
         bracketLabelOrSelf(inMatch[3].trim()),
         inMatch[2]?.trim() ?? ""
       );
@@ -1115,7 +1115,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     if (towardsMatch) {
       const rawRoute = towardsMatch[2].trim();
       record(
-        towardsMatch[1].trim(),
+        cleanWalkerNames(towardsMatch[1].trim()),
         extractWalkInTowardsLocation(rawRoute),
         extractWalkInTowardsRoute(rawRoute)
       );

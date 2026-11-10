@@ -4,8 +4,8 @@ import { useCallback, useState } from "react";
  * exported (up to two of them in one PDF). A choice saved for a layout that no
  * longer exists falls back to the default. */
 export const TASKING_VIEWS = [
-  { id: "panel-banded", label: "Banded columns" },
-  { id: "panel-tables", label: "Schedule tables" },
+  { id: "panel-banded", label: "Team Rows" },
+  { id: "panel-tables", label: "Team Tables" },
   { id: "tile-days", label: "Calendar" },
   { id: "cal-timeline", label: "Timeline" },
 ] as const;

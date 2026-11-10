@@ -926,10 +926,10 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await page.goto("/operation-manager");
     await page.getByText("CTO Weekly Tasking — 02 Jan – 08 Jan").click();
     const picker = page.getByRole("combobox", { name: "Calendar view" });
-    await expect(picker).toContainText("Banded columns");
+    await expect(picker).toContainText("Team Rows");
     await expect(page.locator(".tcv-pa").first()).toBeVisible();
     for (const [label, marker] of [
-      ["Schedule tables", ".tcv-table"],
+      ["Team Tables", ".tcv-table"],
       ["Calendar", ".tcv-ta"],
       ["Timeline", ".tcv-cb"],
     ] as const) {
@@ -967,7 +967,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
       name: "Calendar layouts to export",
     });
     const timeline = layouts.getByRole("checkbox", { name: "Timeline" });
-    const banded = layouts.getByRole("checkbox", { name: "Banded columns" });
+    const banded = layouts.getByRole("checkbox", { name: "Team Rows" });
     const tiles = layouts.getByRole("checkbox", { name: "Calendar" });
     await expect(timeline).toBeChecked();
     await banded.click();
@@ -987,7 +987,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await pop.waitForLoadState();
     const html = await pop.content();
     expect(html).toContain("CTO Weekly Tasking");
-    expect(html).toContain("Weekly Tasking Calendar · Banded columns");
+    expect(html).toContain("Weekly Tasking Calendar · Team Rows");
     expect(html).toContain("Weekly Tasking Calendar · Timeline");
     expect(html).not.toContain("Weekly Tasking Calendar · Calendar");
     expect(html).toContain("02 Jan – 08 Jan 2040");
@@ -2586,7 +2586,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
     const layoutPicker = page.getByRole("combobox", { name: "Calendar view" });
     await layoutPicker.click();
-    await page.getByRole("option", { name: "Banded columns" }).click();
+    await page.getByRole("option", { name: "Team Rows" }).click();
     await page
       .getByRole("button", { name: "Edit Tasking", exact: true })
       .click();
@@ -2649,10 +2649,10 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
     const picker = page.getByRole("combobox", { name: "Calendar view" });
     await picker.click();
-    await page.getByRole("option", { name: "Banded columns" }).click();
+    await page.getByRole("option", { name: "Team Rows" }).click();
     await expect(page.locator(".tcv-pa-col.bl")).toHaveCount(2);
     await picker.click();
-    await page.getByRole("option", { name: "Schedule tables" }).click();
+    await page.getByRole("option", { name: "Team Tables" }).click();
     await expect(page.locator(".tcv-table tr.bl")).toHaveCount(2);
     await picker.click();
     await page.getByRole("option", { name: "Calendar" }).click();
@@ -2666,7 +2666,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     const layouts = page.getByRole("group", {
       name: "Calendar layouts to export",
     });
-    await layouts.getByRole("checkbox", { name: "Banded columns" }).click();
+    await layouts.getByRole("checkbox", { name: "Team Rows" }).click();
     const popup = page.waitForEvent("popup");
     await page.getByRole("button", { name: "Export", exact: true }).click();
     const pop = await popup;
@@ -2680,7 +2680,7 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     await page.goto("/operation-manager");
     await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
     await layoutPicker.click();
-    await page.getByRole("option", { name: "Banded columns" }).click();
+    await page.getByRole("option", { name: "Team Rows" }).click();
     await page
       .getByRole("button", { name: "Edit Tasking", exact: true })
       .click();
@@ -2854,7 +2854,7 @@ test("CTO Weekly Tasking on a phone: only Calendar and Timeline, no colour or le
       shiftTime: "0700-1500",
       primaryTask: "RAVEN",
     });
-    // A saved Banded columns choice (made on a laptop) shows as Calendar on a phone.
+    // A saved Team Rows choice (made on a laptop) shows as Calendar on a phone.
     await page.addInitScript(() =>
       localStorage.setItem("runlog.taskingView", "panel-banded")
     );
@@ -3768,8 +3768,8 @@ test("CTO Weekly Tasking: an EA breach on the roster shows as a red dot on the t
     );
     const picker = page.getByRole("combobox", { name: "Calendar view" });
     for (const layout of [
-      "Banded columns",
-      "Schedule tables",
+      "Team Rows",
+      "Team Tables",
       "Calendar",
       "Timeline",
     ]) {
@@ -4307,7 +4307,7 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     const menu = page.getByRole("menu", { name: /Operation for/ });
 
     // Read only until Edit: no drop-downs.
-    await choose("Banded columns");
+    await choose("Team Rows");
     await expect(page.locator(".tcv-sel")).toHaveCount(0);
     await edit.click();
     await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("0600-1500");
@@ -4315,7 +4315,7 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
       page.getByRole("button", { name: /^Save( draft)?$/ }).first()
     ).toBeDisabled();
 
-    // Banded: a shift from the drop-down, and an operation from the menu.
+    // Team Rows: a shift from the drop-down, and an operation from the menu.
     await page.getByLabel("Shift T1 · Mon").selectOption("1300-2200");
     await expect(summary).toContainText("1 change");
     await expect(summary).toContainText("0600–1500 to 1300–2200");
@@ -4330,8 +4330,8 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await menu.getByRole("menuitemradio", { name: "None" }).click();
     await expect(summary).toContainText(`operation ${opName} to none`);
 
-    // Schedule tables: the same changes are there, and a second one is made.
-    await choose("Schedule tables");
+    // Team Tables: the same changes are there, and a second one is made.
+    await choose("Team Tables");
     await expect(page.getByLabel("Shift T1 · Mon")).toHaveValue("1300-2200");
     await page.getByLabel("Shift T2 · Wed").selectOption("0600-1500");
     await expect(summary).toContainText("3 changes");
@@ -4348,7 +4348,7 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await expect(page.locator(".tcv-bar.tcv-edit").first()).toBeVisible();
 
     // A new operation can be made from the menu and set in one step.
-    await choose("Banded columns");
+    await choose("Team Rows");
     const wedOp = page.getByRole("button", {
       name: "Primary operation T2 · Wed",
     });
@@ -4384,7 +4384,7 @@ test("CTO Weekly Tasking: Edit makes every layout editable in place, Cancel puts
     await expect(page.locator(".tcv-sel")).toHaveCount(0);
     await page.reload();
     await page.getByText(/CTO Weekly Tasking — 08 Oct/).click();
-    await choose("Banded columns");
+    await choose("Team Rows");
     await expect(
       page.locator(".tcv-pa-col", { hasText: "1300–2200" }).first()
     ).toBeVisible();

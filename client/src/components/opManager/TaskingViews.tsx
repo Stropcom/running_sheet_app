@@ -380,7 +380,7 @@ function SplitBtn({ edit, i }: { edit: TimelineEdit; i: number }) {
   );
 }
 
-/** Banded columns */
+/** Team Rows */
 function PanelBanded({
   week,
   days,
@@ -501,7 +501,7 @@ function PanelBanded({
   );
 }
 
-/** Schedule tables (two panels across) */
+/** Team Tables (two panels across) */
 function PanelTables({
   week,
   days,

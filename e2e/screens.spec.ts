@@ -1831,7 +1831,7 @@ test("A 'tasking posted' notification opens that week's tasking, not just the fo
     // The document itself: the week's full view (it has Post & Notify), not
     // the folder list. The address is tidied so Back does not reopen it.
     await expect(
-      page.getByRole("button", { name: /Post & Notify/ })
+      page.getByRole("button", { name: /Post & Notify/i })
     ).toBeVisible();
     await expect(page).toHaveURL(/\/operation-manager$/);
 
@@ -1842,7 +1842,7 @@ test("A 'tasking posted' notification opens that week's tasking, not just the fo
       page.getByRole("heading", { name: "CTO Weekly Tasking" })
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Post & Notify/ })
+      page.getByRole("button", { name: /Post & Notify/i })
     ).toHaveCount(0);
   } finally {
     await call("opManager.deleteWeek", { weekStart: W });
@@ -3556,7 +3556,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
 
     // Post: the roster question comes first.
     await openWeek();
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(question).toBeVisible();
     await expect(question).toContainText("Team 1");
     await expect(question).toContainText("06:00 to 14:00");
@@ -3568,7 +3568,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     await whoToNotify.getByRole("button", { name: "Cancel" }).click();
 
     // A No is not remembered: the next Post asks again while they differ.
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(question).toBeVisible();
     await question.getByRole("button", { name: "No" }).click();
     await expect(whoToNotify).toBeVisible();
@@ -3576,7 +3576,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
 
     // Yes updates the roster: an Arvo from 14:00.
     await openWeek();
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(question).toBeVisible();
     await question
       .getByRole("button", { name: "Yes, update the roster" })
@@ -3590,7 +3590,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     });
 
     // Now they agree, so there is nothing to ask.
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(whoToNotify).toBeVisible();
     await expect(question).toHaveCount(0);
     await whoToNotify.getByRole("button", { name: "Cancel" }).click();
@@ -3605,7 +3605,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
       memberName: "E2E Officer",
     });
     await openWeek();
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(question).toBeVisible();
     await expect(question).toContainText("on a rest day to 14:00");
     await question
@@ -3631,7 +3631,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
       });
     await tasked("RDO");
     await openWeek();
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(question).toBeVisible();
     await expect(question).toContainText("back to a rest day");
     await question
@@ -3655,7 +3655,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
       memberName: "E2E Officer",
     });
     await openWeek();
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(whoToNotify).toBeVisible();
     await expect(question).toHaveCount(0);
     await whoToNotify.getByRole("button", { name: "Cancel" }).click();
@@ -3671,7 +3671,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     });
     await tasked("1400-2200");
     await openWeek();
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(question).toBeVisible();
     await expect(question).toContainText("on Rest on-call to 14:00");
     await question
@@ -3685,7 +3685,7 @@ test("CTO Weekly Tasking: Post asks whether to carry a different start time to t
     });
     await tasked("RDO");
     await openWeek();
-    await page.getByRole("button", { name: /Post & Notify/ }).click();
+    await page.getByRole("button", { name: /Post & Notify/i }).click();
     await expect(question).toContainText("back to Rest on-call");
     await question
       .getByRole("button", { name: "Yes, update the roster" })

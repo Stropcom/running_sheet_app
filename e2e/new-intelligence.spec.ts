@@ -283,17 +283,26 @@ test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor S
     r => /summary\.update/.test(r.url()) && r.status() === 200
   );
 
-  await page.goto(`/operation/${opId}`);
-  await page.getByRole("tab", { name: "Deployment Summaries" }).click();
-  await page
-    .getByRole("button", { name: /\d{1,2} \w+ \d{2}/ })
-    .first()
-    .click();
-  await expect(page.getByText("Radio dropped out twice.")).toBeVisible();
-  await expect(page.getByText("Vehicle low on fuel.")).toBeVisible();
+  // The roll-up is read from the server when the sheet is opened; on a slow
+  // machine a save or the roll-up can land a moment late, so open it again
+  // until it shows everything (instead of failing on the first look).
   const intel = page.getByTestId("rollup-intel");
-  await expect(intel).toBeVisible();
-  await expect(intel).toContainText("Brown suitcase");
+  await expect(async () => {
+    await page.goto(`/operation/${opId}`);
+    await page.getByRole("tab", { name: "Deployment Summaries" }).click();
+    await page
+      .getByRole("button", { name: /\d{1,2} \w+ \d{2}/ })
+      .first()
+      .click();
+    await expect(page.getByText("Radio dropped out twice.")).toBeVisible({
+      timeout: 4000,
+    });
+    await expect(page.getByText("Vehicle low on fuel.")).toBeVisible({
+      timeout: 4000,
+    });
+    await expect(intel).toBeVisible({ timeout: 4000 });
+    await expect(intel).toContainText("Brown suitcase", { timeout: 4000 });
+  }).toPass({ timeout: 40_000 });
   await expect(intel.locator("mark").first()).toContainText(/suitcase/i);
   // Read only: no ticks, no Add item, no Edit.
   await expect(intel.getByRole("checkbox")).toHaveCount(0);

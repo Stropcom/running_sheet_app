@@ -1,6 +1,6 @@
 [
  {
-  "isIndicesOnly": true,
+  "isIndicesOnly": false,
   "occurrences": [
    {
     "fullDescription": "HBF: 19 Jacaranda Drive, ATTADALE (from target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
@@ -21,6 +21,46 @@
     "sheetId": 3,
     "sheetTitle": "20261007 - SANTOS",
     "timeMinutes": null
+   },
+   {
+    "fullDescription": "Registered address 19 jacaranda drive named in the row",
+    "observationSnippet": "Observed Lawrence SANTOS (SANTOS) leave 19 Jacaranda Drive, ATTADALE in Vehicle …",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 14,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 360
+   },
+   {
+    "fullDescription": "Registered address 19 jacaranda drive named in the row",
+    "observationSnippet": "Surveillance commenced in the vicinity of 19 Jacaranda Drive, ATTADALE.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 1,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 360
+   },
+   {
+    "fullDescription": "Registered address 19 jacaranda drive named in the row",
+    "observationSnippet": "Vehicle 1EMB303 was seen again at 19 Jacaranda Drive.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 13,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": 400
+   },
+   {
+    "fullDescription": "Registered address 19 jacaranda drive named in the row",
+    "observationSnippet": "Vehicle 1EMB303, SANTOS driving, departed 19 Jacaranda Drive and continued via:",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 3,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 380
    }
   ],
   "shortForm": "19 Jacaranda Drive, ATTADALE",
@@ -40,7 +80,7 @@
     "timeMinutes": null
    },
    {
-    "fullDescription": "Registered address 4 hay street, perth wa named in the row",
+    "fullDescription": "Registered address 4 hay street named in the row",
     "observationSnippet": "Maria SANTOS (M SANTOS) entered 4 Hay Street, PERTH WA.",
     "operationId": 1,
     "operationName": "OP GOLDEN ONE",
@@ -50,7 +90,7 @@
     "timeMinutes": 360
    }
   ],
-  "shortForm": "4 hay street, perth wa",
+  "shortForm": "4 Hay Street, PERTH",
   "type": "address"
  },
  {

@@ -61,16 +61,34 @@ export function registeredPlatesIn(
 }
 
 /** The suburb of a registry address label ("19 Jacaranda Drive, ATTADALE WA"
- * → "ATTADALE"), upper-cased, or null when it has none. */
+ * → "ATTADALE"), upper-cased, or null when it has none. Any letter case (the
+ * builder also reads it off a lower-cased entity key, "…, attadale wa"), and a
+ * trailing postcode is ignored ("…, ATTADALE WA 6163"). */
 export function registeredSuburb(
   label: string | null | undefined
 ): string | null {
   const m = (label ?? "")
     .replace(/\s*\([^()]*\)\s*$/, "")
+    .replace(/\s+\d{4}\s*$/, "")
     .match(
-      /,\s*([A-Za-z][A-Za-z' -]*?)(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?\s*$/
+      /,\s*([A-Za-z][A-Za-z' -]*?)(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?\s*$/i
     );
   return m ? m[1].trim().toUpperCase() : null;
+}
+
+/**
+ * The street part of a registry address label — what comes before the first
+ * comma ("19 Jacaranda Drive, ATTADALE WA" → "19 Jacaranda Drive"). A registry
+ * card holds the whole address with its suburb and state, but a running sheet
+ * row names just the street ("departed 19 Jacaranda Drive"), so it is the
+ * street that is looked for in the text and the suburb that is checked beside
+ * it (registeredAddressIn).
+ */
+export function registeredStreet(label: string | null | undefined): string {
+  return (label ?? "")
+    .replace(/\s*\([^()]*\)\s*$/, "")
+    .split(",")[0]
+    .trim();
 }
 
 const STATES = new Set(["WA", "NSW", "VIC", "QLD", "SA", "TAS", "NT", "ACT"]);

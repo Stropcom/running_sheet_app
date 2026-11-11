@@ -4,7 +4,7 @@
 // registry → targetCards → associateCards → occurrences → registeredMentions → sheetPass → finish.
 // Same code in the same order as before; see docs/features/dev-and-ops.md (Big-file plan, 4c).
 
-import { registeredSuburb } from "@shared/registeredMentions";
+import { registeredStreet, registeredSuburb } from "@shared/registeredMentions";
 import { IntelligenceEntity } from "../intelligence";
 import type { RegistryState } from "./registry";
 
@@ -36,9 +36,13 @@ export function findRegisteredMentions(
       if (key.startsWith("vehicle::") && fromCard(ent))
         registeredPlateLabel.set(key.slice("vehicle::".length), ent.shortForm);
       else if (key.startsWith("address::") && fromCard(ent))
+        // The card holds "19 Jacaranda Drive, ATTADALE WA"; rows say
+        // "19 Jacaranda Drive", so look for the street and check the suburb.
         registeredStreets.push({
-          street: key.slice("address::".length),
-          suburb: registeredSuburb(ent.shortForm),
+          street: registeredStreet(key.slice("address::".length)),
+          suburb:
+            registeredSuburb(ent.shortForm) ??
+            registeredSuburb(key.slice("address::".length)),
           key,
         });
     }
@@ -50,8 +54,8 @@ export function findRegisteredMentions(
         );
       else if (key.startsWith("address::"))
         registeredStreets.push({
-          street: key.slice("address::".length),
-          suburb: null,
+          street: registeredStreet(key.slice("address::".length)),
+          suburb: registeredSuburb(key.slice("address::".length)),
           key,
         });
     }

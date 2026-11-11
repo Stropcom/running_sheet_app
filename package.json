@@ -1,6 +1,6 @@
 {
   "name": "running_sheet_app",
-  "version": "2.83.6",
+  "version": "2.83.7",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -11,6 +11,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
     "check:sizes": "node scripts/check-file-sizes.mjs",
+    "check:intel-golden": "tsx scripts/dev/intel-golden.ts check",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:e2e": "playwright test",

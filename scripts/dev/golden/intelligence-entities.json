@@ -1,0 +1,740 @@
+[
+ {
+  "isIndicesOnly": true,
+  "occurrences": [
+   {
+    "fullDescription": "HBF: 19 Jacaranda Drive, ATTADALE (from target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Lawrence SANTOS [HBF]",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "HBF: 19 Jacaranda Drive, ATTADALE (from target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Lawrence SANTOS [HBF]",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   }
+  ],
+  "shortForm": "19 Jacaranda Drive, ATTADALE",
+  "type": "address"
+ },
+ {
+  "isIndicesOnly": false,
+  "occurrences": [
+   {
+    "fullDescription": "HBF: 4 Hay Street, PERTH (from target: Maria SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Maria SANTOS [HBF]",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Registered address 4 hay street, perth wa named in the row",
+    "observationSnippet": "Maria SANTOS (M SANTOS) entered 4 Hay Street, PERTH WA.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 9,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": 360
+   }
+  ],
+  "shortForm": "4 hay street, perth wa",
+  "type": "address"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "occurrences": [
+   {
+    "fullDescription": "SANTOS carried a box approx 30cm x 30cm x 30cm into 7 Ocean Drive, SCARBOROUGH WA",
+    "observationSnippet": "SANTOS carried a box approx 30cm x 30cm x 30cm into 7 Ocean Drive, SCARBOROUGH W…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 5,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 400
+   }
+  ],
+  "shortForm": "7 Ocean Drive, SCARBOROUGH",
+  "type": "address"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "occurrences": [
+   {
+    "fullDescription": "entered Crown Towers, 1 Great Eastern Highway, BURSWOOD WA",
+    "observationSnippet": "Peter AMBERLINE (AMBERLINE) entered Crown Towers, 1 Great Eastern Highway, BURSW…",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 16,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 380
+   }
+  ],
+  "shortForm": "Crown Towers, 1 Great Eastern Highway, BURSWOOD",
+  "type": "address"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "occurrences": [
+   {
+    "fullDescription": "parked outside The Reveley, 1 Barrack Street, PERTH WA",
+    "observationSnippet": "A grey sedan (Vehicle 1ZZZ111) parked outside The Reveley, 1 Barrack Street, PER…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 4,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 390
+   },
+   {
+    "fullDescription": "travelled to The Reveley, 1 Barrack Street, PERTH WA",
+    "observationSnippet": "A grey Toyota (Vehicle 1EMB303) travelled to The Reveley, 1 Barrack Street, PERT…",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 15,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 370
+   }
+  ],
+  "shortForm": "The Reveley, 1 Barrack Street, PERTH",
+  "type": "address"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "occurrences": [
+   {
+    "fullDescription": "Observed Daniel REID",
+    "observationSnippet": "Observed Daniel REID (REID) at 12 Smith Street, Perth.",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 17,
+    "sheetId": 4,
+    "sheetTitle": "20261008 - No target",
+    "timeMinutes": 360
+   },
+   {
+    "fullDescription": "a male, Daniel REID",
+    "observationSnippet": "Susan PARK (S PARK) and a male, Daniel REID (REID), in a silver Mazda (Vehicle 1…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 11,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": 380
+   }
+  ],
+  "shortForm": "Daniel REID (REID)",
+  "type": "person"
+ },
+ {
+  "associateId": 2,
+  "associateOfTargetId": 1,
+  "associateOfTargetName": "Lawrence SANTOS",
+  "isAssociate": true,
+  "isIndicesOnly": false,
+  "occurrences": [
+   {
+    "fullDescription": "Associate: John PARK, TGT: PARK (of target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Associate card — John PARK (associate of Lawrence SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: John PARK, TGT: PARK (of target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Associate card — John PARK (associate of Lawrence SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: John PARK, TGT: PARK (of target: Lawrence SANTOS, operation: OP GOLDEN TWO)",
+    "observationSnippet": "Associate card — John PARK (associate of Lawrence SANTOS)",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: John PARK, TGT: PARK (of target: Lawrence SANTOS, operation: OP GOLDEN TWO)",
+    "observationSnippet": "Associate card — John PARK (associate of Lawrence SANTOS)",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: John PARK, TGT: PARK (of target: Lawrence SANTOS, operation: Registry)",
+    "observationSnippet": "Associate card — John PARK (associate of Lawrence SANTOS)",
+    "operationId": 0,
+    "operationName": "(Registry)",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: John PARK, TGT: PARK (of target: Lawrence SANTOS, operation: Registry)",
+    "observationSnippet": "Associate card — John PARK (associate of Lawrence SANTOS)",
+    "operationId": 0,
+    "operationName": "(Registry)",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "John PARK",
+    "observationSnippet": "John PARK (PARK) met with Peter AMBERLINE (AMBERLINE) at the car park.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 6,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 410
+   }
+  ],
+  "shortForm": "John PARK",
+  "surname": "PARK",
+  "type": "person"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": true,
+  "occurrences": [
+   {
+    "fullDescription": "Observed Lawrence SANTOS",
+    "observationSnippet": "Observed Lawrence SANTOS (SANTOS) leave 19 Jacaranda Drive, ATTADALE in Vehicle …",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 14,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 360
+   },
+   {
+    "fullDescription": "Observed Lawrence SANTOS",
+    "observationSnippet": "Observed Lawrence SANTOS (SANTOS) walking to 12 Smith Street, Perth.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 2,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 370
+   },
+   {
+    "fullDescription": "Observed Lawrence SANTOS",
+    "observationSnippet": "SANTOS carried a box approx 30cm x 30cm x 30cm into 7 Ocean Drive, SCARBOROUGH W…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 5,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 400
+   },
+   {
+    "fullDescription": "Observed Lawrence SANTOS",
+    "observationSnippet": "Vehicle 1EMB303, SANTOS driving, departed 19 Jacaranda Drive and continued via:",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 3,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 380
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS",
+    "observationSnippet": "SANTOS carried a box approx 30cm x 30cm x 30cm into 7 Ocean Drive, SCARBOROUGH W…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 5,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 400
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS",
+    "observationSnippet": "Vehicle 1EMB303, SANTOS driving, departed 19 Jacaranda Drive and continued via:",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 3,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 380
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS, TGT: SANTOS (operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Lawrence SANTOS (TGT: SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS, TGT: SANTOS (operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Lawrence SANTOS (TGT: SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS, TGT: SANTOS (operation: OP GOLDEN TWO)",
+    "observationSnippet": "Target card — Lawrence SANTOS (TGT: SANTOS)",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS, TGT: SANTOS (operation: OP GOLDEN TWO)",
+    "observationSnippet": "Target card — Lawrence SANTOS (TGT: SANTOS)",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS, TGT: SANTOS (operation: Registry)",
+    "observationSnippet": "Target card — Lawrence SANTOS (TGT: SANTOS)",
+    "operationId": 0,
+    "operationName": "(Registry)",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Target: Lawrence SANTOS, TGT: SANTOS (operation: Registry)",
+    "observationSnippet": "Target card — Lawrence SANTOS (TGT: SANTOS)",
+    "operationId": 0,
+    "operationName": "(Registry)",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   }
+  ],
+  "shortForm": "Lawrence SANTOS",
+  "surname": "SANTOS",
+  "targetId": 1,
+  "tgtAlias": "SANTOS",
+  "type": "person"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": true,
+  "occurrences": [
+   {
+    "fullDescription": "Maria SANTOS",
+    "observationSnippet": "Maria SANTOS (M SANTOS) entered 4 Hay Street, PERTH WA.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 9,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": 360
+   },
+   {
+    "fullDescription": "Target: Maria SANTOS, TGT: M SANTOS (operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Maria SANTOS (TGT: M SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Target: Maria SANTOS, TGT: M SANTOS (operation: Registry)",
+    "observationSnippet": "Target card — Maria SANTOS (TGT: M SANTOS)",
+    "operationId": 0,
+    "operationName": "(Registry)",
+    "rowId": 0,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": null
+   }
+  ],
+  "shortForm": "Maria SANTOS",
+  "surname": "SANTOS",
+  "targetId": 2,
+  "tgtAlias": "M SANTOS",
+  "type": "person"
+ },
+ {
+  "identicalProfile": {
+   "id": 1,
+   "label": "Peter AMBERLINE",
+   "type": "associate"
+  },
+  "isIndicesOnly": false,
+  "isTarget": true,
+  "occurrences": [
+   {
+    "fullDescription": "Associate: Peter AMBERLINE, TGT: AMBERLINE (of target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Associate card — Peter AMBERLINE (associate of Lawrence SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: Peter AMBERLINE, TGT: AMBERLINE (of target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Associate card — Peter AMBERLINE (associate of Lawrence SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Peter AMBERLINE",
+    "observationSnippet": "Peter AMBERLINE (AMBERLINE) entered Crown Towers, 1 Great Eastern Highway, BURSW…",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 16,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 380
+   },
+   {
+    "fullDescription": "Target: Peter AMBERLINE, TGT: AMBERLINE (operation: OP GOLDEN TWO)",
+    "observationSnippet": "Target card — Peter AMBERLINE (TGT: AMBERLINE)",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 0,
+    "sheetId": 0,
+    "sheetTitle": "(no sheet linked)",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "met with Peter AMBERLINE",
+    "observationSnippet": "John PARK (PARK) met with Peter AMBERLINE (AMBERLINE) at the car park.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 6,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 410
+   }
+  ],
+  "shortForm": "Peter AMBERLINE",
+  "surname": "AMBERLINE",
+  "targetId": 3,
+  "tgtAlias": "AMBERLINE",
+  "type": "person"
+ },
+ {
+  "associateId": 1,
+  "associateOfTargetId": 1,
+  "associateOfTargetName": "Lawrence SANTOS",
+  "identicalProfile": {
+   "id": 3,
+   "label": "Peter AMBERLINE",
+   "type": "target"
+  },
+  "isAssociate": true,
+  "isIndicesOnly": false,
+  "occurrences": [
+   {
+    "fullDescription": "Associate: Peter AMBERLINE, TGT: AMBERLINE (of target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Associate card — Peter AMBERLINE (associate of Lawrence SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: Peter AMBERLINE, TGT: AMBERLINE (of target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Associate card — Peter AMBERLINE (associate of Lawrence SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Peter AMBERLINE",
+    "observationSnippet": "Peter AMBERLINE (AMBERLINE) entered Crown Towers, 1 Great Eastern Highway, BURSW…",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 16,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 380
+   },
+   {
+    "fullDescription": "Target: Peter AMBERLINE, TGT: AMBERLINE (operation: OP GOLDEN TWO)",
+    "observationSnippet": "Target card — Peter AMBERLINE (TGT: AMBERLINE)",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 0,
+    "sheetId": 0,
+    "sheetTitle": "(no sheet linked)",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "met with Peter AMBERLINE",
+    "observationSnippet": "John PARK (PARK) met with Peter AMBERLINE (AMBERLINE) at the car park.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 6,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 410
+   }
+  ],
+  "shortForm": "Peter AMBERLINE",
+  "surname": "AMBERLINE",
+  "type": "person"
+ },
+ {
+  "associateId": 3,
+  "associateOfTargetId": 2,
+  "associateOfTargetName": "Maria SANTOS",
+  "isAssociate": true,
+  "isIndicesOnly": false,
+  "occurrences": [
+   {
+    "fullDescription": "Associate: Susan PARK, TGT: S PARK (of target: Maria SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Associate card — Susan PARK (associate of Maria SANTOS)",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Associate: Susan PARK, TGT: S PARK (of target: Maria SANTOS, operation: Registry)",
+    "observationSnippet": "Associate card — Susan PARK (associate of Maria SANTOS)",
+    "operationId": 0,
+    "operationName": "(Registry)",
+    "rowId": 0,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "Susan PARK",
+    "observationSnippet": "Susan PARK (S PARK) and a male, Daniel REID (REID), in a silver Mazda (Vehicle 1…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 11,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": 380
+   }
+  ],
+  "shortForm": "Susan PARK",
+  "surname": "PARK",
+  "type": "person"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "lowConfidence": true,
+  "occurrences": [
+   {
+    "fullDescription": "A male",
+    "observationSnippet": "A grey sedan (Vehicle 1ZZZ111) parked outside The Reveley, 1 Barrack Street, PER…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 4,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 390
+   }
+  ],
+  "shortForm": "UNKNOWN MALE 1",
+  "type": "unknown"
+ },
+ {
+  "isIndicesOnly": false,
+  "occurrences": [
+   {
+    "fullDescription": "A grey Toyota",
+    "observationSnippet": "A grey Toyota (Vehicle 1EMB303) travelled to The Reveley, 1 Barrack Street, PERT…",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 15,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 370
+   },
+   {
+    "fullDescription": "A grey Toyota",
+    "observationSnippet": "Observed Lawrence SANTOS (SANTOS) leave 19 Jacaranda Drive, ATTADALE in Vehicle …",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 14,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": 360
+   },
+   {
+    "fullDescription": "Registered vehicle 1EMB303 named in the row",
+    "observationSnippet": "Vehicle 1EMB303 was seen again at 19 Jacaranda Drive.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 13,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": 400
+   },
+   {
+    "fullDescription": "Registered vehicle 1EMB303 named in the row",
+    "observationSnippet": "Vehicle 1EMB303, SANTOS driving, departed 19 Jacaranda Drive and continued via:",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 3,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 380
+   },
+   {
+    "fullDescription": "V1F: 1EMB303 grey Toyota Camry sedan (from target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Lawrence SANTOS [V1F]",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": null
+   },
+   {
+    "fullDescription": "V1F: 1EMB303 grey Toyota Camry sedan (from target: Lawrence SANTOS, operation: OP GOLDEN ONE)",
+    "observationSnippet": "Target card — Lawrence SANTOS [V1F]",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 0,
+    "sheetId": 3,
+    "sheetTitle": "20261007 - SANTOS",
+    "timeMinutes": null
+   }
+  ],
+  "shortForm": "1EMB303 grey Toyota Camry sedan",
+  "type": "vehicle"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "occurrences": [
+   {
+    "fullDescription": ", in a silver Mazda",
+    "observationSnippet": "Susan PARK (S PARK) and a male, Daniel REID (REID), in a silver Mazda (Vehicle 1…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 11,
+    "sheetId": 2,
+    "sheetTitle": "20261006 - M SANTOS",
+    "timeMinutes": 380
+   },
+   {
+    "fullDescription": "A silver Mazda",
+    "observationSnippet": "A silver Mazda (Vehicle 1MAZ777) parked at 12 Smith Street, Perth.",
+    "operationId": 2,
+    "operationName": "OP GOLDEN TWO",
+    "rowId": 18,
+    "sheetId": 4,
+    "sheetTitle": "20261008 - No target",
+    "timeMinutes": 370
+   }
+  ],
+  "shortForm": "1MAZ777 silver Mazda",
+  "type": "vehicle"
+ },
+ {
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "occurrences": [
+   {
+    "fullDescription": "A grey sedan",
+    "observationSnippet": "A grey sedan (Vehicle 1ZZZ111) parked outside The Reveley, 1 Barrack Street, PER…",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 4,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 390
+   }
+  ],
+  "shortForm": "1ZZZ111 grey sedan",
+  "type": "vehicle"
+ },
+ {
+  "aliasLabels": [
+   "1OLD111 white Holden"
+  ],
+  "isIndicesOnly": false,
+  "isTarget": false,
+  "occurrences": [
+   {
+    "fullDescription": "A white Holden",
+    "observationSnippet": "A white Holden (Vehicle 1NEW222) departed.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 8,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 430
+   },
+   {
+    "fullDescription": "A white Holden",
+    "observationSnippet": "A white Holden (Vehicle 1OLD111) arrived.",
+    "operationId": 1,
+    "operationName": "OP GOLDEN ONE",
+    "rowId": 7,
+    "sheetId": 1,
+    "sheetTitle": "20261005 - SANTOS",
+    "timeMinutes": 420
+   }
+  ],
+  "shortForm": "white Holden (Vehicle 1NEW222)",
+  "type": "vehicle"
+ }
+]

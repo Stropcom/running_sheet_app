@@ -3,6 +3,9 @@ import {
   notifyRecipientIds,
   pickCopySourceWeek,
   taskingCellText,
+  taskingNotificationUrl,
+  taskingWeekFromSearch,
+  taskingWeekUrl,
   weekRangeLabel,
 } from "@shared/opManagerWeeks";
 
@@ -106,5 +109,90 @@ describe("taskingCellText", () => {
       primary: "",
       secondary: "",
     });
+  });
+});
+
+describe("opening a posted tasking from its notification", () => {
+  it("the link names the week", () => {
+    expect(taskingWeekUrl("2026-06-08")).toBe(
+      "/operation-manager?week=2026-06-08"
+    );
+  });
+
+  it("reads the week back from the page address", () => {
+    expect(taskingWeekFromSearch("?week=2026-06-08")).toBe("2026-06-08");
+    expect(taskingWeekFromSearch("week=2026-06-08")).toBe("2026-06-08");
+    expect(taskingWeekFromSearch("?x=1&week=2026-06-08&y=2")).toBe(
+      "2026-06-08"
+    );
+  });
+
+  it("asks for nothing when there is no week or it is not a real date", () => {
+    expect(taskingWeekFromSearch("")).toBeNull();
+    expect(taskingWeekFromSearch(null)).toBeNull();
+    expect(taskingWeekFromSearch("?week=")).toBeNull();
+    expect(taskingWeekFromSearch("?week=2026-13-01")).toBeNull();
+    expect(taskingWeekFromSearch("?week=2026-02-30")).toBeNull();
+    expect(taskingWeekFromSearch("?week=junk")).toBeNull();
+    expect(taskingWeekFromSearch("?weekend=2026-06-08")).toBeNull();
+  });
+
+  it("a notification that already names its week keeps its link", () => {
+    expect(
+      taskingNotificationUrl({
+        url: "/operation-manager?week=2026-06-08",
+        sourceModule: "opManager",
+        body: "CTO Tasking for the week of 08 Jun 2026 has been posted.",
+      })
+    ).toBe("/operation-manager?week=2026-06-08");
+  });
+
+  it("an older tasking notification opens its week from its wording", () => {
+    const old = (body: string) =>
+      taskingNotificationUrl({
+        url: "/operation-manager",
+        sourceModule: "opManager",
+        body,
+      });
+    expect(
+      old("CTO Tasking for the week of 08 Jun 2026 has been posted.")
+    ).toBe("/operation-manager?week=2026-06-08");
+    expect(
+      old("CTO Tasking for the week of 7 Sept 2026 has been posted.")
+    ).toBe("/operation-manager?week=2026-09-07");
+    expect(
+      old("CTO Tasking for the week of 28 Dec 2026 has been posted.")
+    ).toBe("/operation-manager?week=2026-12-28");
+  });
+
+  it("falls back to the folder when the wording has no readable week", () => {
+    expect(
+      taskingNotificationUrl({
+        url: "/operation-manager",
+        sourceModule: "opManager",
+        body: "CTO Tasking has been posted.",
+      })
+    ).toBe("/operation-manager");
+    expect(
+      taskingNotificationUrl({
+        url: "/operation-manager",
+        sourceModule: "opManager",
+        body: "CTO Tasking for the week of 31 Feb 2026 has been posted.",
+      })
+    ).toBe("/operation-manager");
+  });
+
+  it("another module's notification is left alone", () => {
+    expect(
+      taskingNotificationUrl({
+        url: "/operation-manager",
+        sourceModule: "other",
+        body: "the week of 08 Jun 2026",
+      })
+    ).toBe("/operation-manager");
+    expect(
+      taskingNotificationUrl({ url: "/sheet/12", sourceModule: "x", body: "" })
+    ).toBe("/sheet/12");
+    expect(taskingNotificationUrl({ url: null })).toBeNull();
   });
 });

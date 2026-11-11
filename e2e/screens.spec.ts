@@ -1791,6 +1791,64 @@ test("Top banner: the operation name is a Show & Share switch, green while on", 
   expect(await flag()).toBe("false");
 });
 
+test("A 'tasking posted' notification opens that week's tasking, not just the folder", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-07-02"; // a Monday, a made-up week
+  const call = async (proc: string, input: unknown) => {
+    const res = await page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+    return (await res.json())[0];
+  };
+  const me = await (await page.request.get("/api/trpc/auth.me")).json();
+  const myId = me.result.data.json.id as number;
+
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1400",
+      primaryTask: "RAVEN",
+    });
+    // Posted to this officer only.
+    await call("opManager.postWeek", { weekStart: W, userIds: [myId] });
+
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/");
+    await page
+      .locator('button[aria-label="Notifications"]:visible')
+      .first()
+      .click();
+    await page
+      .getByText(/CTO Tasking for the week of 02 Jul\w* 2040 has been posted\./)
+      .first()
+      .click();
+
+    // The document itself: the week's full view (it has Post & Notify), not
+    // the folder list. The address is tidied so Back does not reopen it.
+    await expect(
+      page.getByRole("button", { name: /Post & Notify/ })
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/operation-manager$/);
+
+    // A week that is not in the list (deleted) leaves the folder showing.
+    await call("opManager.deleteWeek", { weekStart: W });
+    await page.goto(`/operation-manager?week=${W}`);
+    await expect(
+      page.getByRole("heading", { name: "CTO Weekly Tasking" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Post & Notify/ })
+    ).toHaveCount(0);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});
+
 test("Top banner: the operation name shows on an iPad held sideways and clears the RunLog wordmark", async ({
   page,
 }) => {

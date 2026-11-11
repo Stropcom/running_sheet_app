@@ -8,7 +8,7 @@ import {
   createNotificationsForUsers,
   visitorUserIdsOf,
 } from "../db";
-import { notifyRecipientIds } from "@shared/opManagerWeeks";
+import { notifyRecipientIds, taskingWeekUrl } from "@shared/opManagerWeeks";
 
 import {
   getOpManagerPriorityBoard,
@@ -219,7 +219,9 @@ export const opManagerRouter = router({
       });
       const title = "New CTO Tasking Posted";
       const body = `CTO Tasking for the week of ${weekLabel} has been posted.`;
-      const url = "/operation-manager";
+      // The link names the week, so the notification opens that week's
+      // tasking itself, not just the folder it is listed in.
+      const url = taskingWeekUrl(input.weekStart);
       // In-app inbox only — browser push was removed (unreliable: depends
       // on OS permissions/per-device subscriptions, broken outright on iOS
       // Safari unless installed as a home-screen PWA). See notifications

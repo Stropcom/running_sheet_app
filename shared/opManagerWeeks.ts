@@ -105,3 +105,58 @@ export function taskingCellText(cell: {
         : (cell.secondaryTask ?? ""),
   };
 }
+
+// ─── Opening a posted tasking from its notification ─────────────────────────
+// "New CTO Tasking Posted" used to link to the CTO Weekly Tasking folder, so
+// the officer then had to find the week in the list. The link now names the
+// week, and the page opens that week's tasking (the document) straight away.
+
+const TASKING_PATH = "/operation-manager";
+
+/** The link a "tasking posted" notification carries for a week. */
+export function taskingWeekUrl(weekStart: string): string {
+  return `${TASKING_PATH}?week=${weekStart}`;
+}
+
+/** The week a page address asks for ("?week=2026-06-08"), or null when it asks
+ * for none or the value is not a real calendar date. */
+export function taskingWeekFromSearch(
+  search: string | null | undefined
+): string | null {
+  const m = /(?:^|[?&])week=(\d{4})-(\d{2})-(\d{2})(?:&|$)/.exec(search ?? "");
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    t.getUTCFullYear() !== y ||
+    t.getUTCMonth() !== mo - 1 ||
+    t.getUTCDate() !== d
+  )
+    return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+/**
+ * Where a notification should take the officer. A tasking-posted notification
+ * made before the link named its week ("/operation-manager", body "CTO Tasking
+ * for the week of 08 Jun 2026 has been posted.") is read the same way, so the
+ * ones already in the inbox open the document too. Anything else keeps its own
+ * link; null when it has none.
+ */
+export function taskingNotificationUrl(n: {
+  url?: string | null;
+  sourceModule?: string | null;
+  body?: string | null;
+}): string | null {
+  const url = n.url ?? null;
+  if (!url) return null;
+  if (url !== TASKING_PATH || n.sourceModule !== "opManager") return url;
+  const m = /\bweek of (\d{1,2}) ([A-Za-z]{3})[A-Za-z]* (\d{4})\b/.exec(
+    n.body ?? ""
+  );
+  if (!m) return url;
+  const month = MONTHS.findIndex(x => x.toLowerCase() === m[2].toLowerCase());
+  if (month < 0) return url;
+  const iso = `${m[3]}-${String(month + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return taskingWeekFromSearch(`?week=${iso}`) ? taskingWeekUrl(iso) : url;
+}

@@ -48,6 +48,9 @@ export interface ImageryEntry {
   rowTime: string;
   type: "photo" | "video" | "";
   saved: boolean;
+  /** Who marked it saved (set by the server, shared/imageryStamp.ts). */
+  savedByCIN?: string | null;
+  savedByName?: string | null;
 }
 
 export interface GovernanceUpsertInput {

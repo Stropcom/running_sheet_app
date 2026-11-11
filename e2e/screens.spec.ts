@@ -1921,6 +1921,79 @@ test("CTO Weekly Tasking: every layout shows each team's on-duty count, a combin
   }
 });
 
+test("Governance Imagery: a row marked Saved shows the CIN and name of the officer who saved it", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", { name: `Imagery ${Date.now()}` });
+  const opId = op.id ?? op.operationId ?? op;
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  // The officer is flagged as having taken imagery, so the Imagery section has
+  // a row for them.
+  const sheet = await post("sheet.create", {
+    operationId: opId,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: true, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation:
+      "Surveillance commenced in the vicinity of 12 Smith Street, PERTH WA (12 Smith Street).",
+  });
+
+  // Marked saved (the screen asks for photos to be linked first; this goes to
+  // the server directly, which is what stamps who it was). A name sent along
+  // is not trusted.
+  await post("governance.update", {
+    sheetId,
+    imageryEntries: [
+      {
+        cin,
+        rowTime: "",
+        type: "",
+        saved: true,
+        savedByCIN: "FORGED",
+        savedByName: "Not Me",
+      },
+    ],
+  });
+
+  await page.goto(`/governance/${sheetId}`);
+  await page.getByText("Operative — Imagery").click();
+  const stamp = page.getByTestId("imagery-saved-by");
+  await expect(stamp).toBeVisible();
+  await expect(stamp).toContainText(cin);
+  await expect(stamp).not.toContainText("FORGED");
+  await expect(stamp).not.toContainText("Not Me");
+
+  // Marked saved again by someone else's save of another change keeps the
+  // first officer; un-saving clears the name.
+  await post("governance.update", {
+    sheetId,
+    imageryEntries: [{ cin, rowTime: "", type: "photo", saved: true }],
+  });
+  await page.reload();
+  await page.getByText("Operative — Imagery").click();
+  await expect(page.getByTestId("imagery-saved-by")).toContainText(cin);
+  await post("governance.update", {
+    sheetId,
+    imageryEntries: [{ cin, rowTime: "", type: "photo", saved: false }],
+  });
+  await page.reload();
+  await page.getByText("Operative — Imagery").click();
+  await expect(page.getByTestId("imagery-saved-by")).toHaveCount(0);
+});
+
 test("Top banner: the operation name shows on an iPad held sideways and clears the RunLog wordmark", async ({
   page,
 }) => {

@@ -19,6 +19,7 @@ import {
   reopenSheetSummary,
 } from "../db";
 import { assertCanCompleteSummary } from "./_helpers";
+import { stampImagerySaved } from "@shared/imageryStamp";
 
 /** RS Governance Folder */
 export const governanceRouter = router({
@@ -117,6 +118,10 @@ export const governanceRouter = router({
               rowTime: z.string(),
               type: z.enum(["photo", "video", ""]),
               saved: z.boolean(),
+              // Sent back as stored; the server decides who it was
+              // (shared/imageryStamp.ts) and ignores these.
+              savedByCIN: z.string().nullable().optional(),
+              savedByName: z.string().nullable().optional(),
             })
           )
           .optional(),
@@ -168,8 +173,26 @@ export const governanceRouter = router({
         if (nameField)
           (cinUpdate as Record<string, string | null>)[nameField] = nameValue;
       }
+      // Imagery rows marked Saved are stamped with the officer who pressed
+      // it (CIN and name), as the Team Leader items are.
+      let imageryEntries = input.imageryEntries;
+      if (imageryEntries) {
+        let stored: { cin: string; rowTime: string; saved: boolean }[] = [];
+        try {
+          stored = JSON.parse(
+            (await getGovernanceRecord(input.sheetId))?.imageryEntries ?? "[]"
+          );
+        } catch {
+          stored = [];
+        }
+        imageryEntries = stampImagerySaved(stored, imageryEntries, {
+          cin: userCIN,
+          name: userName,
+        });
+      }
       const record = await upsertGovernanceRecord({
         ...input,
+        ...(imageryEntries ? { imageryEntries } : {}),
         ...cinUpdate,
       } as Parameters<typeof upsertGovernanceRecord>[0]);
 

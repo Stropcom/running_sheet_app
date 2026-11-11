@@ -38,6 +38,9 @@ interface ImageryEntry {
   rowTime: string;
   type: "photo" | "video" | "";
   saved: boolean;
+  /** Who marked it saved — set by the server (shared/imageryStamp.ts). */
+  savedByCIN?: string | null;
+  savedByName?: string | null;
 }
 
 // Derived (never persisted) — entity-link status for a CIN's imagery, used to
@@ -511,7 +514,7 @@ export default function GovernancePage() {
   // placeholder entries with no row of their own).
   const displayImagery = useMemo<DisplayImageryEntry[]>(() => {
     if (autoImagery.length === 0) return [];
-    const savedMap = new Map(imagery.map(e => [e.cin + e.rowTime, e.saved]));
+    const savedMap = new Map(imagery.map(e => [e.cin + e.rowTime, e]));
     return autoImagery.map(e => {
       const stat = e.rowTime
         ? rowPhotoStats.get(e.cin + "||" + e.rowTime)
@@ -520,7 +523,9 @@ export default function GovernancePage() {
       const linkedCount = stat?.linkedCount ?? 0;
       return {
         ...e,
-        saved: savedMap.get(e.cin + e.rowTime) ?? false,
+        saved: savedMap.get(e.cin + e.rowTime)?.saved ?? false,
+        savedByCIN: savedMap.get(e.cin + e.rowTime)?.savedByCIN ?? null,
+        savedByName: savedMap.get(e.cin + e.rowTime)?.savedByName ?? null,
         attachmentCount,
         linkedCount,
         allLinked: attachmentCount > 0 && linkedCount === attachmentCount,
@@ -961,13 +966,32 @@ export default function GovernancePage() {
                             }
                             updateImageryRow(idx, { saved: !entry.saved });
                           }}
-                          className="justify-self-center flex items-center justify-center"
+                          className="justify-self-center flex flex-col items-center justify-center gap-0.5"
                         >
                           {entry.saved ? (
                             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                           ) : (
                             <Circle className="w-4 h-4 text-muted-foreground" />
                           )}
+                          {/* Who pressed it, as the Team Leader items show. */}
+                          {entry.saved &&
+                            (entry.savedByCIN || entry.savedByName) && (
+                              <span
+                                className="flex flex-col items-center gap-0.5"
+                                data-testid="imagery-saved-by"
+                              >
+                                {entry.savedByCIN && (
+                                  <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                    {entry.savedByCIN}
+                                  </span>
+                                )}
+                                {entry.savedByName && (
+                                  <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400/70">
+                                    {entry.savedByName}
+                                  </span>
+                                )}
+                              </span>
+                            )}
                         </button>
                       </div>
                     );

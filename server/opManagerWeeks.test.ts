@@ -161,6 +161,9 @@ describe("opening a posted tasking from its notification", () => {
       old("CTO Tasking for the week of 7 Sept 2026 has been posted.")
     ).toBe("/operation-manager?week=2026-09-07");
     expect(
+      old("CTO Tasking for the week of 02 July 2040 has been posted.")
+    ).toBe("/operation-manager?week=2040-07-02");
+    expect(
       old("CTO Tasking for the week of 28 Dec 2026 has been posted.")
     ).toBe("/operation-manager?week=2026-12-28");
   });

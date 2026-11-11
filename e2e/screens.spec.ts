@@ -1898,12 +1898,19 @@ test("CTO Weekly Tasking: every layout shows each team's on-duty count, a combin
       const first = page.locator(`${root} .tcv-cover`).first();
       await expect(first).toBeVisible();
       await expect(first).toContainText(counts);
+      // The combined Monday shows both teams' numbers, in either team's panel.
+      const pair = page.locator(`${root} .tcv-cover-pair`).first();
+      await expect(pair).toContainText(/T1\s*\S*\s*\d+\/\d+/);
+      await expect(pair).toContainText(/T2\s*\S*\s*\d+\/\d+/);
     }
 
     // Calendar: a single day shows its count, a combined day shows T1 and T2.
     await open("tile-days");
     const tiles = page.locator(".tcv-ta .tcv-tile");
     const combined = tiles.nth(0).locator(".tcv-tl-cover").first();
+    // "T1 + T2" without the word "combined".
+    await expect(tiles.nth(0)).toContainText("T1 + T2");
+    await expect(tiles.nth(0)).not.toContainText(/combined/i);
     await expect(combined).toContainText(/T1\s*\S*\s*\d+\/\d+/);
     await expect(combined).toContainText(/T2\s*\S*\s*\d+\/\d+/);
     await expect(tiles.nth(1).locator(".tcv-tl-cover").first()).toContainText(

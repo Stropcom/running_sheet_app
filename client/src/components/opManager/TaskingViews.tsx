@@ -295,6 +295,25 @@ function cover(
   );
 }
 
+/** What a team's day shows for its on-duty count: its own number, or on a
+ * combined Team 1 + Team 2 day both teams' ("T1 4/5  T2 5/5"), so the count
+ * reads the same in whichever team's panel or table the day is looked at. */
+function coverFor(
+  c: Pick<Ctx, "counts" | "warn">,
+  teamId: string,
+  dayIndex: number,
+  primary: string,
+  blended: boolean
+): ReactNode {
+  if (!blended) return cover(c, teamId, dayIndex, primary);
+  return (
+    <span className="tcv-cover-pair">
+      {cover(c, "surv1", dayIndex, primary, "T1 ")}
+      {cover(c, "surv2", dayIndex, primary, "T2 ")}
+    </span>
+  );
+}
+
 /** "0600-1500" whatever way it was typed (07:00-15:00, an en dash, spaces). */
 function canonShift(shift: string): string {
   const a = shiftStart(shift);
@@ -475,7 +494,7 @@ function PanelBanded({
                       {bl && !c.off && <BlendTag />}
                       {ed && bl && <SplitBtn edit={edit!} i={i} />}
                       {c.shift && !c.off
-                        ? cover({ counts, warn }, t.id, i, c.primary)
+                        ? coverFor({ counts, warn }, t.id, i, c.primary, bl)
                         : warn(t.id, i, c.primary)}
                       {breach(t.id, i)}
                     </div>
@@ -598,7 +617,7 @@ function PanelTables({
                           {bl && <BlendTag />}
                           {bl && <SplitBtn edit={edit!} i={i} />}
                           {c.shift && !c.off
-                            ? cover({ counts, warn }, t.id, i, c.primary)
+                            ? coverFor({ counts, warn }, t.id, i, c.primary, bl)
                             : warn(t.id, i, c.primary)}
                           {breach(t.id, i)}
                         </td>
@@ -644,7 +663,7 @@ function PanelTables({
                           )}
                           {bl && <BlendTag />}
                           {c.shift
-                            ? cover({ counts, warn }, t.id, i, c.primary)
+                            ? coverFor({ counts, warn }, t.id, i, c.primary, bl)
                             : warn(t.id, i, c.primary)}
                           {breach(t.id, i)}
                         </td>
@@ -754,34 +773,15 @@ function DayTiles({
                 <i />
                 <div className="tcv-tl-body">
                   <div className="tcv-tl-team">
-                    <span>{bl ? "T1 + T2 combined" : t.label}</span>
+                    <span>{bl ? "T1 + T2" : t.label}</span>
+                    {!c.off && (c.shift || c.primary) && (
+                      <span className="tcv-tl-cover">
+                        {coverFor({ counts, warn }, t.id, i, c.primary, bl)}
+                      </span>
+                    )}
                     {breach(t.id, i)}
                     {bl && breach("surv2", i)}
                   </div>
-                  {!c.off && (c.shift || c.primary) && (
-                    <div className="tcv-tl-cover">
-                      {bl ? (
-                        <>
-                          {cover(
-                            { counts, warn },
-                            "surv1",
-                            i,
-                            c.primary,
-                            "T1 "
-                          )}
-                          {cover(
-                            { counts, warn },
-                            "surv2",
-                            i,
-                            c.primary,
-                            "T2 "
-                          )}
-                        </>
-                      ) : (
-                        cover({ counts, warn }, t.id, i, c.primary)
-                      )}
-                    </div>
-                  )}
                   {c.off ? (
                     <span className="tcv-rdo" style={{ fontWeight: 600 }}>
                       RDO

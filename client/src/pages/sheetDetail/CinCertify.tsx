@@ -341,14 +341,21 @@ export function CinCertifyCell({
   // Pressing Add shows the dropdown with its list already open, so picking a
   // CIN is one tap, not two. Opened a moment after the dropdown appears: opened
   // in the same breath as the press, the tap that pressed Add also reaches the
-  // new list and shuts it again.
+  // new list and shuts it again. A close that arrives within half a second of
+  // the list opening is that same stray tap (or a slow device catching up with
+  // the press), not the officer choosing to close it, so it is ignored — on a
+  // busy device the list used to open and then shut itself.
   const [listOpen, setListOpen] = useState(false);
+  const listOpenedAt = useRef(0);
   useEffect(() => {
     if (!adding) {
       setListOpen(false);
       return;
     }
-    const t = setTimeout(() => setListOpen(true), 60);
+    const t = setTimeout(() => {
+      listOpenedAt.current = Date.now();
+      setListOpen(true);
+    }, 60);
     return () => clearTimeout(t);
   }, [adding]);
 
@@ -424,7 +431,10 @@ export function CinCertifyCell({
         <div className="flex items-center gap-1.5">
           <Select
             open={listOpen}
-            onOpenChange={setListOpen}
+            onOpenChange={open => {
+              if (!open && Date.now() - listOpenedAt.current < 500) return;
+              setListOpen(open);
+            }}
             value={newName}
             onValueChange={v => {
               if (v === "__all__") {

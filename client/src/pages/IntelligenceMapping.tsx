@@ -7387,9 +7387,18 @@ export default function IntelligenceMapping() {
     setPendingMoveAddress,
   ]);
 
-  // Global inline rotation handler for custom marker popup slider
+  // Global inline rotation handler for custom marker popup slider.
+  // The save is debounced, and the page re-renders every second or so (the
+  // location polls), so the handler and its pending save must survive a
+  // re-render: it is set up once and reaches the mutation through a ref. (It
+  // used to depend on the mutation object, which is a new object on every
+  // render — the cleanup then cancelled the pending save, the rotation was
+  // never stored, and the next poll redrew the marker north up.)
+  const updateCustomMarkerMutRef = useRef(updateCustomMarkerMut);
+  updateCustomMarkerMutRef.current = updateCustomMarkerMut;
   useEffect(() => {
     let rotateTimer: ReturnType<typeof setTimeout> | null = null;
+    let pending: { id: number; rotation: number } | null = null;
     (window as any).__cmPopupRotate = (id: number, valueStr: string) => {
       const rotation = Number(valueStr);
       // Update the live preview image and degree label in the popup DOM
@@ -7429,15 +7438,20 @@ export default function IntelligenceMapping() {
       }
       // Debounce the DB save so we don't fire on every pixel of drag
       if (rotateTimer) clearTimeout(rotateTimer);
+      pending = { id, rotation };
       rotateTimer = setTimeout(() => {
-        updateCustomMarkerMut.mutate({ id, rotation });
+        rotateTimer = null;
+        pending = null;
+        updateCustomMarkerMutRef.current.mutate({ id, rotation });
       }, 400);
     };
     return () => {
       delete (window as any).__cmPopupRotate;
+      // Leaving the page with a save still waiting: send it now.
       if (rotateTimer) clearTimeout(rotateTimer);
+      if (pending) updateCustomMarkerMutRef.current.mutate(pending);
     };
-  }, [updateCustomMarkerMut]);
+  }, []);
 
   // Global delete handler for custom marker info window
   useEffect(() => {
@@ -7595,9 +7609,14 @@ export default function IntelligenceMapping() {
     };
   }, []);
 
-  // Inline rotation handler for intel pin popup slider
+  // Inline rotation handler for intel pin popup slider — set up once, with the
+  // mutation reached through a ref, for the reason given above
+  // (__cmPopupRotate): a re-render must not cancel the pending save.
+  const savePinOverrideMutRef = useRef(savePinOverrideMut);
+  savePinOverrideMutRef.current = savePinOverrideMut;
   useEffect(() => {
     let intelRotateTimer: ReturnType<typeof setTimeout> | null = null;
+    let pending: { label: string; rotation: number } | null = null;
     (window as any).__intelPopupRotate = (label: string, valueStr: string) => {
       const rotation = Number(valueStr);
       const encodedLabel = encodeURIComponent(label);
@@ -7635,15 +7654,19 @@ export default function IntelligenceMapping() {
       // Debounce the DB save so we don't fire on every pixel of drag —
       // same pattern as the custom marker rotation slider (__cmPopupRotate).
       if (intelRotateTimer) clearTimeout(intelRotateTimer);
+      pending = { label, rotation };
       intelRotateTimer = setTimeout(() => {
-        savePinOverrideMut.mutate({ label, rotation });
+        intelRotateTimer = null;
+        pending = null;
+        savePinOverrideMutRef.current.mutate({ label, rotation });
       }, 400);
     };
     return () => {
       delete (window as any).__intelPopupRotate;
       if (intelRotateTimer) clearTimeout(intelRotateTimer);
+      if (pending) savePinOverrideMutRef.current.mutate(pending);
     };
-  }, [savePinOverrideMut]);
+  }, []);
 
   // Move intel pin handler
   useEffect(() => {

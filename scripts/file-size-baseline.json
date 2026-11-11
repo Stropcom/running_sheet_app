@@ -1,7 +1,6 @@
 {
   "client/src/pages/IntelligenceMapping.tsx": 13811,
   "client/src/pages/SheetDetail.tsx": 5029,
-  "e2e/screens.spec.ts": 4908,
   "server/db/reports.ts": 4283,
   "client/src/pages/CtoRoster/RosterPage.tsx": 3517,
   "client/src/pages/OperationDetail.tsx": 3267,

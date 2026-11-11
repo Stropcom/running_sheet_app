@@ -66,8 +66,14 @@ rejected and sign-in appears to do nothing.
   and a tablet (820 px) with no sideways scroll; a photo is picked, linked as
   an **Item** with a description, uploaded only on Confirm, shows its Item pill
   and the description pop-over, and is found again in the Images folder.
-- `screens.spec.ts` — the other big screens (the safety net for splitting
-  `IntelligenceMapping.tsx`): a row can be deleted (the browser's own
+- `screens-01-…` to `screens-12-…` `.spec.ts` — the other big screens (the
+  safety net for splitting `IntelligenceMapping.tsx`). This was one file,
+  `screens.spec.ts`, until v2.83.6; it is now twelve files by area, in the
+  same order (the file number keeps the order), so a failure in one area no
+  longer hides the tests of every other area (each file stops at its first
+  failure, the others still run). Older notes in `docs/` that say
+  `screens.spec.ts` mean these files — search them by the test's name. The first
+  file covers: a row can be deleted (the browser's own
   "Delete this row?" question); a person typed on a sheet reaches the
   Intelligence folder and the operation's Intelligence page; the same person on
   a second sheet raises "Possible duplicate entity"; the operation page opens

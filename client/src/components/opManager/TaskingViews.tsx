@@ -258,6 +258,43 @@ function BreachDot({
   );
 }
 
+/**
+ * The team's people on duty over its minimum for a day ("4/5", red when short)
+ * in every layout, as the Timeline shows it at the end of its bars. Where the
+ * day is short on a tasked cell the clickable warning ("4/5 rostered", with its
+ * explanation) stands in its place, so the number is never shown twice. A
+ * blended day shows each team's own ("T1 4/5  T2 4/5"), `prefix` naming the
+ * team.
+ */
+function cover(
+  c: Pick<Ctx, "counts" | "warn">,
+  teamId: string,
+  dayIndex: number,
+  primary: string,
+  prefix = ""
+): ReactNode {
+  const w = c.warn(teamId, dayIndex, primary);
+  if (w)
+    return (
+      <span className="tcv-cover">
+        {prefix}
+        {w}
+      </span>
+    );
+  const n = c.counts?.[`${teamId}-${dayIndex}`];
+  if (!n) return null;
+  return (
+    <span
+      className={`tcv-cover${n.onDuty < n.min ? " short" : ""}`}
+      title={`${n.onDuty} of ${n.min} on duty`}
+      data-testid="tasking-cover"
+    >
+      {prefix}
+      {n.onDuty}/{n.min}
+    </span>
+  );
+}
+
 /** "0600-1500" whatever way it was typed (07:00-15:00, an en dash, spaces). */
 function canonShift(shift: string): string {
   const a = shiftStart(shift);
@@ -388,6 +425,7 @@ function PanelBanded({
   teams,
   dim,
   warn,
+  counts,
   breach,
   edit,
   openMenu,
@@ -436,7 +474,9 @@ function PanelBanded({
                       )}
                       {bl && !c.off && <BlendTag />}
                       {ed && bl && <SplitBtn edit={edit!} i={i} />}
-                      {warn(t.id, i, c.primary)}
+                      {c.shift && !c.off
+                        ? cover({ counts, warn }, t.id, i, c.primary)
+                        : warn(t.id, i, c.primary)}
                       {breach(t.id, i)}
                     </div>
                     {ed ? (
@@ -508,6 +548,7 @@ function PanelTables({
   teams,
   dim,
   warn,
+  counts,
   breach,
   edit,
   openMenu,
@@ -556,7 +597,9 @@ function PanelTables({
                           />
                           {bl && <BlendTag />}
                           {bl && <SplitBtn edit={edit!} i={i} />}
-                          {warn(t.id, i, c.primary)}
+                          {c.shift && !c.off
+                            ? cover({ counts, warn }, t.id, i, c.primary)
+                            : warn(t.id, i, c.primary)}
                           {breach(t.id, i)}
                         </td>
                         <td>
@@ -600,7 +643,9 @@ function PanelTables({
                             <span className="tcv-none">—</span>
                           )}
                           {bl && <BlendTag />}
-                          {warn(t.id, i, c.primary)}
+                          {c.shift
+                            ? cover({ counts, warn }, t.id, i, c.primary)
+                            : warn(t.id, i, c.primary)}
                           {breach(t.id, i)}
                         </td>
                         <td>
@@ -640,6 +685,7 @@ function DayTiles({
   teams,
   dim,
   warn,
+  counts,
   breach,
   edit,
   openMenu,
@@ -712,6 +758,30 @@ function DayTiles({
                     {breach(t.id, i)}
                     {bl && breach("surv2", i)}
                   </div>
+                  {!c.off && (c.shift || c.primary) && (
+                    <div className="tcv-tl-cover">
+                      {bl ? (
+                        <>
+                          {cover(
+                            { counts, warn },
+                            "surv1",
+                            i,
+                            c.primary,
+                            "T1 "
+                          )}
+                          {cover(
+                            { counts, warn },
+                            "surv2",
+                            i,
+                            c.primary,
+                            "T2 "
+                          )}
+                        </>
+                      ) : (
+                        cover({ counts, warn }, t.id, i, c.primary)
+                      )}
+                    </div>
+                  )}
                   {c.off ? (
                     <span className="tcv-rdo" style={{ fontWeight: 600 }}>
                       RDO
@@ -727,8 +797,6 @@ function DayTiles({
                         <span className="tcv-tl-op">
                           {c.primary ? <Op name={c.primary} /> : null}
                         </span>
-                        {warn(t.id, i, c.primary)}
-                        {bl && warn("surv2", i, c.primary)}
                       </div>
                       {c.secondary && (
                         <div className="tcv-tl-sec">

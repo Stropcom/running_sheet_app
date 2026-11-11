@@ -1849,6 +1849,71 @@ test("A 'tasking posted' notification opens that week's tasking, not just the fo
   }
 });
 
+test("CTO Weekly Tasking: every layout shows each team's on-duty count, a combined day shows both", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-09-03"; // a Monday, a made-up week
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    // Monday: Team 1 and Team 2 combined. Tuesday: apart.
+    for (const teamRow of ["surv1", "surv2"])
+      await call("opManager.saveTaskingCell", {
+        weekStart: W,
+        dayIndex: 0,
+        teamRow,
+        shiftTime: "0600-1500",
+        primaryTask: "AMBERLINE",
+        blended: true,
+      });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 1,
+      teamRow: "surv1",
+      shiftTime: "0600-1500",
+      primaryTask: "RAVEN",
+    });
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    const open = async (layout: string) => {
+      await page.goto("/");
+      await page.evaluate(
+        v => localStorage.setItem("runlog.taskingView", v),
+        layout
+      );
+      await page.goto("/operation-manager");
+      await page.getByText(/CTO Weekly Tasking — 03 Sep/).click();
+    };
+    const counts = /\d+\/\d+/;
+
+    // Team Rows and Team Tables: a count in each team's own day.
+    for (const [layout, root] of [
+      ["panel-banded", ".tcv"],
+      ["panel-tables", ".tcv-pb"],
+    ] as const) {
+      await open(layout);
+      const first = page.locator(`${root} .tcv-cover`).first();
+      await expect(first).toBeVisible();
+      await expect(first).toContainText(counts);
+    }
+
+    // Calendar: a single day shows its count, a combined day shows T1 and T2.
+    await open("tile-days");
+    const tiles = page.locator(".tcv-ta .tcv-tile");
+    const combined = tiles.nth(0).locator(".tcv-tl-cover").first();
+    await expect(combined).toContainText(/T1\s*\S*\s*\d+\/\d+/);
+    await expect(combined).toContainText(/T2\s*\S*\s*\d+\/\d+/);
+    await expect(tiles.nth(1).locator(".tcv-tl-cover").first()).toContainText(
+      counts
+    );
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});
+
 test("Top banner: the operation name shows on an iPad held sideways and clears the RunLog wordmark", async ({
   page,
 }) => {

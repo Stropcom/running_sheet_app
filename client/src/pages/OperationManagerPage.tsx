@@ -2322,10 +2322,11 @@ function CoverageWarningBadge({
         <button
           type="button"
           onClick={e => e.stopPropagation()}
-          className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 hover:text-amber-700 hover:underline underline-offset-2"
+          className="flex items-center gap-1 font-mono text-[11.5px] font-bold text-red-600 hover:text-red-700 hover:underline underline-offset-2"
+          title={`${onDuty} of ${min} rostered on duty. Tap for details`}
         >
           <AlertTriangle className="h-3 w-3" />
-          {onDuty}/{min} rostered
+          {onDuty}/{min}
         </button>
       </PopoverTrigger>
       <PopoverContent

@@ -157,6 +157,9 @@ This file holds only the standing rules. The per-feature detail — what each ve
 **Document import**
 - The AI step of Import Target is on-device, time-limited (`AI_TIME_BUDGET_MS`) and optional (owner switch); the rules-based reader must never depend on it. When an import hangs, suspect a promise that can never settle before blaming the model. A new agency template is a new recogniser plus a fixture (see `docs/features/registry-import-and-photos.md`).
 
+**Branches (owner's rule)**
+- **Every commit goes to `runlogtest` first**, to be tried on the test deploy. Push there (fast-forward), not to a session or feature branch, and never force-push. **Merge to `main` only when the owner says so**, through a pull request (checks green, version bumped as above) — never on my own initiative.
+
 **Deploying**
 - Use `/opt/runlog/deploy.sh` (backup → `git pull --ff-only` → `pnpm install --frozen-lockfile` → `pnpm build` → `drizzle-kit migrate` → `pm2 restart` → health check), run detached: `nohup ./deploy.sh > ~/deploy.log 2>&1 &`. Always include `pnpm install` in any deploy command. Details, history and recoveries are in `ops-notes.md`.
 

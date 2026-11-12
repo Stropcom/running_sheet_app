@@ -171,10 +171,10 @@ tapped and the text watched; **a second tap in the text** brings the keyboard up
 (the field is blurred and focused again, with the caret kept, because a browser
 only raises the keyboard on a fresh focus — the same way the Map's Quick Entry
 does it). The re-focus is not treated as leaving the cell (no save, no close).
-Laptop / desktop are unchanged: the cell types straight away. Unchanged on purpose:
-the first row of a new sheet and the Cease row still open with the keyboard up
-(the officer is about to type the address). Checked in `e2e/touch-keyboard.spec.ts`
-(a touch browser: `inputmode` is "none" after the first tap and not after the
-second; desktop is never "none"); **the real keyboard is not tried on an iPad
-here — check there after deploy.** Open question for the owner: the same
-first-tap-no-keyboard for the first row and Cease row.
+Laptop / desktop are unchanged: the cell types straight away. The first row of a
+new sheet ("Surveillance commenced in the vicinity of") and the Cease row follow the
+same rule on touch (owner's decision): they open with the caret at the end and no
+keyboard, and a tap in the text brings it up. Checked in `e2e/touch-keyboard.spec.ts`
+(a touch browser: `inputmode` is "none" after the first tap, and for the first row
+of a new sheet, and not after the second tap; desktop is never "none"); **the real
+keyboard is not tried on an iPad here — check there after deploy.**

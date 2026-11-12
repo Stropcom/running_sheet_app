@@ -104,7 +104,9 @@ export function EditableCell({
   const [caretToEnd, setCaretToEnd] = useState(false);
   useEffect(() => {
     if (autoEdit && !locked && multiline) {
-      setNoKeyboard(!autoEditKeyboard);
+      // Touch: every entry opens without the keyboard (tap the text to type).
+      // Laptop / desktop keep what the caller asked for.
+      setNoKeyboard(isTouch ? true : !autoEditKeyboard);
       setCaretToEnd(true);
       setEditing(true);
       onAutoEdited?.();

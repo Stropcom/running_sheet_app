@@ -7,12 +7,7 @@
 //
 // Needs a running instance and a real account — see e2e/README.md.
 import { test, expect } from "@playwright/test";
-import {
-  USERNAME,
-  PASSWORD,
-  addRowWithObservation,
-  createOperationAndSheet,
-} from "./helpers";
+import { USERNAME, PASSWORD, createOperationAndSheet } from "./helpers";
 
 test.skip(
   !USERNAME || !PASSWORD,
@@ -26,9 +21,18 @@ test.describe("touch device", () => {
     page,
   }) => {
     await createOperationAndSheet(page);
-    // The first row of a sheet opens by itself for typing; the case here is a
-    // later, empty row that the officer taps into.
-    await addRowWithObservation(page, "First row of the sheet");
+    // The first row of a sheet opens by itself (with the opening sentence), and
+    // on a touch device that is without the keyboard too.
+    await page.getByRole("button", { name: "Add Row" }).click();
+    const first = page.locator("textarea").first();
+    await expect(first).toBeVisible();
+    await expect(first).toHaveAttribute("inputmode", "none");
+    await first.fill("First row of the sheet");
+    await page.mouse.click(700, 620);
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "First row of the sheet" })
+    ).toHaveCount(1);
+    // A later, empty row that the officer taps into.
     await page.getByRole("button", { name: "Add Row" }).click();
     await page.getByText("Enter observation…").first().click();
 
@@ -58,9 +62,17 @@ test.describe("laptop / desktop", () => {
     page,
   }) => {
     await createOperationAndSheet(page);
-    // The first row of a sheet opens by itself for typing; the case here is a
-    // later, empty row that the officer taps into.
-    await addRowWithObservation(page, "First row of the sheet");
+    // The first row of a sheet opens by itself, ready to type.
+    await page.getByRole("button", { name: "Add Row" }).click();
+    const first = page.locator("textarea").first();
+    await expect(first).toBeVisible();
+    expect(await first.getAttribute("inputmode")).not.toBe("none");
+    await first.fill("First row of the sheet");
+    await page.mouse.click(700, 620);
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "First row of the sheet" })
+    ).toHaveCount(1);
+    // A later, empty row that the officer taps into.
     await page.getByRole("button", { name: "Add Row" }).click();
     await page.getByText("Enter observation…").first().click();
     const box = page.locator("textarea").first();

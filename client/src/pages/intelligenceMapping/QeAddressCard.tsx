@@ -37,6 +37,11 @@ import {
   trackedTargetCode,
 } from "@shared/trackedTarget";
 import {
+  continuedOccupantWording,
+  vehicleDepartLabel,
+  walkedToVehicleLabel,
+} from "@shared/vehicleCardWording";
+import {
   ContinuityCards,
   type ContinuityCardData,
 } from "@/components/ContinuityCards";
@@ -296,7 +301,7 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
             if (v.saved) {
               actions.push({
                 key: `dep-${v.rego}`,
-                label: "Vehicle Depart",
+                label: vehicleDepartLabel(v.rego),
                 // Everyone known to be in it, or
                 // "unseen occupant/s" when nobody is.
                 text: `Vehicle ${v.rego}, ${
@@ -312,7 +317,27 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
                           }) ??
                           occNames
                       )
-                    : "unseen occupant/s"
+                    : // Nobody is logged in it (the driver went inside and
+                      // "walked to vehicle" was not pressed): carry on from
+                      // how it arrived, not "unseen occupant/s".
+                      names(
+                        continuedOccupantWording({
+                          rego: v.rego,
+                          arrivalDesc: v.occupantDesc,
+                          arrivalRowId: v.rowId,
+                          onFootElsewhere: [
+                            ...(rsPendingWalkIns ?? [])
+                              .filter(
+                                w => !cardAddressMatch(w.location, shortAddr)
+                              )
+                              .map(w => w.names),
+                            ...(rsPendingHeadingTo ?? []).map(h => h.names),
+                          ],
+                          insideThisAddress: insideHere.map(w => w.names),
+                          placements: rsPendingPlacements ?? [],
+                          allVehicleRows,
+                        })
+                      )
                 }, departed ${shortAddr} and continued via:`,
               });
             }
@@ -323,7 +348,11 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
               actions.unshift(
                 {
                   key: `wov-oos-${v.rego}`,
-                  label: "Walked to Vehicle",
+                  label: walkedToVehicleLabel(
+                    v.rego,
+                    arrivalPeople.join(" and "),
+                    rsTrackedTarget
+                  ),
                   mode: "paragraph",
                   text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
                 },
@@ -359,7 +388,11 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
               if (otherOos.length > 0) {
                 actions.unshift({
                   key: `wov-oos-${v.rego}`,
-                  label: "Walked to Vehicle",
+                  label: walkedToVehicleLabel(
+                    v.rego,
+                    otherOos.join(" and "),
+                    rsTrackedTarget
+                  ),
                   mode: "paragraph",
                   text: `${names(otherOos.join(" and "))} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
                 });
@@ -390,7 +423,7 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
               const walkOutNames = names(w.names);
               actions.push({
                 key: `wo-${v.rego}`,
-                label: "Walked to Vehicle",
+                label: walkedToVehicleLabel(v.rego, w.names, rsTrackedTarget),
                 // w.route is only ever genuine route text,
                 // never the destination (that is shortAddr).
                 text: w.route

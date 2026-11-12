@@ -31,6 +31,11 @@ import {
   trackedTargetCode,
 } from "@shared/trackedTarget";
 import {
+  continuedOccupantWording,
+  vehicleDepartLabel,
+  walkedToVehicleLabel,
+} from "@shared/vehicleCardWording";
+import {
   ContinuityCards,
   type ContinuityCardData,
 } from "@/components/ContinuityCards";
@@ -186,6 +191,8 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
             return arrivalsHere.map(a => ({
               key: `wo-${w.location}-${a.rego}`,
               rego: a.rego,
+              // Who walked, for the button's label ("Tgt to …" or "Walked to …").
+              who: w.names,
               text: w.route
                 ? `${names} exited ${w.location} and walked ${w.route} towards Vehicle ${a.rego}.`
                 : `${names} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
@@ -369,7 +376,7 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
             // weren't seen.
             const departingAction = {
               key: `dep-${rego}`,
-              label: "Vehicle Depart",
+              label: vehicleDepartLabel(rego),
               // Everyone known to be in it, or "unseen occupant/s" when
               // nobody is — the usual wording for a departure whose
               // occupants weren't seen.
@@ -390,7 +397,26 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                         carNames,
                       usedBracketCodes
                     )
-                  : "unseen occupant/s"
+                  : // Nobody is logged in it (the driver went inside and
+                    // "walked to vehicle" was not pressed): carry on from how
+                    // it arrived, not "unseen occupant/s".
+                    shortenAlreadyMentionedNames(
+                      continuedOccupantWording({
+                        rego,
+                        arrivalDesc: a.occupantDesc,
+                        arrivalRowId: a.rowId,
+                        onFootElsewhere: [
+                          ...(pendingWalkIns ?? [])
+                            .filter(w => !sameAddr(w.location, a.address))
+                            .map(w => w.names),
+                          ...(pendingHeadingTo ?? []).map(h => h.names),
+                        ],
+                        insideThisAddress: insideHere.map(w => w.names),
+                        placements: pendingPlacements ?? [],
+                        allVehicleRows,
+                      }),
+                      usedBracketCodes
+                    )
               }, departed ${a.address} and continued via:`,
             };
             // Most likely next step first: parked with someone in it, the
@@ -404,7 +430,7 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                     )
                     .map(c => ({
                       key: c.key,
-                      label: "Walked to Vehicle",
+                      label: walkedToVehicleLabel(rego, c.who, trackedTarget),
                       text: c.text,
                     })),
                   ...insideHere.flatMap(w =>
@@ -419,7 +445,11 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                 ? [
                     {
                       key: `wov-oos-${rego}`,
-                      label: "Walked to Vehicle",
+                      label: walkedToVehicleLabel(
+                        rego,
+                        arrivalPeople.join(" and "),
+                        trackedTarget
+                      ),
                       text: `${oosNames} exited ${a.address} and walked towards Vehicle ${rego}.`,
                     },
                     {
@@ -436,7 +466,11 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                       // walk out to THIS one.
                       {
                         key: `wov-oos-${rego}`,
-                        label: "Walked to Vehicle",
+                        label: walkedToVehicleLabel(
+                          rego,
+                          otherOosPeople.join(" and "),
+                          trackedTarget
+                        ),
                         text: `${shortenAlreadyMentionedNames(otherOosPeople.join(" and "), usedBracketCodes)} exited ${a.address} and walked towards Vehicle ${rego}.`,
                       },
                       departingAction,

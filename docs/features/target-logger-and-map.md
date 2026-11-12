@@ -10,6 +10,7 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 - Target Logger buttons are blue, not rose (v1.193.2)
 - Map marker entity count (v1.193.4)
 - NEARBY LOCATION (Map page, right-hand pane, v1.184.0)
+- Vehicle card: "Tgt to <rego>", "<rego> Depart", a depart carries on from the arrival (v2.83.19)
 - Target Logger: a vehicle seen on the move names who is in it (v1.204.4)
 - Target Logger: a sighting row keeps the place they entered (v1.206.4)
 - Target Logger: a departure that names its occupants moves them out of "inside" (v1.206.6)
@@ -472,3 +473,34 @@ nobody inside); `e2e/screens.spec.ts` (card keeps Crown Towers).
 **Operation name (Show & Share) in the banner on an iPad held sideways (v2.81.3)** — the operation name in the top banner, which is also the Show & Share switch (`BannerOperation.tsx`), used to appear only from 1280 px wide (`xl`), so an iPad held sideways (1024–1194 px) had no name and no switch in the header. It now shows from 1024 px (`lg`), a little narrower so it clears the RunLog wordmark: up to 120 px wide below 1100 px, 150 px from 1100 px, the full 220 px from 1280 px (the name is cut with "…" and the full name is the button's tooltip). Measured with a long operation name at 1024 / 1080 / 1099 / 1100 / 1180 / 1194 px: 30 px or more clear of the wordmark at every width, and inside the screen with Active RS and Map Settings beside it. Held upright (820 px and narrower) there is still no room, so it stays hidden there. Browser check: `e2e/screens.spec.ts` "the operation name shows on an iPad held sideways".
 
 **Marker rotation slider no longer flicks back to north up (v2.83.3)** — the Rotation slider in a map marker's popup (custom markers, and the Intelligence pins) turned the marker at once but the turn was often **never saved**, so the next refresh of the markers (custom markers re-read every 5 seconds) redrew it north up. Cause: the slider's save is debounced (400 ms after the last move) and the handler was set up in an effect that depended on the save mutation object — a **new object on every render**, and the Map page re-renders about once a second (the location polls). Each re-render ran the effect's cleanup, which cancelled the pending save; so a save was lost whenever a re-render landed inside the 400 ms. Fixed in both handlers (`__cmPopupRotate` for custom markers, `__intelPopupRotate` for Intelligence pins) in `IntelligenceMapping.tsx`: the handler is set up once, reaches the mutation through a ref, and a save still waiting when the page is left is sent at once. The Fly marker card's slider (refs and its own timer) and the Edit dialog (saves on Save) were not affected. The Google map cannot be driven in the build sandbox, so this was checked by reading the code and `pnpm check`; look at it on the live site: turn a marker, wait ten seconds, and it should stay turned (and still be turned after a reload).
+
+## Vehicle card: "Tgt to <rego>", "<rego> Depart", and a depart carries on from the arrival (v2.83.19)
+
+The buttons on a parked vehicle's Target Logger card (running sheet, `TargetPanel.tsx`,
+and the Map's Quick Entry card, `QeAddressCard.tsx`) were renamed at the owner's request;
+the sentence each one writes is unchanged. All of it is one pure rule,
+`shared/vehicleCardWording.ts` (tests `server/vehicleCardWording.test.ts`):
+
+- **"Walked to Vehicle" → "Tgt to 1EMB303"** when the sheet's person target is among those
+  walking out to the vehicle; **"Walked to 1EMB303"** for anyone else (and always when the
+  sheet has no person target — a vehicle or location target, or none, is never "Tgt").
+- **"Vehicle Depart" → "1EMB303 Depart"** (capital D, as the owner typed it).
+- **A depart pressed with nobody logged in the vehicle** (the driver went inside the address
+  and "Tgt to" was not pressed first) used to write "Vehicle 1EMB303, unseen occupant/s,
+  departed …". It now carries on from how the vehicle arrived — "SANTOS driver and sole
+  occupant", or the driver and passenger as they were worded. Anyone a later row has put
+  somewhere else is left out: inside ANOTHER address, heading elsewhere, or in another vehicle
+  (the row that put him inside THIS address does not count as "somewhere else"). Nobody left,
+  or an arrival that itself said "unseen occupant/s": still "unseen occupant/s".
+- Because the sentence now names him, the Target Logger reads him as in the vehicle and no
+  longer inside the address (the "departure that names its occupants moves them out of
+  inside" rule, v1.206.6) — no separate walk step is needed. The row does now state that he
+  left in the vehicle though nobody saw him get in; that is the owner's choice.
+- Unchanged: the "Walked away", "Walked in", "Left address" buttons, and the usual depart
+  wording when someone is logged in the vehicle.
+
+Checked: unit tests for the rule; `e2e/target-logger-vehicle-card.spec.ts` (the exact
+screenshot case: target arrives as driver and sole occupant, goes inside; the buttons read
+"Tgt to 1EMB303" and "1EMB303 Depart"; Depart writes "…SANTOS driver and sole occupant,
+departed…"). **The Map's Quick Entry card uses the same rule but cannot be driven in the
+sandbox (no Google Map) — check it on the live Map.**

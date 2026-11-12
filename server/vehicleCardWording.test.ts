@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   continuedOccupantWording,
+  leftAddressSentence,
   namesTheTarget,
   vehicleDepartLabel,
   walkedToVehicleLabel,
@@ -162,5 +163,14 @@ describe("a departure with nobody logged in the vehicle carries on from the arri
         allVehicleRows: [],
       })
     ).toBe("unseen occupant/s");
+  });
+});
+
+describe("the Left address sentence", () => {
+  it("stops after 'walked ' with one space, no placeholders", () => {
+    const s = leftAddressSentence("SANTOS", "Almuna");
+    expect(s).toBe("SANTOS exited Almuna and walked ");
+    expect(s.endsWith("walked ")).toBe(true);
+    expect(s).not.toMatch(/\[route\]|\[location\]/);
   });
 });

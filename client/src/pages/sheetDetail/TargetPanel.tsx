@@ -33,6 +33,7 @@ import {
 import { shortcutInsertText, shortcutRowSubject } from "@shared/shortcutRow";
 import {
   continuedOccupantWording,
+  leftAddressSentence,
   vehicleDepartLabel,
   walkedToVehicleLabel,
 } from "@shared/vehicleCardWording";
@@ -208,7 +209,12 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
             key: `la-${w.location}`,
             rego: "",
             label: w.location,
-            text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked [route] towards [location].`,
+            // Stops after "walked " for the officer to type on (no
+            // [route] / [location] placeholders to delete).
+            text: leftAddressSentence(
+              shortenAlreadyMentionedNames(w.names, usedBracketCodes),
+              w.location
+            ),
           }));
           const enteredChips = (pendingHeadingTo ?? []).map(h => ({
             key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,

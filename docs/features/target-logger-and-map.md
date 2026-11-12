@@ -11,6 +11,7 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 - Map marker entity count (v1.193.4)
 - NEARBY LOCATION (Map page, right-hand pane, v1.184.0)
 - Vehicle card: "Tgt to <rego>", "<rego> Depart", a depart carries on from the arrival (v2.83.19)
+- "Left address" stops after "walked " (v2.83.21)
 - Target Logger: a vehicle seen on the move names who is in it (v1.204.4)
 - Target Logger: a sighting row keeps the place they entered (v1.206.4)
 - Target Logger: a departure that names its occupants moves them out of "inside" (v1.206.6)
@@ -504,3 +505,21 @@ screenshot case: target arrives as driver and sole occupant, goes inside; the bu
 "Tgt to 1EMB303" and "1EMB303 Depart"; Depart writes "…SANTOS driver and sole occupant,
 departed…"). **The Map's Quick Entry card uses the same rule but cannot be driven in the
 sandbox (no Google Map) — check it on the live Map.**
+
+## "Left address" stops after "walked " (v2.83.21)
+
+The Left address button on a Target Logger card used to write "SANTOS exited Almuna and
+walked [route] towards [location]." — two placeholders to delete before typing. It now writes
+**"SANTOS exited Almuna and walked "** and stops, with the one trailing space and the cursor
+after it, ready to type the route and where to (owner's change). The sentence is
+`leftAddressSentence` in `shared/vehicleCardWording.ts`, used by both the running sheet
+(`TargetPanel.tsx`) and the Map's Quick Entry card (`QeAddressCard.tsx`). With no row open the
+tap makes a row that opens with the caret at the end (as every card tap does); with a cell
+open it goes in as the next paragraph, caret at the end. Only "Left address" changed:
+"Walked away", "Walked in", the vehicle walk-out buttons and the transit / boat cards still
+write their placeholders. The Target Logger reads the unfinished row exactly as it read the
+placeholder one (they have left the address, heading somewhere not yet said), so an officer
+who leaves it unfinished changes nothing about where the logger thinks they are — checked
+against `scanWalkEvents`. Checked: unit test; `e2e/target-logger-vehicle-card.spec.ts` (the
+row opens with exactly that text, the caret at the end, and typing carries on). The Map's
+Quick Entry side shares the sentence but cannot be driven in the sandbox — check it live.

@@ -38,6 +38,7 @@ import {
 } from "@shared/trackedTarget";
 import {
   continuedOccupantWording,
+  leftAddressSentence,
   vehicleDepartLabel,
   walkedToVehicleLabel,
 } from "@shared/vehicleCardWording";
@@ -243,7 +244,7 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
             cardAddressMatch(w.location, shortAddr)
           );
           const leftAddressText = (w: { names: string; location: string }) =>
-            `${names(w.names)} exited ${w.location} and walked [route] towards [location].`;
+            leftAddressSentence(names(w.names), w.location);
           // Whether the people inside this address are
           // shown on a vehicle's card (nobody left in the
           // vehicle) or on a card of their own.

@@ -105,3 +105,15 @@ export function continuedOccupantWording(input: {
     occupants.join(" and ")
   );
 }
+
+/**
+ * The "Left address" sentence: who left, and from where, stopping after "walked "
+ * so the officer types the rest (the route and where to) straight on — no
+ * "[route] towards [location]" placeholders to delete first. The one trailing
+ * space is deliberate: the cursor lands after it, ready to type. Read the same
+ * as the placeholder version by the Target Logger (they have left the address,
+ * heading somewhere not yet said).
+ */
+export function leftAddressSentence(names: string, location: string): string {
+  return `${names} exited ${location} and walked `;
+}

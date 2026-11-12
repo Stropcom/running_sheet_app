@@ -217,3 +217,16 @@ An "Own row" chip used to make a new row on every tap. Now (owner's change; the 
 Checked: unit tests; `e2e/shortcut-own-row.spec.ts` (open box mid-sentence, empty open box,
 after a full stop, and the own row still made with nothing open). **The Map's Quick Entry
 side cannot be driven in the sandbox (no Google Map) — check it on the live Map.**
+
+## Shortcuts page on a phone: each shortcut stacks (v2.83.28)
+
+On a phone the Shortcuts list squeezed handle, trigger, arrow, text and the −RS / edit /
+delete buttons onto one line, so the text wrapped a word at a time and the last button was
+cut off. Below the `sm` breakpoint (640 px) a row now stacks (`ShortcutsPage.tsx`): **line 1**
+is the grab handle and trigger on the left and the −RS / +RS, edit and delete buttons on the
+right; **line 2** is the shortcut's text at the full width (the arrow is hidden). The edit row
+and the New Shortcut form stack the same way (trigger above, text below, trigger box full
+width). Tablet and laptop widths are unchanged — the single line. Checked at 390, 820 and
+1280 px by eye, and in `e2e/shortcuts-phone.spec.ts` (390 px: the page does not scroll
+sideways, delete is wholly on screen, the text sits under the trigger; 1280 px: the text is on
+the trigger's line), which failed on the old layout first.

@@ -1,0 +1,60 @@
+name: Intelligence golden check
+
+# Builds the Intelligence entity set (people, vehicles, places) from a small
+# made-up database with the real code and compares it, field by field, with the
+# reference answer in scripts/dev/golden/intelligence-entities.json. A change to
+# how the entity set is built (a rule, or a move of the code) must give exactly
+# the same answer unless the reference is updated on purpose in the same change.
+# See scripts/dev/intel-golden.ts and "Big-file plan" in docs/features/dev-and-ops.md.
+# Fully offline: a throwaway database, no network, no AI.
+
+on:
+  push:
+    branches: [main, runlogtest, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: intel-golden-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: runlog_golden
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: mysql://root@127.0.0.1:3306/runlog_golden
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Create the database tables
+        run: pnpm exec drizzle-kit migrate
+
+      - name: Build the Intelligence entity set and compare it with the reference
+        run: pnpm check:intel-golden

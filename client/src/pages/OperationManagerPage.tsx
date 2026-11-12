@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -36,6 +36,7 @@ import {
   FileText,
   AlertTriangle,
 } from "lucide-react";
+import { taskingWeekFromSearch } from "@shared/opManagerWeeks";
 import { ON_DUTY_CODES } from "@shared/ctoRosterShiftUtils";
 import {
   DndContext,
@@ -303,6 +304,23 @@ export default function OperationManagerPage() {
   const allWeeksQuery = trpc.opManager.listAllWeeks.useQuery(undefined, {
     staleTime: 10_000,
   });
+
+  // A "tasking posted" notification links to "?week=YYYY-MM-DD": open that
+  // week's tasking (the document), not just the folder. A week that is not in
+  // the list (deleted since) leaves the folder showing. The address is tidied
+  // afterwards so Back from the document does not open it again.
+  const search = useSearch();
+  const wantedWeek = taskingWeekFromSearch(search);
+  useEffect(() => {
+    if (!wantedWeek) return;
+    const weeks = allWeeksQuery.data;
+    if (!weeks) return;
+    if (weeks.some(w => w.weekStart === wantedWeek)) {
+      setWeekStart(wantedWeek);
+      setViewMode("view");
+    }
+    navigate("/operation-manager", { replace: true });
+  }, [wantedWeek, allWeeksQuery.data, navigate]);
 
   // ── Roster coverage (for the tasking-vs-minimum-numbers check) ──────────────
   const rosterTeamsQuery = trpc.ctoRoster.teams.list.useQuery(undefined, {
@@ -2304,10 +2322,11 @@ function CoverageWarningBadge({
         <button
           type="button"
           onClick={e => e.stopPropagation()}
-          className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 hover:text-amber-700 hover:underline underline-offset-2"
+          className="flex items-center gap-1 font-mono text-[11.5px] font-bold text-red-600 hover:text-red-700 hover:underline underline-offset-2"
+          title={`${onDuty} of ${min} rostered on duty. Tap for details`}
         >
           <AlertTriangle className="h-3 w-3" />
-          {onDuty}/{min} rostered
+          {onDuty}/{min}
         </button>
       </PopoverTrigger>
       <PopoverContent

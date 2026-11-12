@@ -26,7 +26,7 @@
 .tcv-tag { width: 18px; height: 18px; border-radius: 4px; background: var(--ink); color: var(--card); font-style: normal; font-size: 11px; font-weight: 700; display: grid; place-items: center; flex: none; }
 .tcv-tag.s { background: transparent; color: var(--muted-foreground); border: 1px solid var(--border); }
 
-/* Banded columns */
+/* Team Rows */
 .tcv-pa { display: grid; grid-template-columns: repeat(7, minmax(116px, 1fr)); min-width: 812px; }
 .tcv-pa-col { border-right: 1px solid var(--border); display: flex; flex-direction: column; }
 .tcv-pa-col:last-child { border-right: 0; }
@@ -41,7 +41,7 @@
 .tcv-pa-task.hide { visibility: hidden; }
 .tcv-pa-task .v { min-width: 0; overflow-wrap: anywhere; }
 
-/* Schedule tables */
+/* Team Tables */
 .tcv-pb { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .tcv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tcv-table th { text-align: left; font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 600; padding: 7px 12px; background: var(--muted); border-bottom: 1px solid var(--border); }
@@ -224,3 +224,14 @@
 .tcv-pa-task > .tcv-opbtn, .tcv-table td > .tcv-opbtn { flex: 1 1 auto; width: 100%; grid-column: 1 / -1; }
 .tcv-opbtn .tcv-tag { flex: none; }
 .tcv-table td.sh:has(.tcv-sel) { width: 178px; }
+
+/* The on-duty count over the team's minimum, in every layout ("4/5", red when short). */
+.tcv-cover { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; font-weight: 700; color: var(--ink, var(--foreground)); }
+.tcv-cover.short { color: #dc2626; }
+.tcv-cover > button { font-family: inherit; }
+.tcv-tl-team { flex-wrap: wrap; }
+.tcv-tl-team .tcv-tl-cover { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.tcv-tl-team .tcv-tl-cover + .tcv-breach { margin-left: 0; }
+.tcv-cover-pair { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; }
+.tcv-pa-shift .tcv-cover { margin-left: auto; }
+.tcv-table td.sh .tcv-cover { margin-left: 8px; }

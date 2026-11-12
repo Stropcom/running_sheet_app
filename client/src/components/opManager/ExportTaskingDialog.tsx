@@ -19,7 +19,7 @@ import {
 
 /**
  * Export PDF for the CTO Weekly Tasking: pick which calendar layout, or two
- * layouts (for example Banded columns and Timeline), go in the PDF. It starts
+ * layouts (for example Team Rows and Timeline), go in the PDF. It starts
  * with the layout on screen ticked; once two are ticked the others are
  * greyed out until one is unticked, and Export needs at least one.
  */

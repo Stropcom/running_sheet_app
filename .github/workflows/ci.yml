@@ -33,6 +33,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Big files may only shrink (scripts/file-size-baseline.json); a new file
+      # may not pass 2,000 lines. See "Big-file plan" in docs/features/dev-and-ops.md.
+      - name: File sizes
+        run: pnpm check:sizes
+
       - name: Type check
         run: pnpm check
 

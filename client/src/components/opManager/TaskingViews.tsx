@@ -258,6 +258,62 @@ function BreachDot({
   );
 }
 
+/**
+ * The team's people on duty over its minimum for a day ("4/5", red when short)
+ * in every layout, as the Timeline shows it at the end of its bars. Where the
+ * day is short on a tasked cell the clickable warning ("4/5 rostered", with its
+ * explanation) stands in its place, so the number is never shown twice. A
+ * blended day shows each team's own ("T1 4/5  T2 4/5"), `prefix` naming the
+ * team.
+ */
+function cover(
+  c: Pick<Ctx, "counts" | "warn">,
+  teamId: string,
+  dayIndex: number,
+  primary: string,
+  prefix = ""
+): ReactNode {
+  const w = c.warn(teamId, dayIndex, primary);
+  if (w)
+    return (
+      <span className="tcv-cover">
+        {prefix}
+        {w}
+      </span>
+    );
+  const n = c.counts?.[`${teamId}-${dayIndex}`];
+  if (!n) return null;
+  return (
+    <span
+      className={`tcv-cover${n.onDuty < n.min ? " short" : ""}`}
+      title={`${n.onDuty} of ${n.min} on duty`}
+      data-testid="tasking-cover"
+    >
+      {prefix}
+      {n.onDuty}/{n.min}
+    </span>
+  );
+}
+
+/** What a team's day shows for its on-duty count: its own number, or on a
+ * combined Team 1 + Team 2 day both teams' ("T1 4/5  T2 5/5"), so the count
+ * reads the same in whichever team's panel or table the day is looked at. */
+function coverFor(
+  c: Pick<Ctx, "counts" | "warn">,
+  teamId: string,
+  dayIndex: number,
+  primary: string,
+  blended: boolean
+): ReactNode {
+  if (!blended) return cover(c, teamId, dayIndex, primary);
+  return (
+    <span className="tcv-cover-pair">
+      {cover(c, "surv1", dayIndex, primary, "T1 ")}
+      {cover(c, "surv2", dayIndex, primary, "T2 ")}
+    </span>
+  );
+}
+
 /** "0600-1500" whatever way it was typed (07:00-15:00, an en dash, spaces). */
 function canonShift(shift: string): string {
   const a = shiftStart(shift);
@@ -380,7 +436,7 @@ function SplitBtn({ edit, i }: { edit: TimelineEdit; i: number }) {
   );
 }
 
-/** Banded columns */
+/** Team Rows */
 function PanelBanded({
   week,
   days,
@@ -388,6 +444,7 @@ function PanelBanded({
   teams,
   dim,
   warn,
+  counts,
   breach,
   edit,
   openMenu,
@@ -436,7 +493,9 @@ function PanelBanded({
                       )}
                       {bl && !c.off && <BlendTag />}
                       {ed && bl && <SplitBtn edit={edit!} i={i} />}
-                      {warn(t.id, i, c.primary)}
+                      {c.shift && !c.off
+                        ? coverFor({ counts, warn }, t.id, i, c.primary, bl)
+                        : warn(t.id, i, c.primary)}
                       {breach(t.id, i)}
                     </div>
                     {ed ? (
@@ -501,13 +560,14 @@ function PanelBanded({
   );
 }
 
-/** Schedule tables (two panels across) */
+/** Team Tables (two panels across) */
 function PanelTables({
   week,
   days,
   teams,
   dim,
   warn,
+  counts,
   breach,
   edit,
   openMenu,
@@ -556,7 +616,9 @@ function PanelTables({
                           />
                           {bl && <BlendTag />}
                           {bl && <SplitBtn edit={edit!} i={i} />}
-                          {warn(t.id, i, c.primary)}
+                          {c.shift && !c.off
+                            ? coverFor({ counts, warn }, t.id, i, c.primary, bl)
+                            : warn(t.id, i, c.primary)}
                           {breach(t.id, i)}
                         </td>
                         <td>
@@ -600,7 +662,9 @@ function PanelTables({
                             <span className="tcv-none">—</span>
                           )}
                           {bl && <BlendTag />}
-                          {warn(t.id, i, c.primary)}
+                          {c.shift
+                            ? coverFor({ counts, warn }, t.id, i, c.primary, bl)
+                            : warn(t.id, i, c.primary)}
                           {breach(t.id, i)}
                         </td>
                         <td>
@@ -640,6 +704,7 @@ function DayTiles({
   teams,
   dim,
   warn,
+  counts,
   breach,
   edit,
   openMenu,
@@ -708,7 +773,12 @@ function DayTiles({
                 <i />
                 <div className="tcv-tl-body">
                   <div className="tcv-tl-team">
-                    <span>{bl ? "T1 + T2 combined" : t.label}</span>
+                    <span>{bl ? "T1 + T2" : t.label}</span>
+                    {!c.off && (c.shift || c.primary) && (
+                      <span className="tcv-tl-cover">
+                        {coverFor({ counts, warn }, t.id, i, c.primary, bl)}
+                      </span>
+                    )}
                     {breach(t.id, i)}
                     {bl && breach("surv2", i)}
                   </div>
@@ -727,8 +797,6 @@ function DayTiles({
                         <span className="tcv-tl-op">
                           {c.primary ? <Op name={c.primary} /> : null}
                         </span>
-                        {warn(t.id, i, c.primary)}
-                        {bl && warn("surv2", i, c.primary)}
                       </div>
                       {c.secondary && (
                         <div className="tcv-tl-sec">

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { taskingNotificationUrl } from "@shared/opManagerWeeks";
 import { formatDistanceToNow } from "date-fns";
 import { Bell, CheckCheck, X, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -144,7 +145,10 @@ export function NotificationBell({
                         markRead.mutate({ id: n.id });
                       }
                       setOpen(false);
-                      if (n.url) setLocation(n.url);
+                      // A tasking-posted notification opens that week's document
+                      // (older ones are read from their wording).
+                      const target = taskingNotificationUrl(n);
+                      if (target) setLocation(target);
                     }}
                   >
                     {!n.readAt && (

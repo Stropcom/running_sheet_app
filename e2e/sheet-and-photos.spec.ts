@@ -129,3 +129,27 @@ test("a photo linked as an Item shows its description and sits in the Images fol
   await folderPill.click();
   await expect(page.getByText("Grey laptop bag, zip broken")).toBeVisible();
 });
+
+test("Export PDF opens the printable sheet with every row and the photo", async ({
+  page,
+}) => {
+  await page.goto(`/sheet/${sheetId}`);
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  const popupP = page.waitForEvent("popup");
+  await page.getByRole("button", { name: /^Export/ }).click();
+  const pop = await popupP;
+  await pop.waitForLoadState();
+  const html = await pop.content();
+  // Optional: the file named in E2E_EXPORT_DUMP gets the page, so the same
+  // export can be compared before and after a code move.
+  if (process.env.E2E_EXPORT_DUMP) {
+    const fs = await import("node:fs");
+    fs.writeFileSync(process.env.E2E_EXPORT_DUMP, html);
+  }
+  // Both rows, in the printable table, and the photo (its caption strip is
+  // blank here because the photo is not linked to a CIN).
+  expect(html).toContain("Target seen leaving the address on foot");
+  // (The export drops the imagery phrase itself, "PHOTOGRAPHS TAKEN".)
+  expect(html).toContain("of the front door");
+  expect(html).toContain('<img src="');
+});

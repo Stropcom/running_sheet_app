@@ -1,0 +1,16 @@
+{
+  "client/src/pages/IntelligenceMapping.tsx": 13811,
+  "client/src/pages/CtoRoster/RosterPage.tsx": 3517,
+  "client/src/pages/OperationDetail.tsx": 3267,
+  "client/src/pages/TargetRegistry.tsx": 3101,
+  "client/src/components/AddTargetDialog.tsx": 2998,
+  "server/ctoRoster.ts": 2851,
+  "client/src/pages/OperationManagerPage.tsx": 2842,
+  "client/src/components/DashboardLayout.tsx": 2759,
+  "client/src/lib/tacticalMarkers.ts": 2550,
+  "client/src/pages/Intelligence.tsx": 2511,
+  "server/db/intelligence.ts": 2488,
+  "server/db/targets.ts": 2119,
+  "client/src/pages/CtoRoster/DraftRosterPage.tsx": 2066,
+  "server/documentImport/pdfTextReader.ts": 2065
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   registeredAddressIn,
   registeredPlatesIn,
+  registeredStreet,
   registeredSuburb,
 } from "@shared/registeredMentions";
 
@@ -55,6 +56,73 @@ describe("registeredSuburb", () => {
   it("is null when there is none", () => {
     expect(registeredSuburb("19 Jacaranda Drive")).toBeNull();
     expect(registeredSuburb(null)).toBeNull();
+  });
+  it("reads a lower-cased key and ignores a postcode", () => {
+    expect(registeredSuburb("19 jacaranda drive, attadale wa")).toBe(
+      "ATTADALE"
+    );
+    expect(registeredSuburb("19 Jacaranda Drive, ATTADALE WA 6163")).toBe(
+      "ATTADALE"
+    );
+    expect(registeredSuburb("7 Ocean Drive, southern river wa")).toBe(
+      "SOUTHERN RIVER"
+    );
+  });
+});
+
+describe("registeredStreet", () => {
+  it("is the part before the first comma", () => {
+    expect(registeredStreet("19 Jacaranda Drive, ATTADALE WA")).toBe(
+      "19 Jacaranda Drive"
+    );
+    expect(registeredStreet("19 jacaranda drive, attadale wa")).toBe(
+      "19 jacaranda drive"
+    );
+    expect(registeredStreet("19 Jacaranda Drive")).toBe("19 Jacaranda Drive");
+    expect(registeredStreet("19 Jacaranda Drive, ATTADALE (home)")).toBe(
+      "19 Jacaranda Drive"
+    );
+    expect(registeredStreet(null)).toBe("");
+  });
+  it("a card address is found in a plain sentence through street + suburb", () => {
+    const card = "19 jacaranda drive, attadale wa";
+    const street = registeredStreet(card);
+    const suburb = registeredSuburb(card);
+    expect(
+      registeredAddressIn(
+        "departed 19 Jacaranda Drive and continued via:",
+        street,
+        suburb
+      )
+    ).toBe(true);
+    expect(
+      registeredAddressIn("at 19 Jacaranda Drive, ATTADALE WA", street, suburb)
+    ).toBe(true);
+    // a different suburb is a different place
+    expect(
+      registeredAddressIn(
+        "at 19 Jacaranda Drive, BIBRA LAKE WA",
+        street,
+        suburb
+      )
+    ).toBe(false);
+    // a longer number or a unit is a different address
+    expect(registeredAddressIn("at 119 Jacaranda Drive", street, suburb)).toBe(
+      false
+    );
+    expect(registeredAddressIn("at 2/19 Jacaranda Drive", street, suburb)).toBe(
+      false
+    );
+  });
+  it("a name that is not number-led is never matched in plain text", () => {
+    const card = "crown towers, 1 great eastern highway, burswood wa";
+    expect(
+      registeredAddressIn(
+        "went to Crown Towers",
+        registeredStreet(card),
+        registeredSuburb(card)
+      )
+    ).toBe(false);
   });
 });
 

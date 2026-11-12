@@ -217,8 +217,8 @@ test("Weekly Report: Actions and items this week — heading, one grey line, day
   await expect(actions).toBeVisible();
   await expect(actions).toContainText("Actions and items this week");
   await expect(actions).toContainText("Brown suitcase");
-  await expect(actions).toContainText("3 times this week");
-  await expect(actions).toContainText("1 time this week");
+  // No "N times this week" — the day boxes show which days it happened.
+  await expect(actions).not.toContainText(/times? this week/);
   await expect(actions).toContainText(
     "FRASER retrieved the brown suitcase from the boot"
   );
@@ -236,8 +236,8 @@ test("Weekly Report: Actions and items this week — heading, one grey line, day
   const pop = await popupP;
   await pop.waitForLoadState();
   await expect(pop.locator(".act-item")).toHaveCount(2);
-  await expect(pop.locator(".act-item").first()).toContainText(
-    "3 times this week"
+  await expect(pop.locator(".act-item").first()).not.toContainText(
+    /times? this week/
   );
   await expect(
     pop.locator(".act-item").first().locator(".act-day")
@@ -275,25 +275,42 @@ test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor S
     .locator("xpath=following::textarea[1]");
   await issues.fill("Radio dropped out twice.");
   await page.getByRole("button", { name: "Add Issue" }).click();
+  // Typing saves after a short pause (800 ms), and "Add Issue" saves at once,
+  // so "any summary save" is not the save that holds this text. Wait for the
+  // save that carries it, or the page is left before it is stored (this was
+  // the cause of the roll-up test failing now and then on GitHub).
+  const lastIssueSaved = page.waitForResponse(
+    r =>
+      /summary\.update/.test(r.url()) &&
+      r.status() === 200 &&
+      (r.request().postData() ?? "").includes("Vehicle low on fuel.")
+  );
   await page
     .getByText("Issues", { exact: true })
     .locator("xpath=following::textarea[2]")
     .fill("Vehicle low on fuel.");
-  await page.waitForResponse(
-    r => /summary\.update/.test(r.url()) && r.status() === 200
-  );
+  await lastIssueSaved;
 
-  await page.goto(`/operation/${opId}`);
-  await page.getByRole("tab", { name: "Deployment Summaries" }).click();
-  await page
-    .getByRole("button", { name: /\d{1,2} \w+ \d{2}/ })
-    .first()
-    .click();
-  await expect(page.getByText("Radio dropped out twice.")).toBeVisible();
-  await expect(page.getByText("Vehicle low on fuel.")).toBeVisible();
+  // The roll-up is read from the server when the sheet is opened; on a slow
+  // machine a save or the roll-up can land a moment late, so open it again
+  // until it shows everything (instead of failing on the first look).
   const intel = page.getByTestId("rollup-intel");
-  await expect(intel).toBeVisible();
-  await expect(intel).toContainText("Brown suitcase");
+  await expect(async () => {
+    await page.goto(`/operation/${opId}`);
+    await page.getByRole("tab", { name: "Deployment Summaries" }).click();
+    await page
+      .getByRole("button", { name: /\d{1,2} \w+ \d{2}/ })
+      .first()
+      .click();
+    await expect(page.getByText("Radio dropped out twice.")).toBeVisible({
+      timeout: 4000,
+    });
+    await expect(page.getByText("Vehicle low on fuel.")).toBeVisible({
+      timeout: 4000,
+    });
+    await expect(intel).toBeVisible({ timeout: 4000 });
+    await expect(intel).toContainText("Brown suitcase", { timeout: 4000 });
+  }).toPass({ timeout: 40_000 });
   await expect(intel.locator("mark").first()).toContainText(/suitcase/i);
   // Read only: no ticks, no Add item, no Edit.
   await expect(intel.getByRole("checkbox")).toHaveCount(0);

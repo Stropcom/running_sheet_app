@@ -1,8 +1,8 @@
 {
   "client/src/pages/IntelligenceMapping.tsx": 13811,
-  "client/src/pages/SheetDetail.tsx": 5029,
   "client/src/pages/CtoRoster/RosterPage.tsx": 3517,
   "client/src/pages/OperationDetail.tsx": 3267,
+  "client/src/pages/SheetDetail.tsx": 3222,
   "client/src/pages/TargetRegistry.tsx": 3101,
   "client/src/components/AddTargetDialog.tsx": 2998,
   "server/ctoRoster.ts": 2851,

@@ -1,16 +1,7 @@
 import { ClearInputButton } from "@/components/ClearInputButton";
-import { useMyTeams } from "@/lib/teams";
-import {
-  rowEditChangesContent,
-  signatureRemovalWarning,
-} from "@shared/rowEditSignatures";
 import { fillRoute } from "@shared/parkingRoute";
-import { cinsWithImagery } from "@shared/rowImagery";
 import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 import { orderRsChips } from "@shared/rsChips";
-import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,10 +15,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import CinInput from "@/components/CinInput";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
 import { CeaseRowButton } from "@/components/CeaseRowButton";
-import { useOwnRowShortcut } from "@/hooks/useOwnRowShortcut";
-import { ceasePlaceFor } from "@shared/ceaseRow";
 import {
-  locateTargetFromPending,
   samePlace,
   targetEmoji,
   vehiclesPeopleCanReach,
@@ -38,7 +26,6 @@ import {
   transitBoardActions,
 } from "@/lib/transitCards";
 import { shortAddressLabel } from "@shared/markerLink";
-import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import {
   occupantsToVehicle,
   occupantWording,
@@ -51,7 +38,6 @@ import {
 import { knownSurnamesOf } from "@shared/companions";
 import {
   pickSubjectCardKey,
-  resolveTrackedTarget,
   subjectCompanions,
   trackedTargetCode,
 } from "@shared/trackedTarget";
@@ -59,16 +45,9 @@ import {
   ContinuityCards,
   type ContinuityCardData,
 } from "@/components/ContinuityCards";
-import {
-  EntityDuplicateDialog,
-  type DedupType,
-} from "@/components/EntityDuplicateDialog";
-import {
-  TargetMatchDialog,
-  type TargetMatchCandidate,
-} from "@/components/TargetMatchDialog";
+import { EntityDuplicateDialog } from "@/components/EntityDuplicateDialog";
+import { TargetMatchDialog } from "@/components/TargetMatchDialog";
 import { CheckRunningSheetDialog } from "@/components/CheckRunningSheetDialog";
-import { useCommandFeature } from "@/lib/commandFeatures";
 import { CrossOperationEntityAlert } from "@/components/CrossOperationEntityAlert";
 import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
@@ -105,51 +84,32 @@ import {
   Tag,
   Undo2,
 } from "lucide-react";
-import React, {
-  useState,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import React from "react";
 import {
-  computeUsedBracketCodes,
-  computeUsedVehicleRegos,
-  computeUsedAddressLabels,
   extractOccupantNames,
   shortenAlreadyMentionedNames,
 } from "@/lib/mentionAutocomplete";
-import { bracketCodeFromRegisteredName } from "@shared/addressFormat";
-import { setLastActiveContext } from "@/lib/lastActiveContext";
-import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import { WifiOff, RefreshCw, ChevronDown } from "lucide-react";
-import { useOffline } from "@/contexts/OfflineContext";
 import {
   AddTargetDialog,
   type RegistryCreatePayload,
 } from "@/components/AddTargetDialog";
 import {
-  saveCachedSheet,
-  getCachedSheet,
-  addPendingRowToCachedSheet,
-  editPendingRowInCachedSheet,
-  deletePendingRowInCachedSheet,
-  enqueueSyncAction,
-  type CachedSheet,
-} from "@/lib/offlineStore";
-import type { CinEntry } from "./sheetDetail/types";
-import {
   PERTH_TIME_ZONE,
   addDaysToYmd,
   formatPerthDateLabel,
 } from "./sheetDetail/perthDates";
-import { SPACER } from "./sheetDetail/teamMembers";
-import { exportToPDF } from "./sheetDetail/exportToPDF";
 import { CinCertifyCell } from "./sheetDetail/CinCertify";
 import { ObservationAttachments } from "./sheetDetail/ObservationAttachments";
 import { TimePickerCell } from "./sheetDetail/TimePickerCell";
 import { EditableCell, ShortcutChip } from "./sheetDetail/EditableCell";
+import { useSheetData } from "./sheetDetail/useSheetData";
+import { useRowActions } from "./sheetDetail/useRowActions";
+import { useRowChecks } from "./sheetDetail/useRowChecks";
+import { useRowMembers } from "./sheetDetail/useRowMembers";
+import { useSheetViewState } from "./sheetDetail/useSheetViewState";
+import { useSheetEditing } from "./sheetDetail/useSheetEditing";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -168,1946 +128,179 @@ export default function SheetDetail({
    * control instead. */
   embedded?: boolean;
 } = {}) {
-  const { id } = useParams<{ id: string }>();
-  const sheetId = sheetIdProp ?? parseInt(id ?? "0", 10);
-  const { user, isAuthenticated } = useAuth();
-  const [, navigate] = useLocation();
-
-  const utils = trpc.useUtils();
-  const { isOnline, syncStatus } = useOffline();
-  // Offline-aware local row state — used when offline
-  const [offlineRows, setOfflineRows] = useState<typeof rows | null>(null);
-  const [hasPendingOfflineChanges, setHasPendingOfflineChanges] =
-    useState(false);
-
-  // Per-session manual reorder tracking — suppresses auto-sort for rows the user has dragged
-  // (client-only; resets on page reload, which is acceptable since sortOrder is persisted)
-  const manuallyReorderedRowsRef = useRef<Set<number>>(new Set());
-  const markManualReorder = (rowId: number) =>
-    manuallyReorderedRowsRef.current.add(rowId);
-  // Ref to the auto-sort function — set after parsedRoster and reorderMember are available
-  const autoSortRef = useRef<((rowId: number) => void) | null>(null);
-
-  const { data: sheet, isLoading: sheetLoading } = trpc.sheet.get.useQuery(
-    { id: sheetId },
-    { enabled: isAuthenticated && !!sheetId }
-  );
-  // Pre-fills AddTargetDialog's required OperationPicker with this sheet's
-  // own operation, without changing the shape of sheet.get.
-  const { data: sheetOperation } = trpc.operation.get.useQuery(
-    { id: sheet?.operationId ?? 0 },
-    { enabled: isAuthenticated && !!sheet?.operationId }
-  );
-
-  // Remembers this as the officer's most recent operation/sheet context —
-  // used only to pre-fill the New SMEAC Briefing form, nothing else reads it.
-  useEffect(() => {
-    if (sheet?.operationId) {
-      setLastActiveContext({ operationId: sheet.operationId, sheetId });
-    }
-  }, [sheet?.operationId, sheetId]);
-
-  const { data: rows, isLoading: rowsLoading } = trpc.row.list.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-
-  // Jumped here from the Audit Log's "Row" column (?highlightRow=<id>) —
-  // scroll to and briefly highlight that row, same scroll+highlight
-  // handleJumpToCheckRow already does for a "Check Running Sheet" finding,
-  // just triggered by a URL param instead of an in-page dialog callback.
-  // Waits for `rows` to actually be loaded (the <tr> won't exist in the DOM
-  // before then), then strips the param via replace so refreshing the page
-  // doesn't re-trigger it and the URL doesn't keep it around.
-  const search = useSearch();
-  useEffect(() => {
-    if (!rows || rowsLoading) return;
-    const raw = new URLSearchParams(search).get("highlightRow");
-    const highlightRowId = raw ? parseInt(raw, 10) : NaN;
-    if (!Number.isFinite(highlightRowId)) return;
-    const timer = window.setTimeout(() => {
-      const el = document.getElementById(`sheet-row-${highlightRowId}`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("row-check-highlight");
-        window.setTimeout(
-          () => el.classList.remove("row-check-highlight"),
-          2000
-        );
-      }
-      navigate(`/sheet/${sheetId}`, { replace: true });
-    }, 150);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, rowsLoading, search]);
-
-  const { data: entityChips } = trpc.row.entityChips.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-
-  // Continuity chips (vehicle arriving/departing, walked in/out) — same
-  // sheet-scoped "pending" queries the RS Quick Entry map popup uses (see
-  // getPendingVehicleDepartures/Arrivals/WalkIns in server/db.ts). The
-  // popup additionally filters these to whichever address pin is open;
-  // the full sheet table has no such single-address context, so it shows
-  // every pending entry across the sheet instead — see the render block
-  // below for how each chip type's text is derived without it.
-  const { data: pendingDeparturesBase } =
-    trpc.row.pendingVehicleDepartures.useQuery(
-      { sheetId },
-      {
-        enabled: isAuthenticated && !!sheetId && isOnline,
-        refetchInterval: isOnline ? 10000 : false,
-      }
-    );
-  const { data: pendingArrivalsBase } =
-    trpc.row.pendingVehicleArrivals.useQuery(
-      { sheetId },
-      {
-        enabled: isAuthenticated && !!sheetId && isOnline,
-        refetchInterval: isOnline ? 10000 : false,
-      }
-    );
-  const { data: pendingWalkInsBase } = trpc.row.pendingWalkIns.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-
-  // Has the surveillance ended — every team member ceased and nobody has
-  // commenced since (shared/surveillanceState.ts). Ends the Target Logger.
-  const { data: surveillance } = trpc.row.surveillanceState.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-
-  const { data: pendingHeadingToBase } = trpc.row.pendingHeadingTo.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-
-  const { data: pendingPlacementsBase } = trpc.row.pendingPlacements.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-
-  // Continuity cards the team has stopped tracking on this sheet (shared).
-  const continuityDismissed = useMemo<Record<string, number>>(() => {
-    try {
-      return sheet?.continuityDismissed
-        ? (JSON.parse(sheet.continuityDismissed) as Record<string, number>)
-        : {};
-    } catch {
-      return {};
-    }
-  }, [sheet?.continuityDismissed]);
-  const setContinuityDismissal = trpc.sheet.setContinuityDismissal.useMutation({
-    onSuccess: () => utils.sheet.get.invalidate({ id: sheetId }),
+  const props0 = { sheetIdProp, embedded };
+  const sSheetData = useSheetData(props0);
+  const sRowActions = useRowActions({ ...props0, ...sSheetData });
+  const sRowChecks = useRowChecks({
+    ...props0,
+    ...sSheetData,
+    ...sRowActions,
+  });
+  const sRowMembers = useRowMembers({
+    ...props0,
+    ...sSheetData,
+    ...sRowActions,
+    ...sRowChecks,
+  });
+  const sSheetViewState = useSheetViewState({
+    ...props0,
+    ...sSheetData,
+    ...sRowActions,
+    ...sRowChecks,
+    ...sRowMembers,
+  });
+  const sSheetEditing = useSheetEditing({
+    ...props0,
+    ...sSheetData,
+    ...sRowActions,
+    ...sRowChecks,
+    ...sRowMembers,
+    ...sSheetViewState,
   });
 
-  // The text in an observation cell that is open for editing (not yet saved),
-  // so the continuity cards can read it as the newest row and follow each
-  // sentence as it is written. `rowId` is the saved row it replaces.
-  const [openDraft, setOpenDraft] = useState<{
-    rowId: number | null;
-    text: string;
-  } | null>(null);
-  const [openDraftDebounced, setOpenDraftDebounced] = useState(openDraft);
-  useEffect(() => {
-    const t = setTimeout(() => setOpenDraftDebounced(openDraft), 250);
-    return () => clearTimeout(t);
-  }, [openDraft]);
-  const { data: draftPending } = trpc.row.pendingWithDraft.useQuery(
-    {
-      sheetId,
-      draft: openDraftDebounced?.text ?? "",
-      excludeRowId: openDraftDebounced?.rowId ?? null,
-    },
-    {
-      enabled:
-        isAuthenticated &&
-        !!sheetId &&
-        isOnline &&
-        !!openDraftDebounced?.text.trim(),
-      placeholderData: prev => prev,
-    }
-  );
-  const draftActive = !!openDraftDebounced?.text.trim() && !!draftPending;
-  const pendingDepartures = draftActive
-    ? draftPending!.departures
-    : pendingDeparturesBase;
-  const pendingArrivals = draftActive
-    ? draftPending!.arrivals
-    : pendingArrivalsBase;
-  const pendingWalkIns = draftActive
-    ? draftPending!.walkIns
-    : pendingWalkInsBase;
-  const pendingHeadingTo = draftActive
-    ? draftPending!.headingTo
-    : pendingHeadingToBase;
-  const pendingPlacements = draftActive
-    ? draftPending!.placements
-    : pendingPlacementsBase;
-  // Target Logger switches (per device, set in the map's right-hand pane).
-  const trackingSettings = useTargetTrackingSettings();
-  // What the sheet tracks (a person, a vehicle or a location) — the one rule
-  // the cards, the map's flag and its popup share. The title alone answers it
-  // until the server's answer (from the linked target) arrives or when offline.
-  const { data: trackedTargetData } = trpc.sheet.trackedTarget.useQuery(
-    { sheetId },
-    { enabled: !!sheetId }
-  );
-  const trackedTarget = useMemo(
-    () => trackedTargetData ?? resolveTrackedTarget({ title: sheet?.title }),
-    [trackedTargetData, sheet?.title]
-  );
-  // Where the target is, for marking on the sheet's address chips.
-  const targetPosition = useMemo(
-    () =>
-      trackingSettings.location
-        ? locateTargetFromPending({
-            subject: trackedTarget,
-            arrivals: pendingArrivals ?? [],
-            departures: pendingDepartures ?? [],
-            walkIns: pendingWalkIns ?? [],
-            headingTo: pendingHeadingTo ?? [],
-            placements: pendingPlacements ?? [],
-            extractNames: extractOccupantNames,
-          })
-        : null,
-    [
-      trackingSettings.location,
-      trackedTarget,
-      pendingArrivals,
-      pendingDepartures,
-      pendingWalkIns,
-      pendingHeadingTo,
-      pendingPlacements,
-    ]
-  );
-  // The place for the Cease button's row — worked out when it is pressed,
-  // whatever the Target Logger's own switches say: where the Logger has the
-  // target (only when he is at a place), else where the team commenced
-  // (shared/ceaseRow.ts).
-  // It is a chip at the end of the target / shortcuts chips, nowhere else.
-  const ceaseOpenForTyping = (rowId: number) => {
-    setJustAddedKeyboard(true);
-    setJustAddedRowId(rowId);
-    setTimeout(() => setJustAddedRowId(null), 6000);
-  };
-  const ceasePlace = () =>
-    ceasePlaceFor(
-      locateTargetFromPending({
-        subject: trackedTarget,
-        arrivals: pendingArrivals ?? [],
-        departures: pendingDepartures ?? [],
-        walkIns: pendingWalkIns ?? [],
-        headingTo: pendingHeadingTo ?? [],
-        placements: pendingPlacements ?? [],
-        extractNames: extractOccupantNames,
-      }),
-      rows ?? []
-    );
-  // Names already introduced in full anywhere on the sheet — saved rows AND
-  // the text open for editing — so a card's inserted sentence refers to
-  // someone already introduced by their short name only.
-  const usedBracketCodesWithDraft = useMemo(
-    () =>
-      computeUsedBracketCodes([
-        ...(rows ?? []),
-        { observation: openDraft?.text },
-      ]),
-    [rows, openDraft?.text]
-  );
-  // A row just created by tapping a continuity card: its observation opens
-  // for editing so the next tap adds to it (see EditableCell autoEdit).
-  const [justAddedRowId, setJustAddedRowId] = useState<number | null>(null);
-  // The row opened for typing is the officer's own to type in (the first row of
-  // a sheet): keep the on-screen keyboard, unlike a card tap.
-  const [justAddedKeyboard, setJustAddedKeyboard] = useState(false);
-
-  const invalidateRows = useCallback(() => {
-    utils.row.list.invalidate({ sheetId });
-    utils.row.entityChips.invalidate({ sheetId });
-    utils.row.pendingVehicleDepartures.invalidate({ sheetId });
-    utils.row.pendingVehicleArrivals.invalidate({ sheetId });
-    utils.row.pendingWalkIns.invalidate({ sheetId });
-    utils.row.pendingHeadingTo.invalidate({ sheetId });
-    utils.row.pendingPlacements.invalidate({ sheetId });
-    utils.row.surveillanceState.invalidate({ sheetId });
-  }, [utils, sheetId]);
-
-  // Cache sheet data to IndexedDB whenever we have fresh data online
-  useEffect(() => {
-    if (!isOnline || !sheet || !rows || !sheetId) return;
-    const cacheData: CachedSheet = {
-      serverId: sheetId,
-      operationId: sheet.operationId,
-      title: sheet.title,
-      sheetCins: sheet.sheetCins
-        ? (JSON.parse(sheet.sheetCins) as CachedSheet["sheetCins"])
-        : [],
-      rows: rows.map(r => ({
-        id: r.id,
-        rowNumber: r.rowNumber,
-        time: r.time ?? undefined,
-        observation: r.observation ?? undefined,
-        members: r.members
-          .map(m => m.memberName)
-          .filter(n => n !== "__SPACE__"),
-      })),
-      cachedAt: Date.now(),
-    };
-    saveCachedSheet(cacheData).catch(() => {});
-  }, [isOnline, sheet, rows, sheetId]);
-
-  // When going offline, load cached data from IndexedDB
-  useEffect(() => {
-    if (isOnline) {
-      setOfflineRows(null);
-      setHasPendingOfflineChanges(false);
-      return;
-    }
-    getCachedSheet(sheetId)
-      .then(cached => {
-        if (!cached) return;
-        // Convert cached rows back to the expected shape
-        const converted = cached.rows.map(r => ({
-          id: r.id,
-          sheetId,
-          rowNumber: r.rowNumber,
-          time: r.time ?? null,
-          observation: r.observation ?? null,
-          timeMinutes: null,
-          isLocked: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          members: r.members.map((name, idx) => ({
-            id: idx,
-            rowId: r.id,
-            memberName: name,
-            sortOrder: idx,
-            createdAt: new Date(),
-          })),
-          certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-        })) as unknown as NonNullable<typeof rows>;
-        setOfflineRows(converted);
-        const hasPending = cached.rows.some(
-          r => r.pendingLocalId || r.pendingEdit || r.pendingDelete
-        );
-        setHasPendingOfflineChanges(hasPending);
-      })
-      .catch(() => {});
-  }, [isOnline, sheetId]);
-
-  const _addRowOnline = trpc.row.create.useMutation({
-    onSuccess: invalidateRows,
-    onError: e => toast.error(e.message),
-  });
-
-  const _updateRowOnline = trpc.row.update.useMutation({
-    onSuccess: invalidateRows,
-    onError: e => toast.error(e.message),
-  });
-
-  const _deleteRowOnline = trpc.row.delete.useMutation({
-    onSuccess: invalidateRows,
-    onError: e => toast.error(e.message),
-  });
-
-  // A shortcut marked "Own row" (TP, TEXT …): one tap adds a row with the
-  // current time that starts with the target's surname.
-  const ownRowShortcut = useOwnRowShortcut(() => invalidateRows());
-
-  // Session-scoped undo stack for this officer's own row edits (observation/time),
-  // laptop/iPad only. Only ever populated from edits made while online, against
-  // rows that were unlocked (not fully certified) at the time of the edit — undo
-  // itself re-checks isLocked before applying, since certification can land
-  // between the edit and the undo click. Cleared implicitly on page reload; not
-  // persisted, since it's a convenience for catching a mis-edit, not part of the
-  // record.
-  type UndoEntry = {
-    rowId: number;
-    previous: Omit<RowSaveInput, "id">;
-  };
-  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
-  const pushUndoEntry = (input: RowSaveInput) => {
-    if (!isOnline) return;
-    const row = rows?.find(r => r.id === input.id);
-    if (!row || row.isLocked) return;
-    const previous: Omit<RowSaveInput, "id"> = {};
-    if (input.observation !== undefined)
-      previous.observation = row.observation ?? "";
-    if (input.time !== undefined) previous.time = row.time ?? "";
-    if (input.timeMinutes !== undefined)
-      previous.timeMinutes = row.timeMinutes ?? undefined;
-    if (input.dayOffset !== undefined)
-      previous.dayOffset = row.dayOffset ?? undefined;
-    if (input.rowDate !== undefined)
-      previous.rowDate = row.rowDate ?? undefined;
-    if (Object.keys(previous).length === 0) return;
-    setUndoStack(stack => [...stack.slice(-19), { rowId: input.id, previous }]);
-  };
-
-  // Offline-aware wrappers — queue locally when offline, call server when online
-  const addRow = useMemo(
-    () => ({
-      isPending: _addRowOnline.isPending,
-      mutate: (input: {
-        sheetId: number;
-        time?: string;
-        timeMinutes?: number;
-        observation?: string;
-      }) => {
-        if (isOnline) {
-          _addRowOnline.mutate(input, {
-            // The first row comes with "Surveillance commenced in the
-            // vicinity of " and the team already on it: open it for typing
-            // with the caret after the text, ready for the address.
-            onSuccess: created => {
-              if (created.autoFilled) {
-                setJustAddedKeyboard(true);
-                setJustAddedRowId(created.id);
-                setTimeout(() => setJustAddedRowId(null), 6000);
-              }
-            },
-          });
-        } else {
-          addPendingRowToCachedSheet(input.sheetId, {
-            rowNumber: Date.now(),
-            members: [],
-          })
-            .then(localId => {
-              enqueueSyncAction({
-                type: "addRowToServerSheet",
-                localId,
-                payload: { sheetServerId: input.sheetId, members: [] },
-              });
-              // Refresh offline rows from cache
-              getCachedSheet(input.sheetId).then(cached => {
-                if (!cached) return;
-                const converted = cached.rows.map(r => ({
-                  id: r.id,
-                  sheetId: input.sheetId,
-                  rowNumber: r.rowNumber,
-                  time: r.time ?? null,
-                  observation: r.observation ?? null,
-                  timeMinutes: null,
-                  isLocked: false,
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                  members: r.members.map((name, idx) => ({
-                    id: idx,
-                    rowId: r.id,
-                    memberName: name,
-                    sortOrder: idx,
-                    createdAt: new Date(),
-                  })),
-                  certifications: [] as NonNullable<
-                    typeof rows
-                  >[0]["certifications"],
-                })) as unknown as NonNullable<typeof rows>;
-                setOfflineRows(converted);
-                setHasPendingOfflineChanges(true);
-              });
-            })
-            .catch(() => toast.error("Failed to save row locally"));
-        }
-      },
-    }),
-    [isOnline, _addRowOnline, rows]
-  );
-
-  const updateRow = useMemo(
-    () => ({
-      isPending: _updateRowOnline.isPending,
-      mutate: (input: {
-        id: number;
-        time?: string;
-        timeMinutes?: number;
-        dayOffset?: number;
-        rowDate?: string;
-        observation?: string;
-      }) => {
-        // A part-signed row loses its signatures when its content changes
-        // (server rule, shared/rowEditSignatures.ts) — ask first.
-        const current = rows?.find(r => r.id === input.id);
-        const signedBy = (current?.certifications ?? []).map(
-          c => c.certifiedByCIN
-        );
-        if (
-          isOnline &&
-          current &&
-          signedBy.length > 0 &&
-          rowEditChangesContent(current, input) &&
-          !confirm(signatureRemovalWarning(signedBy))
-        ) {
-          invalidateRows(); // put the row back as it was saved
-          return;
-        }
-        pushUndoEntry(input);
-        if (isOnline) {
-          _updateRowOnline.mutate(input);
-        } else {
-          const updates: { time?: string; observation?: string } = {};
-          if (input.time !== undefined) updates.time = input.time;
-          if (input.observation !== undefined)
-            updates.observation = input.observation;
-          editPendingRowInCachedSheet(sheetId, input.id, updates)
-            .then(async () => {
-              // Look up the row's pendingLocalId to determine how to enqueue
-              const cached = await getCachedSheet(sheetId);
-              if (!cached) return;
-              const cachedRow = cached.rows.find(r => r.id === input.id);
-              if (input.id > 0) {
-                // Existing server row — enqueue direct update
-                enqueueSyncAction({
-                  type: "updateServerRow",
-                  serverId: input.id,
-                  payload: updates,
-                });
-              } else if (cachedRow?.pendingLocalId) {
-                // New offline row — enqueue update keyed by pendingLocalId
-                enqueueSyncAction({
-                  type: "updatePendingRow",
-                  pendingLocalId: cachedRow.pendingLocalId,
-                  payload: updates,
-                });
-              }
-              // Refresh offline rows display
-              const converted = cached.rows.map(r => ({
-                id: r.id,
-                sheetId,
-                rowNumber: r.rowNumber,
-                time: r.time ?? null,
-                observation: r.observation ?? null,
-                timeMinutes: null,
-                isLocked: false,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-                members: r.members.map((name, idx) => ({
-                  id: idx,
-                  rowId: r.id,
-                  memberName: name,
-                  sortOrder: idx,
-                  createdAt: new Date(),
-                })),
-                certifications: [] as NonNullable<
-                  typeof rows
-                >[0]["certifications"],
-              })) as unknown as NonNullable<typeof rows>;
-              setOfflineRows(converted);
-              setHasPendingOfflineChanges(true);
-            })
-            .catch(() => {});
-        }
-      },
-    }),
-    [isOnline, _updateRowOnline, sheetId, rows]
-  );
-
-  // ── "Check Running Sheet" — jump to / fix a finding ─────────────────────
-  // Scrolls to the row (see the "sheet-row-{id}" id added to each <tr>) and
-  // briefly highlights it so it's obvious which row the finding was about,
-  // rather than just landing there silently.
-  const handleJumpToCheckRow = (rowId: number) => {
-    setShowCheckSheetDialog(false);
-    window.setTimeout(() => {
-      const el = document.getElementById(`sheet-row-${rowId}`);
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("row-check-highlight");
-      window.setTimeout(() => el.classList.remove("row-check-highlight"), 2000);
-    }, 150);
-  };
-
-  // Applies a "Check Running Sheet" text fix directly — same as editing the
-  // row by hand, just a single first-occurrence text replace rather than
-  // the whole dupe-check flow (neither a dictionary spelling correction
-  // nor removing a duplicated bracket fragment is a new entity to check
-  // for duplicates against). Generic despite the name of the thing it's
-  // fixing varying by finding category — every category that offers a Fix
-  // button (spelling, duplicate-bracket-fragment) reduces to the same
-  // "replace this exact substring" operation.
-  const handleFixCheckFinding = (
-    rowId: number,
-    wrong: string,
-    correct: string
-  ) => {
-    const row = rows?.find(r => r.id === rowId);
-    if (!row || row.observation == null) return;
-    if (!row.observation.includes(wrong)) {
-      toast.error(
-        "That row's text has changed since the check ran — re-check the sheet."
-      );
-      return;
-    }
-    updateRow.mutate({
-      id: rowId,
-      observation: row.observation.replace(wrong, correct),
-    });
-  };
-
-  // ── Live possible-duplicate check on observation save ──────────────────────
-  // Before an edited observation actually saves, extract its entities the same
-  // way the Intelligence folder does and fuzzy-check each one against every
-  // existing entity. Any near-miss matches are queued and shown one at a time
-  // via EntityDuplicateDialog (other text-mined entities) or TargetMatchDialog
-  // (the formal Target/Associate Registry) — the real save only fires once the
-  // queue (which may be empty) is drained, so this never silently loses an edit.
-  type RowSaveInput = {
-    id: number;
-    time?: string;
-    timeMinutes?: number;
-    dayOffset?: number;
-    rowDate?: string;
-    observation?: string;
-  };
-  type PendingDupe =
-    | {
-        kind: "generic";
-        type: DedupType;
-        label: string;
-        match: { label: string; rowCount: number; reason: string };
-      }
-    | {
-        kind: "target";
-        /** The exact bracket text as typed, e.g. "LOCKET" — this is what
-         * gets replaced in the observation text on confirm. */
-        rawShortForm: string;
-        match: TargetMatchCandidate;
-      }
-    | {
-        /** Informational only — this exact entity is already a real
-         * sighting on a different operation. See checkCrossOperationEntity;
-         * deliberately independent of the "generic"/"target" near-duplicate
-         * checks above, not a variant of them. */
-        kind: "crossOp";
-        type: DedupType;
-        label: string;
-        operationNames: string[];
-      }
-    | {
-        /** A vehicle-presence row ("parked and unattended...") with no
-         * location entity of its own — see findMissingLocationSuggestion.
-         * An actual decision, not informational: confirm appends the
-         * suggested location to the observation before saving. */
-        kind: "missingLocation";
-        location: string;
-        source: string;
-      }
-    | {
-        /** A vehicle with a real registration that might be the same car
-         * as an earlier no-rego sighting on this sheet — see
-         * findVagueVehicleMatch. Confirm merges the two entities via
-         * intelligence.mergeEntities (same mechanism as the Merge Entities
-         * tool); this row's own text is never touched. */
-        kind: "vagueVehicle";
-        loserLabel: string;
-        winnerLabel: string;
-        reason: string;
-      };
-  const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
-  const [dupeIndex, setDupeIndex] = useState(0);
-  const [dupeDialogOpen, setDupeDialogOpen] = useState(false);
-  const [showCheckSheetDialog, setShowCheckSheetDialog] = useState(false);
-  // Check Sheet is off by default (shared/commandFeatures.ts): it reads the
-  // whole Intelligence list and is far too slow on a large archive.
-  const sheetCheckOn = useCommandFeature("sheetCheck");
-  // A ref, not state: only ever read/written synchronously within the
-  // dedupe-resolution handlers below, never rendered — a ref avoids the
-  // stale-closure trap of reading state that was just set in the same tick
-  // (e.g. applying a spelling correction, then immediately saving).
-  const pendingSaveInputRef = useRef<RowSaveInput | null>(null);
-  const [vagueVehicleBusy, setVagueVehicleBusy] = useState(false);
-  const mergeEntitiesMut = trpc.intelligence.mergeEntities.useMutation();
-  const markEntitiesNotDuplicateMut =
-    trpc.intelligence.markEntitiesNotDuplicate.useMutation();
-
-  function applyBracketCorrection(
-    text: string,
-    rawShortForm: string,
-    correctSpelling: string
-  ): string {
-    // Defensive: a "remembered" correction (getKnownPersonNameCorrection)
-    // might still be a full "Name, born DATE (BRACKET)" saved before
-    // TargetMatchDialog started reducing it to just the bracket code — never
-    // let a bracket nest inside the bracket it's replacing.
-    const safeSpelling = correctSpelling.includes("(")
-      ? bracketCodeFromRegisteredName(correctSpelling)
-      : correctSpelling;
-    const escaped = rawShortForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return text.replace(
-      new RegExp(`\\(${escaped}\\)`, "g"),
-      `(${safeSpelling})`
-    );
-  }
-
-  // Appends " at <location>" to the end of the observation, ahead of any
-  // trailing sentence punctuation — used when the officer confirms the
-  // MissingLocationAlert prompt. Deliberately WITHOUT brackets, matching
-  // the vehicle-arriving chip's "subsequent mention" convention
-  // (isAddressAlreadyMentioned in server/db.ts) exactly — a bare mention of
-  // an address already bracket-introduced elsewhere in the sheet is picked
-  // up by getAllIntelligenceEntities' "Pass B" scan the same way theirs is,
-  // and looksLikeUnlocatedVehiclePresenceRow (server/db.ts) knows to check
-  // for that bare mention too, so this row correctly stops being flagged
-  // without needing its own bracket — see missingLocationSuggestion.test.ts.
-  function appendLocationSuggestion(text: string, location: string): string {
-    const trimmed = text.trimEnd();
-    const trailingPunct = trimmed.match(/([.:])\s*$/);
-    if (trailingPunct) {
-      return `${trimmed.slice(0, -1)} at ${location}${trailingPunct[1]}`;
-    }
-    return `${trimmed} at ${location}.`;
-  }
-
-  const updateRowWithDupeCheck = useCallback(
-    async (input: RowSaveInput) => {
-      // Offline, or no meaningful observation text — nothing to fuzzy-check, save directly.
-      if (!isOnline || !input.observation || !input.observation.trim()) {
-        updateRow.mutate(input);
-        return;
-      }
-      try {
-        const extracted = await utils.intelligence.previewEntities.fetch({
-          text: input.observation,
-        });
-        const relevant = extracted.filter(e => e.type !== "unknown");
-        const queue: PendingDupe[] = [];
-        const seen = new Set<string>();
-        let correctedObservation = input.observation;
-
-        for (const e of relevant) {
-          const dedupeKey = `${e.type}::${e.shortForm.toLowerCase()}`;
-          if (seen.has(dedupeKey)) continue;
-          seen.add(dedupeKey);
-
-          // Independent of the near-duplicate checks below (and of whichever
-          // branch they take) — always runs, for every entity type: is this
-          // exact entity already a real sighting on a different operation?
-          // Its own try/catch, deliberately separate from the outer one:
-          // a failure here must never skip the person/generic checks below
-          // for the rest of this row's entities.
-          if (sheet?.operationId) {
-            try {
-              const crossOp =
-                await utils.intelligence.checkCrossOperationEntity.fetch({
-                  type: e.type as DedupType,
-                  label: e.shortForm,
-                  operationId: sheet.operationId,
-                });
-              if (crossOp) {
-                queue.push({
-                  kind: "crossOp",
-                  type: e.type as DedupType,
-                  label: e.shortForm,
-                  operationNames: crossOp.operationNames,
-                });
-              }
-            } catch (err) {
-              console.warn("checkCrossOperationEntity failed", err);
-            }
-          }
-          if (e.type === "person") {
-            // Already confirmed before (the "spellcheck remembers" case) —
-            // silently correct the text, no prompt.
-            const known =
-              await utils.intelligence.getKnownPersonNameCorrection.fetch({
-                spelling: e.rawShortForm,
-              });
-            if (known) {
-              correctedObservation = applyBracketCorrection(
-                correctedObservation,
-                e.rawShortForm,
-                known.correctSpelling
-              );
-              continue;
-            }
-            // Close-but-not-exact match to an existing Target/Associate —
-            // ask, rather than silently linking or silently missing it.
-            const targetMatches =
-              await utils.intelligence.checkPossibleTargetMatches.fetch({
-                label: e.shortForm,
-              });
-            if (targetMatches.length > 0) {
-              queue.push({
-                kind: "target",
-                rawShortForm: e.rawShortForm,
-                match: targetMatches[0],
-              });
-              continue;
-            }
-          }
-
-          const matches =
-            await utils.intelligence.checkPossibleDuplicates.fetch({
-              type: e.type as DedupType,
-              label: e.shortForm,
-            });
-          if (matches.length > 0) {
-            queue.push({
-              kind: "generic",
-              type: e.type as DedupType,
-              label: e.shortForm,
-              match: matches[0],
-            });
-          }
-        }
-
-        // A vehicle-presence row with no location of its own — see
-        // findMissingLocationSuggestion. Checked against the fully
-        // corrected text (after any spelling fixes above), and only once
-        // sheetId is known.
-        if (sheetId) {
-          try {
-            const missingLocation = await utils.row.checkMissingLocation.fetch({
-              sheetId,
-              observation: correctedObservation,
-              excludeRowId: input.id,
-            });
-            if (missingLocation) {
-              queue.push({
-                kind: "missingLocation",
-                location: missingLocation.location,
-                source: missingLocation.source,
-              });
-            }
-          } catch (err) {
-            console.warn("checkMissingLocation failed", err);
-          }
-
-          // A vehicle with a real registration that might be the same car
-          // as an earlier no-rego sighting on this sheet — see
-          // findVagueVehicleMatch. Confirming links the two entities via
-          // mergeEntities without touching any row's text.
-          try {
-            const vagueVehicle = await utils.row.checkVagueVehicleMatch.fetch({
-              sheetId,
-              observation: correctedObservation,
-              excludeRowId: input.id,
-            });
-            if (vagueVehicle) {
-              queue.push({
-                kind: "vagueVehicle",
-                loserLabel: vagueVehicle.loserLabel,
-                winnerLabel: vagueVehicle.winnerLabel,
-                reason: vagueVehicle.reason,
-              });
-            }
-          } catch (err) {
-            console.warn("checkVagueVehicleMatch failed", err);
-          }
-        }
-
-        const correctedInput = { ...input, observation: correctedObservation };
-        if (queue.length === 0) {
-          updateRow.mutate(correctedInput);
-          return;
-        }
-        pendingSaveInputRef.current = correctedInput;
-        setDupeQueue(queue);
-        setDupeIndex(0);
-        setDupeDialogOpen(true);
-      } catch {
-        // If the duplicate check itself fails for any reason, don't block the save.
-        updateRow.mutate(input);
-      }
-    },
-    [isOnline, updateRow, utils, sheet?.operationId, sheetId]
-  );
-
-  function handleTargetMatchResolved(
-    rawShortForm: string,
-    correctSpelling: string | undefined
-  ) {
-    if (correctSpelling && pendingSaveInputRef.current?.observation) {
-      pendingSaveInputRef.current = {
-        ...pendingSaveInputRef.current,
-        observation: applyBracketCorrection(
-          pendingSaveInputRef.current.observation,
-          rawShortForm,
-          correctSpelling
-        ),
-      };
-    }
-    handleDupeDialogResolved();
-  }
-
-  function handleMissingLocationResolved(
-    addLocation: boolean,
-    location: string
-  ) {
-    if (addLocation && pendingSaveInputRef.current?.observation) {
-      pendingSaveInputRef.current = {
-        ...pendingSaveInputRef.current,
-        observation: appendLocationSuggestion(
-          pendingSaveInputRef.current.observation,
-          location
-        ),
-      };
-    }
-    handleDupeDialogResolved();
-  }
-
-  async function handleVagueVehicleResolved(
-    confirmed: boolean,
-    warning: { loserLabel: string; winnerLabel: string }
-  ) {
-    setVagueVehicleBusy(true);
-    try {
-      if (confirmed) {
-        await mergeEntitiesMut.mutateAsync({
-          type: "vehicle",
-          winnerLabel: warning.winnerLabel,
-          loserLabel: warning.loserLabel,
-        });
-      } else {
-        await markEntitiesNotDuplicateMut.mutateAsync({
-          type: "vehicle",
-          labelA: warning.winnerLabel,
-          labelB: warning.loserLabel,
-        });
-      }
-    } catch (err) {
-      console.warn("vague vehicle match resolution failed", err);
-    } finally {
-      setVagueVehicleBusy(false);
-    }
-    handleDupeDialogResolved();
-  }
-
-  function handleDupeDialogResolved() {
-    const nextIndex = dupeIndex + 1;
-    if (nextIndex < dupeQueue.length) {
-      setDupeIndex(nextIndex);
-      setDupeDialogOpen(true);
-    } else {
-      setDupeDialogOpen(false);
-      setDupeQueue([]);
-      setDupeIndex(0);
-      if (pendingSaveInputRef.current) {
-        updateRow.mutate(pendingSaveInputRef.current);
-        pendingSaveInputRef.current = null;
-      }
-    }
-  }
-
-  const deleteRow = useMemo(
-    () => ({
-      isPending: _deleteRowOnline.isPending,
-      mutate: (input: { id: number }) => {
-        if (isOnline) {
-          _deleteRowOnline.mutate(input);
-        } else {
-          deletePendingRowInCachedSheet(sheetId, input.id)
-            .then(() => {
-              if (input.id > 0) {
-                enqueueSyncAction({
-                  type: "deleteServerRow",
-                  serverId: input.id,
-                });
-              }
-              getCachedSheet(sheetId).then(cached => {
-                if (!cached) return;
-                const converted = cached.rows
-                  .filter(r => !r.pendingDelete)
-                  .map(r => ({
-                    id: r.id,
-                    sheetId,
-                    rowNumber: r.rowNumber,
-                    time: r.time ?? null,
-                    observation: r.observation ?? null,
-                    timeMinutes: null,
-                    isLocked: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                    members: r.members.map((name, idx) => ({
-                      id: idx,
-                      rowId: r.id,
-                      memberName: name,
-                      sortOrder: idx,
-                      createdAt: new Date(),
-                    })),
-                    certifications: [] as NonNullable<
-                      typeof rows
-                    >[0]["certifications"],
-                  })) as unknown as NonNullable<typeof rows>;
-                setOfflineRows(converted);
-                setHasPendingOfflineChanges(true);
-              });
-            })
-            .catch(() => {});
-        }
-      },
-    }),
-    [isOnline, _deleteRowOnline, sheetId, rows]
-  );
-
-  const _addMemberOnline = trpc.member.add.useMutation({
-    onSuccess: invalidateRows,
-    onError: e => toast.error(e.message),
-  });
-
-  const _removeMemberOnline = trpc.member.remove.useMutation({
-    onSuccess: invalidateRows,
-    onError: e => toast.error(e.message),
-  });
-
-  // Offline-aware addMember — updates cached sheet and queues sync action
-  const addMember = useMemo(
-    () => ({
-      isPending: _addMemberOnline.isPending,
-      mutate: (input: { rowId: number; memberName: string }) => {
-        if (isOnline) {
-          // Store rowId for auto-sort after the query refreshes
-          const rowIdToSort = input.rowId;
-          _addMemberOnline.mutate(input, {
-            onSuccess: () => {
-              invalidateRows();
-              // Auto-sort is triggered via the autoSortRowMembers ref set up below
-              setTimeout(() => autoSortRef.current?.(rowIdToSort), 300);
-            },
-          });
-        } else {
-          // Update the cached sheet row's members array
-          getCachedSheet(sheetId)
-            .then(async cached => {
-              if (!cached) return;
-              const row = cached.rows.find(r => r.id === input.rowId);
-              if (!row) return;
-              // Add member to cached row
-              const updatedRows = cached.rows.map(r =>
-                r.id === input.rowId
-                  ? { ...r, members: [...r.members, input.memberName] }
-                  : r
-              );
-              await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
-                saveCachedSheet({ ...cached, rows: updatedRows })
-              );
-              // Enqueue sync action
-              if (input.rowId > 0) {
-                enqueueSyncAction({
-                  type: "addMemberToServerRow",
-                  serverId: input.rowId,
-                  memberName: input.memberName,
-                });
-              } else if (row.pendingLocalId) {
-                enqueueSyncAction({
-                  type: "addMemberToServerRow",
-                  serverId: input.rowId,
-                  pendingLocalId: row.pendingLocalId,
-                  memberName: input.memberName,
-                });
-              }
-              // Refresh display
-              const updatedCached = { ...cached, rows: updatedRows };
-              const converted = updatedCached.rows.map(r => ({
-                id: r.id,
-                sheetId,
-                rowNumber: r.rowNumber,
-                time: r.time ?? null,
-                observation: r.observation ?? null,
-                timeMinutes: null,
-                isLocked: false,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-                members: r.members.map((name, idx) => ({
-                  id: idx,
-                  rowId: r.id,
-                  memberName: name,
-                  sortOrder: idx,
-                  createdAt: new Date(),
-                })),
-                certifications: [] as NonNullable<
-                  typeof rows
-                >[0]["certifications"],
-              })) as unknown as NonNullable<typeof rows>;
-              setOfflineRows(converted);
-              setHasPendingOfflineChanges(true);
-            })
-            .catch(() => toast.error("Failed to save member locally"));
-        }
-      },
-    }),
-    [isOnline, _addMemberOnline, sheetId, rows]
-  );
-
-  // Offline-aware removeMember — updates cached sheet and queues sync action
-  const removeMember = useMemo(
-    () => ({
-      isPending: _removeMemberOnline.isPending,
-      mutate: (input: { id: number; rowId: number }) => {
-        if (isOnline) {
-          _removeMemberOnline.mutate(input);
-        } else {
-          getCachedSheet(sheetId)
-            .then(async cached => {
-              if (!cached) return;
-              const row = cached.rows.find(r => r.id === input.rowId);
-              if (!row) return;
-              // Remove member at index `input.id` (which we use as the member index offline)
-              const updatedRows = cached.rows.map(r => {
-                if (r.id !== input.rowId) return r;
-                // input.id is the member index (we set idx as id in the converted rows)
-                const newMembers = r.members.filter(
-                  (_, idx) => idx !== input.id
-                );
-                return { ...r, members: newMembers };
-              });
-              await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
-                saveCachedSheet({ ...cached, rows: updatedRows })
-              );
-              // Enqueue sync — best effort (member removal by name)
-              if (input.rowId > 0 && row.members[input.id]) {
-                enqueueSyncAction({
-                  type: "removeMemberFromServerRow",
-                  serverId: input.rowId,
-                  memberName: row.members[input.id],
-                });
-              }
-              // Refresh display
-              const updatedCached = { ...cached, rows: updatedRows };
-              const converted = updatedCached.rows.map(r => ({
-                id: r.id,
-                sheetId,
-                rowNumber: r.rowNumber,
-                time: r.time ?? null,
-                observation: r.observation ?? null,
-                timeMinutes: null,
-                isLocked: false,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-                members: r.members.map((name, idx) => ({
-                  id: idx,
-                  rowId: r.id,
-                  memberName: name,
-                  sortOrder: idx,
-                  createdAt: new Date(),
-                })),
-                certifications: [] as NonNullable<
-                  typeof rows
-                >[0]["certifications"],
-              })) as unknown as NonNullable<typeof rows>;
-              setOfflineRows(converted);
-              setHasPendingOfflineChanges(true);
-            })
-            .catch(() => {});
-        }
-      },
-    }),
-    [isOnline, _removeMemberOnline, sheetId, rows]
-  );
-
-  const reorderMember = trpc.member.reorder.useMutation({
-    onSuccess: invalidateRows,
-    onError: e => toast.error(e.message),
-  });
-
-  // Uploads go straight to a plain HTTP route as raw bytes rather than
-  // through tRPC's base64/JSON path — a several-MB Portrait-mode iPhone
-  // photo, base64-encoded into one giant JSON string, was what intermittently
-  // failed on weak mobile connections with a cryptic browser error. Raw
-  // binary avoids both the ~33% base64 size inflation and that giant string.
-  const uploadAttachment = useMutation({
-    mutationFn: async ({
-      rowId,
-      blob,
-      mimeType,
-      fileName,
-    }: {
-      rowId: number;
-      blob: Blob;
-      mimeType: string;
-      fileName: string;
-    }) => {
-      const params = new URLSearchParams({
-        rowId: String(rowId),
-        fileName,
-        mimeType,
-      });
-      const res = await fetch(
-        `/api/attachments/upload-raw?${params.toString()}`,
-        {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": mimeType || "application/octet-stream" },
-          body: blob,
-        }
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}) as { error?: string });
-        throw new Error(data.error || `Upload failed (${res.status})`);
-      }
-      return res.json() as Promise<{ id: number; url: string }>;
-    },
-    // Field officers are often on weak signal — retry transient network
-    // failures automatically rather than making them re-tap the photo.
-    retry: 2,
-    retryDelay: attempt => Math.min(1000 * 2 ** attempt, 4000),
-    onSuccess: invalidateRows,
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const deleteAttachment = trpc.attachment.delete.useMutation({
-    onSuccess: invalidateRows,
-    onError: e => toast.error(e.message),
-  });
-
-  const certify = trpc.certification.certify.useMutation({
-    onSuccess: data => {
-      invalidateRows();
-      if (data.rowLocked) toast.success("All members certified — row locked");
-      else toast.success("Member certified");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const uncertify = trpc.certification.uncertify.useMutation({
-    onSuccess: () => {
-      invalidateRows();
-      toast.success("Certification removed — row unlocked");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const uncertifyAll = trpc.certification.uncertifyAll.useMutation({
-    onSuccess: () => {
-      invalidateRows();
-      toast.success("All certifications removed — row unlocked");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const certifyAllForCin = trpc.certification.certifyAllForCin.useMutation({
-    onSuccess: data => {
-      invalidateRows();
-      toast.success(`Certified ${data.certifiedCount} row(s) across the sheet`);
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  // ─── Travelled Via auto-fill ────────────────────────────────────────────────
-  // Tracks which row is currently being auto-filled (shows spinner in that cell)
-  const [tvLoadingRowId, setTvLoadingRowId] = useState<number | null>(null);
-  const getTravelledViaStreets = trpc.travelledVia.getStreets.useMutation({
-    onError: e => {
-      setTvLoadingRowId(null);
-      toast.error(`TV auto-fill: ${e.message}`);
-    },
-  });
-
-  // Fetch governance record to check completion for Close button
-  const { data: govRecord } = trpc.governance.getBySheet.useQuery(
-    { sheetId },
-    { enabled: isAuthenticated && !!sheetId }
-  );
-
-  // Close / Reopen mutations
-  const closeSheet = trpc.sheet.close.useMutation({
-    onSuccess: () => {
-      utils.sheet.get.invalidate({ id: sheetId });
-      toast.success("Running sheet closed and locked.");
-    },
-    onError: e => toast.error(e.message),
-  });
-  const reopenSheet = trpc.sheet.reopen.useMutation({
-    onSuccess: () => {
-      utils.sheet.get.invalidate({ id: sheetId });
-      toast.success("Running sheet reopened.");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const isClosed = !!sheet?.closedAt;
-  // Any member or admin can reopen a sheet
-  const canManageClose = user?.role === "member" || user?.role === "admin";
-  // Only the Team Leader CIN or admin can close a sheet
-  // parsedRoster is defined below but sheet?.sheetCins is available here
-  const isCurrentUserTeamLeader = useMemo(() => {
-    if (!user?.cin || !sheet?.sheetCins) return false;
-    try {
-      const raw: CinEntry[] = JSON.parse(sheet.sheetCins);
-      return raw.some(
-        e => e.isTeamLeader && e.cin.toUpperCase() === user.cin!.toUpperCase()
-      );
-    } catch {
-      return false;
-    }
-  }, [user?.cin, sheet?.sheetCins]);
-  const canCloseByRole = user?.role === "admin" || isCurrentUserTeamLeader;
-
-  // All rows certified check (same logic as Governance.tsx allSigned)
-  const allRowsCertified = useMemo(() => {
-    if (!rows || rows.length === 0) return false;
-    return rows.every(r => {
-      const members = r.members ?? [];
-      if (members.length === 0) return true;
-      return members.every(m =>
-        (r.certifications ?? []).some(c => c.memberId === m.id && c.isActive)
-      );
-    });
-  }, [rows]);
-
-  // Governance complete check
-  const govComplete = useMemo(() => {
-    if (!govRecord) return false;
-    const g = govRecord as Record<string, unknown>;
-    const tlDone = !!g.summaryNotification && !!g.sentToIO;
-    const opDone = !!g.savedInOpFolder && !!g.savedInInvestigatorTransferDrive;
-    return tlDone && opDone;
-  }, [govRecord]);
-
-  const canCloseSheet =
-    canCloseByRole && allRowsCertified && govComplete && !isClosed;
-
-  const canEdit =
-    !isClosed && (user?.role === "member" || user?.role === "admin");
-  const canCertify =
-    !isClosed && (user?.role === "member" || user?.role === "admin");
-
-  // Cease is offered while there is something to cease: open to the officer,
-  // online, at least one row, surveillance not ended.
-  const ceaseAvailable =
-    canEdit &&
-    isOnline &&
-    !!surveillance &&
-    !surveillance.ended &&
-    (rows?.length ?? 0) > 0;
-
-  // Parse daily roster CINs for team expansion and Certify All
-  // Sort: Team Leader first, then all others in numeric/alphabetic order
-  const parsedRoster = useMemo(() => {
-    try {
-      const raw = sheet?.sheetCins
-        ? (JSON.parse(sheet.sheetCins) as CinEntry[])
-        : [];
-      return [...raw].sort((a, b) => {
-        if (a.isTeamLeader && !b.isTeamLeader) return -1;
-        if (!a.isTeamLeader && b.isTeamLeader) return 1;
-        // Numeric sort: extract leading digits for comparison
-        const aNum = parseInt(a.cin, 10);
-        const bNum = parseInt(b.cin, 10);
-        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-        return a.cin.localeCompare(b.cin);
-      });
-    } catch {
-      return [];
-    }
-  }, [sheet?.sheetCins]);
-  const rosterCinList = useMemo(
-    () => parsedRoster.map(e => e.cin),
-    [parsedRoster]
-  );
-
-  // ─── CIN auto-sort helper ────────────────────────────────────────────────────
-  // After any member is added, re-sort the row's CINs: TL first, then ascending CIN number.
-  // Spacers keep their relative positions. Skipped if the user has manually dragged this row.
-  const autoSortRowMembers = useCallback(
-    (rowId: number) => {
-      if (manuallyReorderedRowsRef.current.has(rowId)) return; // user has custom order
-      const currentRow = rows?.find(r => r.id === rowId);
-      if (!currentRow || currentRow.members.length < 2) return;
-
-      // Build canonical CIN order: TL first, then ascending numeric CIN
-      const tlCin = parsedRoster.find(e => e.isTeamLeader)?.cin?.toUpperCase();
-      const nonSpacers = currentRow.members.filter(
-        m => m.memberName !== SPACER
-      );
-      const spacers = currentRow.members.filter(m => m.memberName === SPACER);
-
-      const sorted = [...nonSpacers].sort((a, b) => {
-        const aIsLeader = tlCin && a.memberName.toUpperCase() === tlCin;
-        const bIsLeader = tlCin && b.memberName.toUpperCase() === tlCin;
-        if (aIsLeader && !bIsLeader) return -1;
-        if (!aIsLeader && bIsLeader) return 1;
-        const aNum = parseInt(a.memberName, 10);
-        const bNum = parseInt(b.memberName, 10);
-        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-        return a.memberName.localeCompare(b.memberName);
-      });
-
-      // Re-insert spacers at their original relative positions
-      const result = [...sorted];
-      for (const sp of spacers) {
-        const origIdx = currentRow.members.indexOf(sp);
-        const clampedIdx = Math.min(origIdx, result.length);
-        result.splice(clampedIdx, 0, sp);
-      }
-
-      // Only call reorder if the order actually changed
-      const changed = result.some((m, i) => m.id !== currentRow.members[i]?.id);
-      if (changed) {
-        reorderMember.mutate({ rowId, orderedIds: result.map(m => m.id) });
-      }
-    },
-    [rows, parsedRoster, reorderMember]
-  );
-
-  // Keep the ref in sync so the addMember useMemo (declared earlier) can call it
-  autoSortRef.current = autoSortRowMembers;
-
-  // Compute which CINs have ALL their rows certified
-  // CINs on a row with images — an imagery phrase or an attached image — get
-  // the camera automatically; no need to tick it in Edit TEAM.
-  const autoImageCins = useMemo(() => cinsWithImagery(rows ?? []), [rows]);
-  const cinFullyCertified = useMemo(() => {
-    if (!rows || rows.length === 0) return new Set<string>();
-    const certified = new Set<string>();
-    for (const entry of parsedRoster) {
-      const cin = entry.cin;
-      // Find all rows where this CIN is a member
-      const relevantRows = rows.filter(r =>
-        r.members.some(m => m.memberName === cin)
-      );
-      if (relevantRows.length === 0) continue; // not in any row yet
-      const allCertified = relevantRows.every(r =>
-        r.members
-          .filter(m => m.memberName === cin)
-          .every(m =>
-            r.certifications.some(c => c.memberId === m.id && c.isActive)
-          )
-      );
-      if (allCertified) certified.add(cin);
-    }
-    return certified;
-  }, [rows, parsedRoster]);
-
-  // Search state
-  const [searchQuery, setSearchQuery] = useState("");
-  // Target panel collapsed state — expanded by default, persisted in localStorage
-  const [teamPanelExpanded, setTeamPanelExpanded] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("runsheet_team_panel_expanded") !== "false";
-    } catch {
-      return true;
-    }
-  });
-  const [targetPanelExpanded, setTargetPanelExpanded] = useState<boolean>(
-    () => {
-      try {
-        return (
-          localStorage.getItem("runsheet_target_panel_expanded") !== "false"
-        );
-      } catch {
-        return true;
-      }
-    }
-  );
-  // Track the last focused textarea/input so chip taps can insert text even after blur
-  const focusedTextareaRef = useRef<
-    HTMLTextAreaElement | HTMLInputElement | null
-  >(null);
-  // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
-  useEffect(() => {
-    const handler = (e: FocusEvent) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-        focusedTextareaRef.current = el as
-          | HTMLTextAreaElement
-          | HTMLInputElement;
-      }
-    };
-    document.addEventListener("focusin", handler, true);
-    return () => document.removeEventListener("focusin", handler, true);
-  }, []);
-
-  // Mirror the open observation cell's text into state (see openDraft).
-  useEffect(() => {
-    const onInput = (e: Event) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
-      const ta = el as HTMLTextAreaElement;
-      const id = ta.dataset.rowId ? Number(ta.dataset.rowId) : null;
-      setOpenDraft({ rowId: Number.isFinite(id) ? id : null, text: ta.value });
-    };
-    const onFocusIn = (e: Event) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
-      const ta = el as HTMLTextAreaElement;
-      const id = ta.dataset.rowId ? Number(ta.dataset.rowId) : null;
-      setOpenDraft({ rowId: Number.isFinite(id) ? id : null, text: ta.value });
-    };
-    const onFocusOut = (e: Event) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
-      // Cleared when focus has really left observation cells.
-      setTimeout(() => {
-        const active = document.activeElement as HTMLElement | null;
-        if (!active || !active.dataset?.obsCell) setOpenDraft(null);
-      }, 0);
-    };
-    // Bubble phase on purpose (NOT capture): React handles a textarea's
-    // onChange from a listener on its root, below `document`. A state update
-    // from a capture listener on `document` runs first and re-renders the
-    // controlled textarea with its OLD value before onChange has seen the
-    // keystroke, wiping what was typed — typing stops working.
-    document.addEventListener("input", onInput);
-    document.addEventListener("focusin", onFocusIn);
-    document.addEventListener("focusout", onFocusOut);
-    return () => {
-      document.removeEventListener("input", onInput);
-      document.removeEventListener("focusin", onFocusIn);
-      document.removeEventListener("focusout", onFocusOut);
-    };
-  }, []);
-
-  // Persist sort preference in localStorage so it survives navigation
-  const [sortReversed, setSortReversed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("runsheet_sort_reversed") === "true";
-    } catch {
-      return false;
-    }
-  });
-  const toggleSortReversed = () =>
-    setSortReversed(v => {
-      const next = !v;
-      try {
-        localStorage.setItem("runsheet_sort_reversed", String(next));
-      } catch {}
-      return next;
-    });
-
-  // Step back through this officer's own recent edits (see the undo stack
-  // built up in pushUndoEntry, above). Re-checks isLocked here rather than
-  // trusting the state at capture time, since the row may have been
-  // certified in the meantime.
-  const handleUndo = () => {
-    const entry = undoStack[undoStack.length - 1];
-    if (!entry) return;
-    setUndoStack(stack => stack.slice(0, -1));
-    const row = rows?.find(r => r.id === entry.rowId);
-    if (!row) {
-      toast.error("Can't undo — that row no longer exists");
-      return;
-    }
-    if (row.isLocked) {
-      toast.error("Can't undo — that row has since been certified");
-      return;
-    }
-    updateRow.mutate({ id: entry.rowId, ...entry.previous });
-    toast.success("Last edit undone");
-  };
-
-  // Edit sheet state
-  const [editSheetOpen, setEditSheetOpen] = useState(false);
-  const [editSheetDate, setEditSheetDate] = useState("");
-  const [editTargetName, setEditTargetName] = useState("");
-  const [editTargetMode, setEditTargetMode] = useState<"none" | "link">("none");
-  const [editSelectedTargetId, setEditSelectedTargetId] = useState<
-    number | null
-  >(null);
-  const [editCreateTargetDialogOpen, setEditCreateTargetDialogOpen] =
-    useState(false);
-
-  // Target selector
-  const { data: operationTargets } = trpc.target.list.useQuery(
-    { operationId: sheet?.operationId ?? 0 },
-    { enabled: !!sheet?.operationId }
-  );
-  // All targets across all operations for the cross-op picker
-  const { data: allUsers } = trpc.users.listForCin.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
-  const myTeams = useMyTeams();
-
-  const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
-  const [editTargetSearch, setEditTargetSearch] = useState("");
-  const setSheetTarget = trpc.target.setSheetTarget.useMutation({
-    onSuccess: () => {
-      utils.sheet.get.invalidate({ id: sheetId });
-      toast.success("Target updated");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  // Shortcuts: fetch once and build a trigger→expansion map
-  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, {
-    enabled: isAuthenticated,
-    staleTime: 0,
-  });
-  // Per-target shortcuts for the sheet's assigned target
-  const { data: targetShortcutsData } =
-    trpc.targetShortcuts.listForSheet.useQuery(
-      { sheetId: sheetId! },
-      { enabled: !!sheetId && isAuthenticated }
-    );
-  // Fetch the assigned target directly by ID (works for both legacy and registry targets)
-  const { data: assignedTarget } = trpc.target.getById.useQuery(
-    { id: sheet?.targetId ?? 0 },
-    { enabled: !!sheet?.targetId }
-  );
-  const shortcutMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    // Global shortcuts from DB
-    for (const s of shortcutsData ?? [])
-      map[s.trigger.toLowerCase()] = s.expansion;
-    // Target-aware shortcuts: overlay TGT/HBF/HB/V1F/V1/V2F/V2/DEP/ARR from the assigned target
-    if (assignedTarget) {
-      const t = assignedTarget;
-      if (t.tgt) map["tgt"] = t.tgt;
-      if (t.hbf) map["hbf"] = t.hbf;
-      if (t.hb) map["hb"] = t.hb;
-      if (t.v1f) map["v1f"] = t.v1f;
-      if (t.v1) map["v1"] = t.v1;
-      if (t.v2f) map["v2f"] = t.v2f;
-      if (t.v2) map["v2"] = t.v2;
-      if (t.dep) map["dep"] = t.dep;
-      if (t.arr) map["arr"] = t.arr;
-      // Extra vehicles (V2F/V2, V3F/V3, …)
-      try {
-        const evs: Array<{ full: string; short: string }> = JSON.parse(
-          (t as any).extraVehicles ?? "[]"
-        );
-        evs.forEach((ev, i) => {
-          const num = i + 2;
-          if (ev.full) map[`v${num}f`] = ev.full;
-          if (ev.short) map[`v${num}`] = ev.short;
-        });
-      } catch {}
-      // Wild fields (#1, #2, …)
-      try {
-        const wfs: Array<{ label: string; value: string }> = JSON.parse(
-          (t as any).wildFields ?? "[]"
-        );
-        wfs.forEach(wf => {
-          if (wf.value) map[wf.label.toLowerCase()] = wf.value;
-        });
-      } catch {}
-    }
-    // Per-target custom shortcuts (override global if same trigger)
-    for (const s of targetShortcutsData ?? [])
-      map[s.trigger.toLowerCase()] = s.expansion;
-    return map;
-  }, [shortcutsData, targetShortcutsData, assignedTarget]);
-
-  // Bracket codes / vehicle regos already introduced somewhere in this
-  // sheet — feeds the observation field's inline mention autocomplete (see
-  // EditableCell / detectMentionTrigger / detectVehicleMentionTrigger): a
-  // bare re-mention of an already-linked person or vehicle shouldn't keep
-  // re-triggering the suggestion dropdown.
-  const usedBracketCodes = useMemo(
-    () => computeUsedBracketCodes(rows ?? []),
-    [rows]
-  );
-  const usedVehicleRegos = useMemo(
-    () => computeUsedVehicleRegos(rows ?? []),
-    [rows]
-  );
-  const usedAddressLabels = useMemo(
-    () => computeUsedAddressLabels(rows ?? []),
-    [rows]
-  );
-
-  // Edit roster state
-  const [editRosterOpen, setEditRosterOpen] = useState(false);
-  const [rosterList, setRosterList] = useState<CinEntry[]>([]);
-  const [rosterInput, setRosterInput] = useState("");
-  const [rosterInputValid, setRosterInputValid] = useState(false);
-
-  const updateSheet = trpc.sheet.update.useMutation({
-    onSuccess: () => {
-      utils.sheet.get.invalidate({ id: sheetId });
-      setEditSheetOpen(false);
-      setEditRosterOpen(false);
-      toast.success("Sheet updated");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  // New Target from within the "Edit Sheet" dialog — same structured Add
-  // Target dialog as everywhere else, linked straight to the sheet's operation.
-  const createTargetForEditSheet = trpc.target.registry.create.useMutation({
-    onSuccess: () => {
-      utils.target.listAll.invalidate();
-      if (sheet?.operationId) {
-        utils.target.list.invalidate({ operationId: sheet.operationId });
-      }
-    },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
-  const createLinkedTargetForEditSheet =
-    trpc.target.registry.createLinkedFromAssociate.useMutation({
-      onSuccess: () => {
-        utils.target.listAll.invalidate();
-        if (sheet?.operationId) {
-          utils.target.list.invalidate({ operationId: sheet.operationId });
-        }
-      },
-      onError: (e: { message: string }) => toast.error(e.message),
-    });
-
-  const deleteSheet = trpc.sheet.delete.useMutation({
-    onSuccess: () => {
-      setEditSheetOpen(false);
-      toast.success("Running sheet moved to Recycle Bin");
-      // Navigate back to the operation page
-      if (sheet) navigate(`/operation/${sheet.operationId}`);
-      else navigate("/");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(
-    null
-  );
-  const [exportEnabled, setExportEnabled] = useState(false);
   const {
-    data: exportData,
-    isFetching: exportFetching,
-    refetch: refetchExport,
-  } = trpc.export.sheetData.useQuery(
-    { id: sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && exportEnabled,
-      staleTime: 0,
-    }
-  );
-
-  // When export data arrives and there is a pending type, trigger the download
-  useEffect(() => {
-    if (exportData && pendingExportType === "pdf" && sheet) {
-      exportToPDF(
-        sheet.title,
-        exportData.rows,
-        exportData.operation ?? null,
-        exportData.sheet.sheetCins ?? null,
-        exportData.sheet.createdAt,
-        exportData.targetFullName ?? null,
-        exportData.sheet.sheetDate ?? null
-      );
-      setPendingExportType(null);
-    }
-  }, [exportData, pendingExportType, sheet]);
-
-  const openEditSheet = () => {
-    setEditSheetDate(
-      (sheet as { sheetDate?: string | null } | undefined)?.sheetDate ??
-        new Date().toISOString().slice(0, 10)
-    );
-    setEditTargetName(sheet?.targetName ?? "");
-    setEditTargetMode("none");
-    setEditTargetSearch("");
-    setEditSelectedTargetId(sheet?.targetId ?? null);
-    setEditSheetOpen(true);
+    isAuthenticated,
+    sheetLoading,
+    rowsLoading,
+    isClosed,
+    openEditSheet,
+    sheet,
+    isOnline,
+    syncStatus,
+    hasPendingOfflineChanges,
+    canManageClose,
+    reopenSheet,
+    sheetId,
+    canCloseSheet,
+    closeSheet,
+    canCloseByRole,
+    allRowsCertified,
+    govComplete,
+    sheetCheckOn,
+    setShowCheckSheetDialog,
+    exportFetching,
+    handleExport,
+    navigate,
+    parsedRoster,
+    teamPanelExpanded,
+    setTeamPanelExpanded,
+    cinFullyCertified,
+    openEditRoster,
+    canCertify,
+    certifyAllForCin,
+    autoImageCins,
+    assignedTarget,
+    entityChips,
+    pendingArrivals,
+    pendingDepartures,
+    pendingWalkIns,
+    pendingHeadingTo,
+    shortcutsData,
+    usedBracketCodes,
+    usedBracketCodesWithDraft,
+    rows,
+    pendingPlacements,
+    trackedTarget,
+    surveillance,
+    targetPosition,
+    focusedTextareaRef,
+    _addRowOnline,
+    setJustAddedRowId,
+    _deleteRowOnline,
+    setTargetPanelExpanded,
+    targetPanelExpanded,
+    ownRowShortcut,
+    ceaseAvailable,
+    ceasePlace,
+    invalidateRows,
+    ceaseOpenForTyping,
+    trackingSettings,
+    continuityDismissed,
+    setContinuityDismissal,
+    canEdit,
+    addRow,
+    sortReversed,
+    toggleSortReversed,
+    undoStack,
+    handleUndo,
+    searchQuery,
+    setSearchQuery,
+    filteredRows,
+    rowDayOffsetMap,
+    sheetHasCrossedMidnight,
+    updateRow,
+    tvLoadingRowId,
+    justAddedRowId,
+    justAddedKeyboard,
+    setJustAddedKeyboard,
+    updateRowWithDupeCheck,
+    setTvLoadingRowId,
+    getTravelledViaStreets,
+    rosterCinList,
+    addMember,
+    shortcutMap,
+    usedVehicleRegos,
+    usedAddressLabels,
+    uploadAttachment,
+    deleteAttachment,
+    uncertifyAll,
+    removeMember,
+    certify,
+    uncertify,
+    deleteRow,
+    editSheetOpen,
+    setEditSheetOpen,
+    editSheetDate,
+    setEditSheetDate,
+    operationTargets,
+    editSelectedTargetId,
+    setEditSelectedTargetId,
+    setEditTargetMode,
+    editTargetMode,
+    editTargetSearch,
+    setEditTargetSearch,
+    allTargetsForSheet,
+    setEditCreateTargetDialogOpen,
+    user,
+    deleteSheet,
+    setSheetTarget,
+    updateSheet,
+    editCreateTargetDialogOpen,
+    sheetOperation,
+    createLinkedTargetForEditSheet,
+    createTargetForEditSheet,
+    editRosterOpen,
+    setEditRosterOpen,
+    rosterInput,
+    setRosterInput,
+    setRosterInputValid,
+    handleAddRosterCin,
+    rosterInputValid,
+    allUsers,
+    myTeams,
+    handleAddRosterTeam,
+    rosterList,
+    setRosterList,
+    dupeQueue,
+    dupeIndex,
+    dupeDialogOpen,
+    setDupeDialogOpen,
+    handleDupeDialogResolved,
+    handleMissingLocationResolved,
+    vagueVehicleBusy,
+    handleVagueVehicleResolved,
+    handleTargetMatchResolved,
+    showCheckSheetDialog,
+    handleJumpToCheckRow,
+    handleFixCheckFinding,
+  } = {
+    ...sSheetData,
+    ...sRowActions,
+    ...sRowChecks,
+    ...sRowMembers,
+    ...sSheetViewState,
+    ...sSheetEditing,
   };
-
-  const openEditRoster = () => {
-    const parsed: CinEntry[] = (() => {
-      try {
-        return sheet?.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-      } catch {
-        return [];
-      }
-    })();
-    setRosterList(parsed);
-    setRosterInput("");
-    setEditRosterOpen(true);
-  };
-
-  const handleAddRosterTeam = (teamId: number) => {
-    if (!allUsers) {
-      toast.error("User list not available");
-      return;
-    }
-    const members = allUsers.filter(u => u.teamId === teamId);
-    if (members.length === 0) {
-      toast.error("No members found in that team");
-      return;
-    }
-    let added = 0;
-    setRosterList(prev => {
-      let updated = [...prev];
-      for (const m of members) {
-        if (!updated.some(c => c.cin.toLowerCase() === m.cin.toLowerCase())) {
-          updated = [
-            ...updated,
-            {
-              cin: m.cin,
-              hasImages: false,
-              isTeamLeader: false,
-              isAuthor: false,
-            },
-          ];
-          added++;
-        }
-      }
-      return updated;
-    });
-    if (added === 0) toast.info("All team members already added");
-    else
-      toast.success(
-        `Added ${added} member${added !== 1 ? "s" : ""} from ${myTeams.find(t => t.id === teamId)?.name ?? "the team"}`
-      );
-  };
-
-  const handleAddRosterCin = () => {
-    const trimmed = rosterInput.trim().toUpperCase();
-    if (!trimmed) return;
-    // Must be a registered user
-    const registeredCins = new Set(
-      (allUsers ?? []).map(u => u.cin.toUpperCase())
-    );
-    if (!registeredCins.has(trimmed)) {
-      toast.error(`CIN "${trimmed}" is not a registered user`);
-      return;
-    }
-    if (rosterList.some(c => c.cin.toUpperCase() === trimmed)) {
-      toast.error("CIN already in team");
-      return;
-    }
-    setRosterList(prev => [
-      ...prev,
-      { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false },
-    ]);
-    setRosterInput("");
-    setRosterInputValid(false);
-  };
-
-  const handleExport = useCallback(() => {
-    if (!sheet) return;
-    if (exportData && !exportFetching) {
-      setPendingExportType("pdf");
-      refetchExport();
-      return;
-    }
-    setPendingExportType("pdf");
-    setExportEnabled(true);
-  }, [sheet, exportData, exportFetching, refetchExport]);
-
-  // Use offline cached rows when offline, live rows when online
-  const displayRows = !isOnline && offlineRows ? offlineRows : rows;
-
-  // Filter rows by search query (time, observation, member names)
-  // NOTE: must be above the early return to satisfy React rules-of-hooks
-  // ── Day-offset map: detect midnight rollovers from the time sequence itself ──
-  // Scans timed rows in entry order (by rowNumber); when the effective time drops
-  // by more than 2 hours it treats that as a midnight rollover and increments the
-  // day counter. Shared between the sort and the date-divider render logic.
-  const rowDayOffsetMap = useMemo(() => {
-    if (!displayRows) return new Map<number, number>();
-    // MUST sort by rowNumber (entry order) before scanning for rollovers.
-    // displayRows may already be sorted by effective time from the server,
-    // so we explicitly re-sort here to get the correct insertion sequence.
-    const timedByRowNumber = [...displayRows]
-      .filter((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null)
-      .sort(
-        (a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
-          a.rowNumber - b.rowNumber
-      );
-    const map = new Map<number, number>();
-
-    // Find the earliest rowDate among all rows that have one (day-0 anchor)
-    const allRowDates = timedByRowNumber
-      .map(
-        (r: NonNullable<typeof rows>[0]) =>
-          (r as any).rowDate as string | null | undefined
-      )
-      .filter((d): d is string => !!d);
-    const minRowDate =
-      allRowDates.length > 0 ? allRowDates.slice().sort()[0] : null;
-
-    // First pass: assign offsets from rowDate (highest priority) or stored dayOffset (legacy)
-    for (const r of timedByRowNumber) {
-      const rd = (r as any).rowDate as string | null | undefined;
-      if (rd && minRowDate) {
-        // Day index relative to earliest rowDate in this sheet (Perth UTC+8)
-        const anchor = new Date(minRowDate + "T00:00:00+08:00").getTime();
-        const rowDay = new Date(rd + "T00:00:00+08:00").getTime();
-        const dayIdx = Math.round((rowDay - anchor) / 86400000);
-        map.set(r.id, dayIdx);
-      } else if ((r as any).dayOffset !== 0 && (r as any).dayOffset != null) {
-        map.set(r.id, (r as any).dayOffset);
-      }
-    }
-    // Second pass: infer for rows with no explicit date/offset
-    let day = 0;
-    let prevEff = -1;
-    for (const r of timedByRowNumber) {
-      if (map.has(r.id)) {
-        prevEff = (r.timeMinutes ?? 0) + map.get(r.id)! * 1440;
-        day = map.get(r.id)!;
-        continue;
-      }
-      const mins = r.timeMinutes ?? 0;
-      const eff = mins + day * 1440;
-      if (prevEff >= 0 && eff < prevEff - 120) day++;
-      map.set(r.id, day);
-      prevEff = mins + day * 1440;
-    }
-    return map;
-  }, [displayRows]);
-
-  // True when any row in this sheet has a day offset > 0 (sheet has crossed midnight)
-  const sheetHasCrossedMidnight = useMemo(() => {
-    if (!displayRows) return false;
-    return Array.from(rowDayOffsetMap.values()).some(v => v > 0);
-  }, [displayRows, rowDayOffsetMap]);
-
-  const filteredRows = useMemo(() => {
-    if (!displayRows) return [];
-    const filtered = !searchQuery.trim()
-      ? displayRows
-      : displayRows.filter((row: NonNullable<typeof rows>[0]) => {
-          const q = searchQuery.toLowerCase();
-          if (row.time?.toLowerCase().includes(q)) return true;
-          if (row.observation?.toLowerCase().includes(q)) return true;
-          if (
-            row.members?.some((m: { memberName: string }) =>
-              m.memberName.toLowerCase().includes(q)
-            )
-          )
-            return true;
-          return false;
-        });
-    // Rows with no time set ALWAYS float to the top (newest/being filled in)
-    const withTime = filtered.filter(
-      (row: NonNullable<typeof rows>[0]) => row.timeMinutes != null
-    );
-    const noTime = filtered.filter(
-      (row: NonNullable<typeof rows>[0]) => row.timeMinutes == null
-    );
-    const effectiveMinutes = (row: NonNullable<typeof rows>[0]) =>
-      (row.timeMinutes ?? 0) + (rowDayOffsetMap.get(row.id) ?? 0) * 1440;
-    // Sort timed rows by effective (day-offset) timeMinutes, then rowNumber as tie-break
-    const sortedWithTime = [...withTime].sort(
-      (a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
-        const timeDiff = effectiveMinutes(a) - effectiveMinutes(b);
-        if (timeDiff !== 0) return sortReversed ? -timeDiff : timeDiff;
-        return sortReversed
-          ? b.rowNumber - a.rowNumber
-          : a.rowNumber - b.rowNumber;
-      }
-    );
-    // No-time rows sorted by descending rowNumber (most recently added first)
-    const sortedNoTime = [...noTime].sort(
-      (a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
-        b.rowNumber - a.rowNumber
-    );
-    // No-time rows always at the TOP regardless of sort direction
-    return [...sortedNoTime, ...sortedWithTime];
-  }, [displayRows, searchQuery, sortReversed, rowDayOffsetMap]);
 
   if (!isAuthenticated) return null;
 

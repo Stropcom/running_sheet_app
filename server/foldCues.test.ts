@@ -97,6 +97,57 @@ describe("one thing in one sentence is one line", () => {
   });
 });
 
+describe("a phone and what is done with it is one line", () => {
+  const TEXTING =
+    "SANTOS exited Perth Police Station and walked towards Vehicle 1EMB303, he was holding a mobile phone and appeared to be texting, or similar.";
+
+  it("'mobile phone' and 'texting' in one sentence are one line, on the phone", () => {
+    const l = lines([TEXTING]);
+    const devices = l.filter(x => x.category === "devices");
+    expect(devices.map(x => x.heading)).toEqual(["Mobile phone"]);
+    expect(devices[0].alsoMatched.map(a => a.heading)).toEqual(["Messaging"]);
+  });
+
+  it("a phone call with the phone is folded the same way", () => {
+    const l = lines([
+      "SANTOS was holding a mobile phone to his ear and appeared to be on a phone call.",
+    ]).filter(x => x.category === "devices");
+    expect(l.map(x => x.heading)).toEqual(["Mobile phone"]);
+    expect(l[0].alsoMatched.map(a => a.heading)).toEqual(["Phone call"]);
+  });
+
+  it("two phones in the sentence: the messaging is not guessed onto either", () => {
+    const l = lines([
+      "SANTOS was holding a mobile phone and a second mobile phone and appeared to be texting.",
+    ]).filter(x => x.category === "devices");
+    // Texting stays its own line; neither phone line takes it in.
+    expect(l.map(x => x.heading)).toContain("Messaging");
+    for (const x of l.filter(y => /mobile phone$/i.test(y.heading)))
+      expect(x.alsoMatched.map(a => a.heading)).not.toContain("Messaging");
+  });
+
+  it("texting with no phone named stays its own line", () => {
+    const l = lines(["SANTOS appeared to be texting."]).filter(
+      x => x.category === "devices"
+    );
+    expect(l.map(x => x.heading)).toEqual(["Messaging"]);
+  });
+
+  it("the same wording on two rows is still two sightings", () => {
+    const l = lines([TEXTING, TEXTING]).filter(x => x.category === "devices");
+    expect(l.map(x => x.heading)).toEqual(["Mobile phone", "Mobile phone"]);
+  });
+
+  it("nothing is dropped, and the phone keeps the tick key it always had", () => {
+    const cues = findIntelCues(TEXTING);
+    const out = foldCuesInSentence(cues).flatMap(f => [f.cue, ...f.also]);
+    expect(new Set(out)).toEqual(new Set(cues));
+    expect(out.length).toBe(cues.length);
+    const phone = lines([TEXTING]).find(x => x.heading === "Mobile phone")!;
+    expect(phone.key).toBe("1:devices:mobile phone:0");
+  });
+});
+
 describe("what was folded stays visible", () => {
   it("is named for the tag, with its kind only when it differs", () => {
     const [l] = lines([BOX]);

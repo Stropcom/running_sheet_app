@@ -178,3 +178,18 @@ keyboard, and a tap in the text brings it up. Checked in `e2e/touch-keyboard.spe
 (a touch browser: `inputmode` is "none" after the first tap, and for the first row
 of a new sheet, and not after the second tap; desktop is never "none"); **the real
 keyboard is not tried on an iPad here — check there after deploy.**
+
+## New Intelligence: a phone and what is done with it is one line (v2.83.18)
+
+"…he was holding a mobile phone and appeared to be texting, or similar." gave two
+Devices lines — "Mobile phone" and "Messaging" — for one thing in one sentence (the
+TEXT shortcut). `foldCuesInSentence` (`shared/sheetIntel.ts`) now folds the
+messaging / phone-call wording (**Messaging**, **Phone call**) into the mobile
+phone's line when the sentence has **exactly one** mobile phone: one line, "Mobile
+phone", with "Also picked up in this sentence: Messaging (Devices)" and both words
+highlighted, as for the other folds (nothing is dropped; the phone keeps its tick
+key). **Not guessed:** two phones in one sentence ("a mobile phone and a second
+mobile phone … texting") cannot say which was used, so the messaging stays its own
+line; texting with no phone named stays its own line; the same wording on two rows
+is still two sightings. Pay phone / public phone is untouched. Tests:
+`server/foldCues.test.ts` ("a phone and what is done with it is one line").

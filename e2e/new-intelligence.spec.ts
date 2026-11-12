@@ -275,13 +275,21 @@ test("Deployment Summaries (the roll-up): each sheet reads like the Supervisor S
     .locator("xpath=following::textarea[1]");
   await issues.fill("Radio dropped out twice.");
   await page.getByRole("button", { name: "Add Issue" }).click();
+  // Typing saves after a short pause (800 ms), and "Add Issue" saves at once,
+  // so "any summary save" is not the save that holds this text. Wait for the
+  // save that carries it, or the page is left before it is stored (this was
+  // the cause of the roll-up test failing now and then on GitHub).
+  const lastIssueSaved = page.waitForResponse(
+    r =>
+      /summary\.update/.test(r.url()) &&
+      r.status() === 200 &&
+      (r.request().postData() ?? "").includes("Vehicle low on fuel.")
+  );
   await page
     .getByText("Issues", { exact: true })
     .locator("xpath=following::textarea[2]")
     .fill("Vehicle low on fuel.");
-  await page.waitForResponse(
-    r => /summary\.update/.test(r.url()) && r.status() === 200
-  );
+  await lastIssueSaved;
 
   // The roll-up is read from the server when the sheet is opened; on a slow
   // machine a save or the roll-up can land a moment late, so open it again

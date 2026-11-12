@@ -193,3 +193,27 @@ mobile phone … texting") cannot say which was used, so the messaging stays its
 line; texting with no phone named stays its own line; the same wording on two rows
 is still two sightings. Pay phone / public phone is untouched. Tests:
 `server/foldCues.test.ts` ("a phone and what is done with it is one line").
+
+## Own row chips (TP, TEXT): into the open observation, else their own row (v2.83.20)
+
+An "Own row" chip used to make a new row on every tap. Now (owner's change; the rule is
+`shortcutInsertText` in `shared/shortcutRow.ts`, tests `server/shortcutRow.test.ts`):
+
+- **An observation is open and being written → the chip's text goes in at the cursor**, like
+  any other chip, and no row is made. On the running sheet "open" is the observation cell
+  that is focused right now (`openObservationCell` in `TargetPanel.tsx`, the same test the
+  continuity cards use), even if still empty. On the Map's Quick Entry it is a box with
+  text in it; the Map's chips have always added to the END of the box (not at a cursor), and
+  TP / TEXT do the same there.
+- **No observation open → its own row with the time, as before** (and an empty Quick Entry
+  box on the Map).
+- The text goes in **exactly as saved**. One addition: when it would begin a new sentence
+  (an empty box, or right after a full stop) the target's name goes first — "SANTOS had a
+  mobile phone to his ear …" — because the expansion is written to follow a name; in the
+  middle of a sentence ("SANTOS walked to the door and " → "…and had a mobile phone …") it
+  already reads on. No person target: the expansion alone, as the other chips do.
+- Unchanged: the Undo toast and the "no person target" fallback of the own-row path.
+
+Checked: unit tests; `e2e/shortcut-own-row.spec.ts` (open box mid-sentence, empty open box,
+after a full stop, and the own row still made with nothing open). **The Map's Quick Entry
+side cannot be driven in the sandbox (no Google Map) — check it on the live Map.**

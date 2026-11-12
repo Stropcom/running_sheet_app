@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import type { MapScreen } from "./useMapScreen";
 import { QeAddressCard } from "./QeAddressCard";
+import { shortcutInsertText, shortcutRowSubject } from "@shared/shortcutRow";
 
 /** the Quick Entry text box, mention suggestions and target chips on the map. */
 export function QeInlineEntry({ s }: { s: MapScreen }) {
@@ -844,6 +845,20 @@ export function QeInlineEntry({ s }: { s: MapScreen }) {
                                   // surname first. No person
                                   // target (or offline): the text
                                   // goes in like any other chip.
+                                  // With something already being written
+                                  // in the box, it goes in there (starting
+                                  // with the target's name when it begins
+                                  // a new sentence); an empty box makes
+                                  // the row, as before.
+                                  if (s.startsRow && rsInlineText.trim()) {
+                                    const text = shortcutInsertText(
+                                      shortcutRowSubject(t),
+                                      v,
+                                      rsInlineText
+                                    );
+                                    if (text) appendText(text);
+                                    return;
+                                  }
                                   if (
                                     s.startsRow &&
                                     s.shortcutId !== undefined &&

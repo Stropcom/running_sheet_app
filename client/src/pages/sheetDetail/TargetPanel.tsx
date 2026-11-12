@@ -30,6 +30,7 @@ import {
   subjectCompanions,
   trackedTargetCode,
 } from "@shared/trackedTarget";
+import { shortcutInsertText, shortcutRowSubject } from "@shared/shortcutRow";
 import {
   continuedOccupantWording,
   vehicleDepartLabel,
@@ -1183,10 +1184,21 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                                             start
                                           );
                                           const after = el.value.slice(end);
+                                          // An Own row chip (TP, TEXT …) pressed
+                                          // with an observation open goes in here;
+                                          // it starts with the target's name when
+                                          // it begins a new sentence.
+                                          const text = f.startsRow
+                                            ? (shortcutInsertText(
+                                                shortcutRowSubject(t),
+                                                f.value,
+                                                before
+                                              ) ?? f.value!)
+                                            : f.value!;
                                           const insert =
                                             before && !before.endsWith(" ")
-                                              ? ` ${f.value!}`
-                                              : f.value!;
+                                              ? ` ${text}`
+                                              : text;
                                           try {
                                             document.execCommand(
                                               "insertText",
@@ -1235,7 +1247,12 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                                           onInsert={() =>
                                             f.startsRow &&
                                             f.shortcutId !== undefined &&
-                                            isOnline
+                                            isOnline &&
+                                            // No observation open: its own row,
+                                            // as before. One open: it goes in
+                                            // at the cursor (insertIntoFocused).
+                                            !openObservationCell()?.dataset
+                                              .obsCell
                                               ? ownRowShortcut.press(
                                                   {
                                                     sheetId,

@@ -56,3 +56,31 @@ export function shortcutRowText(
   if (new RegExp(`^${escaped}(?![A-Za-z0-9])`, "i").test(e)) return e;
   return `${s} ${e}`;
 }
+
+/** True when `before` (the text ahead of the cursor) is empty or finishes a
+ * sentence — the next words begin a new one. */
+export function startsNewSentence(before: string): boolean {
+  return /^\s*$/.test(before) || /[.!?]["')\]]*\s*$/.test(before);
+}
+
+/**
+ * What an "Own row" chip (TP, TEXT …) inserts when an observation is ALREADY
+ * open and being written, instead of making its own row. The expansion is put in
+ * exactly as saved, at the cursor, like any other chip. The one addition: when
+ * it would begin a new sentence (an empty box, or after a full stop) the
+ * target's name goes first — "SANTOS had a mobile phone …" — because the
+ * expansion is written to follow a name; in the middle of a sentence
+ * ("SANTOS walked to the door and " + "had a mobile phone …") it already does.
+ * No person target (null subject): the expansion alone. Null when there is no
+ * expansion.
+ */
+export function shortcutInsertText(
+  subject: string | null | undefined,
+  expansion: string | null | undefined,
+  before: string
+): string | null {
+  const e = (expansion ?? "").trim();
+  if (!e) return null;
+  if (startsNewSentence(before)) return shortcutRowText(subject, e) ?? e;
+  return e;
+}

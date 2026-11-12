@@ -3,7 +3,7 @@
 // and then the shortcut's text. Needs a running instance and a real admin
 // account — see e2e/README.md.
 import { test, expect } from "@playwright/test";
-import { USERNAME, PASSWORD } from "./helpers";
+import { USERNAME, PASSWORD, openNewRowCell } from "./helpers";
 
 test.skip(
   !USERNAME || !PASSWORD,
@@ -91,6 +91,34 @@ test("An Own row shortcut chip adds a row with the time and the target's surname
   await expect(
     page.locator("tbody tr").filter({ hasText: `SANTOS ${text}` })
   ).toHaveCount(1);
+
+  // With an observation OPEN and being written, the chip goes in at the cursor
+  // instead of making a row of its own.
+  const rows = page.locator("tbody tr");
+  const before = await rows.count();
+  await openNewRowCell(page);
+  const box = page.locator("textarea").first();
+  await box.fill("SANTOS walked to the door and ");
+  await page
+    .getByRole("button", { name: trigger.toUpperCase(), exact: true })
+    .click();
+  await expect(box).toHaveValue(`SANTOS walked to the door and ${text}`);
+  // (the new empty row is the one extra row; no row was added by the chip)
+  await expect(rows).toHaveCount(before + 1);
+  // An empty open observation: the name goes first, then the text as saved.
+  await box.fill("");
+  await page
+    .getByRole("button", { name: trigger.toUpperCase(), exact: true })
+    .click();
+  await expect(box).toHaveValue(`SANTOS ${text}`);
+  await expect(rows).toHaveCount(before + 1);
+  // After a full stop it begins a new sentence, so the name goes first again.
+  await box.fill("SANTOS exited the vehicle. ");
+  await page
+    .getByRole("button", { name: trigger.toUpperCase(), exact: true })
+    .click();
+  await expect(box).toHaveValue(`SANTOS exited the vehicle. SANTOS ${text}`);
+  await page.mouse.click(700, 620);
 
   // Clean up: the test shortcut goes away.
   await post("shortcuts.update", { id: made.id, startsRow: false });

@@ -159,3 +159,22 @@ The Calendar page used to cut each running sheet's name to fit its day ("2026102
 **Imagery Saved by: moved to the right of the row (v2.83.1)** — the CIN and name of the officer who marked an Imagery row Saved now sit at the **right-hand end of the row**, like the Team Leader items' tag, with the tick left alone in the Saved column (it was under the tick). The table has a sixth, unlabelled 6.5 rem column for it from tablet width up (`sm`, 640 px); on a phone there is no room beside the tick, so it stays under the tick there. Nothing about who is recorded changed (v2.83.0).
 
 **Parked idea — an "Actions & Items" report in Intelligence (decided 2026-11-12: keep for later, not building now)** — a report across the page in Intelligence → Reports, laid out like the Supervisor Summary and the Weekly Report, listing the actions and items picked up from running sheet rows, for one sheet or for all sheets. There is room for another report in the Intelligence folder's reports list. A mock-up was made and published as the artifact "Actions and Items Report" (https://claude.ai/artifact/Cq9b4U2Dm7X6R5HZxCRj7k). Nothing is built. If it is picked up: reuse the New Intelligence lines (`shared/sheetIntel.ts`, one thing = one line, "Also picked up…" for folded pickups) so it cannot disagree with the Summary, and keep the rule that lines are the officer's own sentence with no counts (CLAUDE.md, Intelligence rules).
+
+## Touch: the first tap opens the observation without the keyboard (v2.83.17)
+
+On a phone or tablet the on-screen keyboard used to come up the moment the
+observation of a row was tapped, covering the shortcut chips and the row so the
+officer could not see what a chip tap was putting in. Now (`EditableCell.tsx`,
+touch devices only, `useIsTouchDevice`): **one tap** opens the observation with the
+caret at the end and **no keyboard** (`inputMode="none"`), so the chips can be
+tapped and the text watched; **a second tap in the text** brings the keyboard up
+(the field is blurred and focused again, with the caret kept, because a browser
+only raises the keyboard on a fresh focus — the same way the Map's Quick Entry
+does it). The re-focus is not treated as leaving the cell (no save, no close).
+Laptop / desktop are unchanged: the cell types straight away. Unchanged on purpose:
+the first row of a new sheet and the Cease row still open with the keyboard up
+(the officer is about to type the address). Checked in `e2e/touch-keyboard.spec.ts`
+(a touch browser: `inputmode` is "none" after the first tap and not after the
+second; desktop is never "none"); **the real keyboard is not tried on an iPad
+here — check there after deploy.** Open question for the owner: the same
+first-tap-no-keyboard for the first row and Cease row.

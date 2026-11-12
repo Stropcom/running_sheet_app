@@ -22,6 +22,7 @@ import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { User, Car } from "lucide-react";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
+import { useIsTouchDevice } from "../intelligenceMapping/deviceHooks";
 import {
   convertGoogleAddresses,
   formatIntelVehicle,
@@ -91,6 +92,14 @@ export function EditableCell({
   // Opened by a card tap: focus it without raising the on-screen keyboard
   // (inputMode "none") until the officer actually taps into the text.
   const [noKeyboard, setNoKeyboard] = useState(false);
+  // Phone / tablet (no physical keyboard): the first tap on an observation
+  // opens it without the on-screen keyboard, so the chips and the row stay in
+  // view while chips are tapped; a second tap in the text brings the keyboard
+  // up. Laptop / desktop always type straight away.
+  const isTouch = useIsTouchDevice();
+  // True for the instant the field is blurred and re-focused to raise the
+  // keyboard, so that is not mistaken for the officer leaving the cell.
+  const refocusingRef = useRef(false);
   // The caret goes to the end of the text when the cell opens by itself.
   const [caretToEnd, setCaretToEnd] = useState(false);
   useEffect(() => {
@@ -569,9 +578,27 @@ export function EditableCell({
             data-row-id={rowId}
             inputMode={noKeyboard ? "none" : undefined}
             // Tapping into the text is the officer choosing to type, so the
-            // keyboard is allowed again.
-            onPointerDown={() => setNoKeyboard(false)}
+            // keyboard is allowed again. The field is already focused (without
+            // a keyboard), and a browser only raises the keyboard on a fresh
+            // focus, so it is blurred and focused again — the same way the Map's
+            // Quick Entry does it (enableInlineTyping).
+            onClick={e => {
+              if (!noKeyboard) return;
+              const el = e.currentTarget;
+              const from = el.selectionStart ?? el.value.length;
+              const to = el.selectionEnd ?? from;
+              setNoKeyboard(false);
+              requestAnimationFrame(() => {
+                refocusingRef.current = true;
+                el.inputMode = "";
+                el.blur();
+                el.focus();
+                el.setSelectionRange(from, to);
+                refocusingRef.current = false;
+              });
+            }}
             onFocus={e => {
+              if (refocusingRef.current) return;
               notifyObservationFocus();
               // A cell opened by a card tap (or opened by itself on a new first
               // row) starts with the caret at the end, ready for the next
@@ -599,6 +626,7 @@ export function EditableCell({
               }
             }}
             onBlur={() => {
+              if (refocusingRef.current) return;
               // A click on a suggestion fires its own onMouseDown (which
               // preventDefault's) before this blur — so by the time blur
               // actually runs here, mentionWord is only still set if focus
@@ -850,7 +878,15 @@ export function EditableCell({
   return (
     <div
       className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors whitespace-pre-wrap"
-      onClick={() => setEditing(true)}
+      onClick={() => {
+        // Touch: open the observation without the keyboard, caret at the end
+        // (see isTouch above); tap the text again to type.
+        if (multiline && isTouch) {
+          setNoKeyboard(true);
+          setCaretToEnd(true);
+        }
+        setEditing(true);
+      }}
     >
       {value || (
         <span className="text-muted-foreground italic text-xs">

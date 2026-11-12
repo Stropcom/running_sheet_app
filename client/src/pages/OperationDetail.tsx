@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   buildRunningSheetTitle,
   getTargetTitleBracket,
+  perthDateISO,
 } from "@shared/runningSheetTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,7 +121,7 @@ export default function OperationDetail() {
   // Create sheet state
   const [createOpen, setCreateOpen] = useState(false);
   const [newSheetDate, setNewSheetDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
+    perthDateISO(new Date())
   );
   const [newTargetId, setNewTargetId] = useState<number | null>(null);
   const [targetMode, setTargetMode] = useState<"none" | "link">("none");
@@ -219,7 +220,7 @@ export default function OperationDetail() {
     onSuccess: data => {
       utils.sheet.listByOperation.invalidate({ operationId });
       setCreateOpen(false);
-      setNewSheetDate(new Date().toISOString().slice(0, 10));
+      setNewSheetDate(perthDateISO(new Date()));
       setCinList([]);
       setCinInput("");
       toast.success("Running sheet created");
@@ -350,7 +351,7 @@ export default function OperationDetail() {
 
   const handleDialogClose = (open: boolean) => {
     if (!open) {
-      setNewSheetDate(new Date().toISOString().slice(0, 10));
+      setNewSheetDate(perthDateISO(new Date()));
       setNewTargetId(null);
       setTargetMode("none");
       setTargetSearch("");

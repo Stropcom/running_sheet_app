@@ -49,6 +49,7 @@ import {
   summarisePlaces,
   type PlaceRecord,
 } from "@shared/placesReport";
+import { perthDateISO } from "@shared/runningSheetTitle";
 
 type PackageScope = "operation" | "target";
 
@@ -443,7 +444,7 @@ export default function IntelPackages() {
     heatLocations: { count: number }[]
   ): PackageSummaryRow[] {
     const ymd = (r: RollupExportRow) =>
-      r.sheetDate ?? new Date(r.createdAt).toISOString().slice(0, 10);
+      r.sheetDate ?? perthDateISO(new Date(r.createdAt));
     const sorted = [...rollupRows].sort((a, b) => ymd(a).localeCompare(ymd(b)));
     const period = sorted.length
       ? sorted.length === 1 || ymd(sorted[0]) === ymd(sorted[sorted.length - 1])

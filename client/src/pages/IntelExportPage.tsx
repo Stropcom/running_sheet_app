@@ -36,6 +36,7 @@ import {
   Download,
   Loader2,
 } from "lucide-react";
+import { perthDateISO } from "@shared/runningSheetTitle";
 
 function formatDateShort(ts: number) {
   return format(new Date(ts), "d MMM yyyy");
@@ -237,7 +238,7 @@ export default function IntelExportPage() {
         /[^a-zA-Z0-9]/g,
         "_"
       );
-      const dateStr = new Date().toISOString().slice(0, 10);
+      const dateStr = perthDateISO(new Date());
 
       if (includeRunningSheet && formatJson) {
         downloadTextFile(

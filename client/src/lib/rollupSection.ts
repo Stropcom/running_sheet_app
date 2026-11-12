@@ -9,6 +9,7 @@
 
 import { issuesToShow } from "@shared/summaryIssues";
 import { sheetIntelPdfBody, type SheetIntelPdfData } from "./sheetIntelPdf";
+import { perthDateISO } from "@shared/runningSheetTitle";
 
 export type RollupExportRow = {
   sheetId: number;
@@ -60,7 +61,7 @@ export function formatRollupDate(
   sheetDate: string | null,
   createdAt: Date | string
 ): string {
-  const ymd = sheetDate ?? new Date(createdAt).toISOString().slice(0, 10);
+  const ymd = sheetDate ?? perthDateISO(new Date(createdAt));
   const [y, m, d] = ymd.split("-");
   return y && m && d ? `${d}-${m}-${y}` : ymd;
 }

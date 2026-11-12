@@ -29,6 +29,7 @@ import {
 import { useState, type ReactNode } from "react";
 import {} from "date-fns";
 import { toast } from "sonner";
+import { perthDateISO } from "@shared/runningSheetTitle";
 
 // ── Deployment Rollup ────────────────────────────────────────────────────────
 // A chronological (newest-first) read view over every running sheet's
@@ -323,7 +324,7 @@ function formatRollupCardDate(
   sheetDate: string | null,
   createdAt: Date | string
 ): string {
-  const ymd = sheetDate ?? new Date(createdAt).toISOString().slice(0, 10);
+  const ymd = sheetDate ?? perthDateISO(new Date(createdAt));
   const [y, m, d] = ymd.split("-").map(Number);
   if (!y || !m || !d) return ymd;
   const date = new Date(Date.UTC(y, m - 1, d));

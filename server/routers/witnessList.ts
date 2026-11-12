@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { computeWitnessListData } from "../db";
+import { perthDateISO } from "@shared/runningSheetTitle";
 
 export const witnessListRouter = router({
   /**
@@ -49,7 +50,7 @@ export const witnessListRouter = router({
       );
       const buf = await generateWitnessListDocx(data);
 
-      const filename = `WitnessList_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date(data.producedAt).toISOString().slice(0, 10)}.docx`;
+      const filename = `WitnessList_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${perthDateISO(new Date(data.producedAt))}.docx`;
       return {
         filename,
         base64: buf.toString("base64"),

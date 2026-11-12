@@ -60,6 +60,8 @@ import {
   type SyncTarget,
 } from "../shared/taskingRosterSync";
 import { COMMAND_LABELS, type CommandCode } from "../shared/commands";
+import { perthDateISO } from "@shared/runningSheetTitle";
+import { addDaysToDateStr, daysBetweenDateStrs } from "./ctoRosterDates";
 
 // ── Per-Command scope ────────────────────────────────────────────────────────
 // Each Command has its own roster (see server/rosterScope.ts). Inside a
@@ -390,7 +392,7 @@ export async function changeCtoRosterMemberTeam(
   // them to the new team as-is, so there's nothing to clear.
   if (keepAllShifts) return;
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = perthDateISO(new Date());
   const futureShifts = await db
     .select()
     .from(ctoRosterShifts)
@@ -432,7 +434,7 @@ export async function getRelevantCtoRosterSecondments(): Promise<
 > {
   const db = await getDb();
   if (!db) return [];
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = perthDateISO(new Date());
   const [rows, members, teams] = await Promise.all([
     db
       .select()
@@ -466,7 +468,7 @@ export async function createCtoRosterSecondment(
   if (startDate > endDate) {
     throw new Error("Start date must be on or before the finish date");
   }
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = perthDateISO(new Date());
   const existing = await db
     .select({ id: ctoRosterSecondments.id })
     .from(ctoRosterSecondments)
@@ -2277,21 +2279,6 @@ export async function getCtoRosterAuditLog(
 // date, and optionally copies the resulting calendar to every other member of
 // the same team. Used for e.g. "Strop has a 2-week cycle entered — repeat it
 // for the rest of the year and copy it to the rest of Team 1."
-
-function addDaysToDateStr(dateStr: string, n: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + n);
-  return dt.toISOString().slice(0, 10);
-}
-
-function daysBetweenDateStrs(a: string, b: string): number {
-  const [ay, am, ad] = a.split("-").map(Number);
-  const [by, bm, bd] = b.split("-").map(Number);
-  const da = Date.UTC(ay, am - 1, ad);
-  const db_ = Date.UTC(by, bm - 1, bd);
-  return Math.round((db_ - da) / 86_400_000);
-}
 
 type CyclePatternDay = {
   shiftCode: string;

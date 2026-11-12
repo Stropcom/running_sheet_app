@@ -230,3 +230,31 @@ width). Tablet and laptop widths are unchanged — the single line. Checked at 3
 1280 px by eye, and in `e2e/shortcuts-phone.spec.ts` (390 px: the page does not scroll
 sideways, delete is wholly on screen, the text sits under the trigger; 1280 px: the text is on
 the trigger's line), which failed on the old layout first.
+
+## New sheets and "today" use the Perth date (v2.83.30)
+
+**The bug.** The New Running Sheet dialog (and Edit Sheet, the Heat Map's date, the Intel Export
+file name) worked out "today" with `new Date().toISOString().slice(0, 10)` — the **UTC** date.
+Perth is UTC+8, so from midnight to 08:00 in Perth that is still *yesterday*: a sheet started
+at 07:38 on the 13th was dated the 12th ("20261112 - …"), and because the server only stamps a
+new row's time on a sheet dated today, its rows came up "Set time" instead of the current time.
+Found when a browser test that creates a sheet failed every run between 00:00 and 08:00 Perth.
+
+**The fix.** Every "today" now goes through `perthDateISO(new Date())` (`shared/runningSheetTitle.ts`,
+UTC+8, no daylight saving): the three New Running Sheet defaults and Edit Sheet
+(`OperationDetail.tsx`, `useSheetEditing.ts`), the Heat Map default (`IntelligenceHeatMap.tsx`),
+the Intel Export file name, the server's three roster / secondment "today" checks
+(`server/ctoRoster.ts` — a secondment ending "yesterday" Perth-time no longer shows until 08:00),
+the witness-list file name, and the "created at → date" fallback for a sheet with no date
+(`rollupSection.ts`, `DeploymentRollup.tsx`, `IntelPackages.tsx`). **Left as they are, on purpose:**
+calendar arithmetic on dates built in UTC (the week helpers, roster `shiftDate` columns,
+`Date.UTC(…)` then `.toISOString()`), which has no time-zone conversion in it; and the screens that
+use the device's own clock (`format(new Date(), "yyyy-MM-dd")` on the roster), which is Perth on an
+officer's phone or laptop.
+
+**Checked.** `server/perthDate.test.ts`: the helper at the boundaries (15:59:59 vs 16:00:00 UTC,
+the year turning, 29 February) and a guard that fails if `new Date().toISOString().slice(0, 10)`
+(or `.split("T")[0]`) appears anywhere in the source again. `e2e/perth-date.spec.ts` sets the
+page's clock to 23:38 UTC on the 12th and checks the New Running Sheet date is the 13th, the day
+before at 15:59 UTC, and across New Year (it failed on the old code first). And the New
+Intelligence browser test, which was failing at this very hour, passes.

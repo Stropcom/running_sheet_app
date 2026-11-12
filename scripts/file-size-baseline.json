@@ -1,6 +1,5 @@
 {
   "server/ctoRoster.ts": 2851,
-  "client/src/pages/OperationManagerPage.tsx": 2842,
   "client/src/components/DashboardLayout.tsx": 2759,
   "client/src/lib/tacticalMarkers.ts": 2550,
   "client/src/pages/Intelligence.tsx": 2511,

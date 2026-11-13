@@ -627,3 +627,23 @@ tests `server/commencedFlag.test.ts`):
 - **Not looked at in a browser** (Google Maps cannot run in the sandbox); the rule and the state are unit-tested.
   Check on the live Map with a new sheet: commence at an address, flag shows "Commenced <time>"; log an arrival and
   it moves to the real position. The Fly flag takes the same text. The Target Logger card on the sheet is unchanged.
+
+## At the start: "Depart TGT" / "Depart US" for vehicles parked where surveillance commenced (v2.88.0)
+Owner's screenshots: a sheet opened with "…1DAR77 … and … 1ARD64 …, park and unattended in the driveway
+at 38 Lawley Crescent." then "Surveillance commenced in the vicinity of 38 Lawley Crescent". The Quick
+Entry card showed both vehicles but **the running sheet's Target Logger showed nothing**, because the sheet
+hid a "parked and unattended" vehicle until someone was logged at that place (v2.83.31).
+Now, **at the very start** — the surveillance is live, commenced at that same place
+(`parkedAtCommencement`, `shared/vehicleCardWording.ts`), and nothing logged yet says where the target is — each
+such vehicle gets a card (sheet `TargetPanel.tsx` and Map Quick Entry `QeAddressCard.tsx`) with two buttons in
+place of the single Depart:
+- **"1DAR77 Depart TGT"** → "Vehicle 1DAR77, DARYANI driver and sole occupant, departed 38 Lawley Crescent and
+  continued via:" (the sheet's person target's surname; only offered when the sheet has a person target).
+- **"1DAR77 Depart US"** (US = unseen) → "Vehicle 1DAR77, occupant/s unseen, departed 38 Lawley Crescent and
+  continued via:" (`OCCUPANTS_UNSEEN`; already read as "no name" by the occupant rules).
+Once any row locates the target (inside the place, walking to a vehicle …) the card falls back to the old
+behaviour, and a vehicle parked anywhere else is still hidden until someone is there. Tests:
+`server/parkedDepart.test.ts` (wording, both sentences read back as departures, the owner's two-vehicle sheet),
+browser `e2e/target-logger-vehicle-card.spec.ts` (sheet card, 1DAR77 Depart TGT writes the row). The Quick Entry
+card shares the same rule but cannot be driven in the sandbox — check it live. The older Depart wording for an
+unattended vehicle ("unseen occupant/s") is unchanged elsewhere.

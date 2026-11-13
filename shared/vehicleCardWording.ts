@@ -13,6 +13,8 @@
 // "SANTOS driver and sole occupant", or the driver and passenger as they were
 // worded — minus anyone a later row has put somewhere else.
 import type { TrackedTarget } from "./trackedTarget";
+import { samePlace } from "./targetPosition";
+import { shortAddressLabel } from "./markerLink";
 import { extractOccupantNames } from "./occupantNames";
 import { seatedOccupantWording, type SeatPlacement } from "./vehicleSeats";
 import {
@@ -116,4 +118,59 @@ export function continuedOccupantWording(input: {
  */
 export function leftAddressSentence(names: string, location: string): string {
   return `${names} exited ${location} and walked `;
+}
+
+// ─── At the start: vehicles already parked where the surveillance commenced ──
+// "Surveillance commenced in the vicinity of 38 Lawley Crescent" with two
+// "parked and unattended" vehicles there and nobody logged anywhere yet: the
+// first thing that happens is usually a vehicle leaving. The card offers, for
+// each vehicle, who is in it:
+//   "1DAR77 Depart TGT"  — "Vehicle 1DAR77, DARYANI driver and sole occupant,
+//                           departed 38 Lawley Crescent and continued via:"
+//   "1DAR77 Depart US"   — "Vehicle 1DAR77, occupant/s unseen, departed … "
+// (US = unseen). TGT is only offered when the sheet has a person target.
+
+/** What a departure names when the occupants were not seen. */
+export const OCCUPANTS_UNSEEN = "occupant/s unseen";
+
+export interface ParkedDepartOption {
+  key: string;
+  label: string;
+  text: string;
+}
+
+export function parkedDepartOptions(input: {
+  rego: string;
+  address: string;
+  target: TrackedTarget | null | undefined;
+}): ParkedDepartOption[] {
+  const { rego, address, target } = input;
+  const options: ParkedDepartOption[] = [];
+  if (target && target.kind === "person" && target.token.trim())
+    options.push({
+      key: `dep-tgt-${rego}`,
+      label: `${rego} Depart TGT`,
+      text: `Vehicle ${rego}, ${target.token.toUpperCase()} driver and sole occupant, departed ${address} and continued via:`,
+    });
+  options.push({
+    key: `dep-us-${rego}`,
+    label: `${rego} Depart US`,
+    text: `Vehicle ${rego}, ${OCCUPANTS_UNSEEN}, departed ${address} and continued via:`,
+  });
+  return options;
+}
+
+/** A vehicle written only as "parked and unattended" is at the start when the
+ * surveillance is live, commenced at that very place, and nothing logged yet
+ * says where the target is. */
+export function parkedAtCommencement(input: {
+  address: string;
+  commencedPlace: string | null | undefined;
+  ended: boolean;
+  positionLogged: boolean;
+}): boolean {
+  if (input.ended || input.positionLogged || !input.commencedPlace)
+    return false;
+  const place = shortAddressLabel(input.commencedPlace);
+  return !!place && samePlace(input.address, place);
 }

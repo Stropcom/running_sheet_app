@@ -236,3 +236,66 @@ test("Tgt to an unattended vehicle, then Depart, names him in it", async ({
   await expect(departed).toContainText("SANTOS");
   await expect(departed).not.toContainText("unseen occupant");
 });
+
+test("At the start: two vehicles parked and unattended where surveillance commenced offer Depart TGT / Depart US", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", { name: `At start ${Date.now()}` });
+  const opId = op.id ?? op.operationId ?? op;
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const target = await post("target.create", {
+    operationId: opId,
+    name: `DARYANI Start ${Date.now()}`,
+    firstNames: "Arman",
+    surname: "DARYANI",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: opId,
+    targetId: target.id ?? target.targetId ?? target,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation:
+      "A charcoal Volvo XC60 station sedan, bearing WA registration 1DAR77 (Vehicle 1DAR77) and a white Isuzu D-MAX Utility, bearing WA registration 1ARD64 (Vehicle 1ARD64), park and unattended in the driveway at 4 Lawley Crescent.",
+  });
+  await post("row.create", {
+    sheetId,
+    observation:
+      "Surveillance commenced in the vicinity of 4 Lawley Crescent, MOUNT LAWLEY WA (4 Lawley Crescent).",
+  });
+  await page.goto(`/sheet/${sheetId}`);
+  await page.getByText("Target Logger", { exact: true }).first().click();
+
+  // Both vehicles, each with the two options.
+  for (const rego of ["1DAR77", "1ARD64"]) {
+    await expect(
+      page.getByRole("button", { name: `${rego} Depart TGT`, exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: `${rego} Depart US`, exact: true })
+    ).toBeVisible();
+  }
+
+  await page
+    .getByRole("button", { name: "1DAR77 Depart TGT", exact: true })
+    .click();
+  const departed = page
+    .locator("tbody tr")
+    .filter({ hasText: "departed 4 Lawley Crescent" });
+  await expect(departed).toHaveCount(1);
+  await expect(departed).toContainText(
+    "Vehicle 1DAR77, DARYANI driver and sole occupant, departed 4 Lawley Crescent"
+  );
+});

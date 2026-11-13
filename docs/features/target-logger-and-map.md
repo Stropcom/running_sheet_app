@@ -523,3 +523,24 @@ who leaves it unfinished changes nothing about where the logger thinks they are 
 against `scanWalkEvents`. Checked: unit test; `e2e/target-logger-vehicle-card.spec.ts` (the
 row opens with exactly that text, the caret at the end, and typing carries on). The Map's
 Quick Entry side shares the sentence but cannot be driven in the sandbox — check it live.
+
+## A vehicle found "parked and unattended" near the target gets Tgt to / Depart (v2.83.31)
+
+A row such as "Vehicle 1EMB303 parked and unattended on Murray Street, PERTH, in the vicinity of
+Dental Boutique Perth." written **after** the target went inside Dental Boutique Perth made no
+vehicle card, so there was no "Tgt to 1EMB303" and no "1EMB303 Depart" (owner's screenshot).
+`matchVehicleArrival` still ignores an "unattended" row on purpose (nobody was seen arriving), so
+the new `matchUnattendedVehicles` (`shared/vehicleEventPatterns.ts`) reads only what the row
+states: every plate on it (a plate has a digit, or is the bracket form "(Vehicle HOGES)" — "Vehicle
+parked" never reads "parked" as a plate) and the place after a connector ("at", "near", "outside",
+"in the vicinity of", the bracket short form first). **No place written = nothing read**, as before.
+`computePendingVehicleArrivals` lists it as parked at that place with `unattended: true` and
+"unseen occupant/s". The sheet's card (`TargetPanel.tsx`) shows it **only once someone is logged
+inside that place (or is on the way to / in the vehicle)**; with nobody there nothing is offered,
+as before. Then "Tgt to 1EMB303" / "Walked to 1EMB303", "Left address" and "1EMB303 Depart" work
+as on any parked vehicle: Depart pressed straight away says "Vehicle 1EMB303, unseen occupant/s,
+departed Dental Boutique Perth and continued via:", after "Tgt to" it names him. A later depart
+row removes it. Also seen by anything that reads pending arrivals (the target-position scan, so a
+vehicle target now has a "parked" position from such a row). Tests: `server/unattendedVehicle.test.ts`;
+browser: `e2e/target-logger-vehicle-card.spec.ts` (both cases, failing on the old code). The Map's
+Quick Entry card takes the same list but cannot be driven in the sandbox — check it live.

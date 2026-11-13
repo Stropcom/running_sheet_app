@@ -9,6 +9,7 @@ import {
   occupantsWhoEntered,
   VEHICLE_ARRIVE_PATTERN,
   matchVehicleArrival,
+  matchUnattendedVehicles,
   matchVehicleSighting,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
@@ -36,6 +37,8 @@ import { locateTargetFromPending, samePlace } from "@shared/targetPosition";
 import { shortAddressLabel } from "@shared/markerLink";
 
 import { expandRowSegments } from "@shared/rowSegments";
+
+import { UNSEEN_OCCUPANTS } from "@shared/vehicleCardWording";
 
 import {
   attachVehicleMarkers,
@@ -332,6 +335,10 @@ export interface PendingVehicleArrival {
   /** The arrival row says they "continued out of sight" — so nobody can say
    * whether anyone is still in the vehicle until someone is seen again. */
   outOfSight: boolean;
+  /** The row only says the vehicle was "parked and unattended" at this place:
+   * nobody was seen arriving in it. The card shows it only once someone is
+   * logged at that place (or on the way to it). */
+  unattended?: boolean;
 }
 
 // Returns the most recent still-"here" (not yet re-departed) arrival per
@@ -361,6 +368,7 @@ export function computePendingVehicleArrivals(
       sheetId: number;
       rowId: number;
       outOfSight: boolean;
+      unattended?: boolean;
       orderIdx: number;
     }
   >();
@@ -369,6 +377,26 @@ export function computePendingVehicleArrivals(
   rows.forEach((row, idx) => {
     if (!row.observation) return;
     const arriveMatch = matchVehicleArrival(row.observation);
+    if (!arriveMatch) {
+      // "Vehicle 1EMB303 parked and unattended ... in the vicinity of X": no
+      // arrival was seen, but a person logged at X can walk out to it.
+      const found = matchUnattendedVehicles(row.observation);
+      if (found) {
+        for (const rego of found.regos) {
+          lastArrivalByRego.set(rego, {
+            occupantDesc: UNSEEN_OCCUPANTS,
+            address: found.address,
+            sheetId: row.sheetId,
+            rowId: row.id,
+            outOfSight: false,
+            unattended: true,
+            orderIdx: idx,
+          });
+          departedRegos.delete(rego);
+        }
+        return;
+      }
+    }
     if (arriveMatch) {
       lastArrivalByRego.set(arriveMatch.rego, {
         occupantDesc: arriveMatch.occupantDesc,

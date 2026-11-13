@@ -327,6 +327,10 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
               pendingPlacements ?? []
             );
             const inNames = occupants.filter(o => !toNames.includes(o));
+            // A vehicle only written as "parked and unattended" gets a card
+            // once someone is logged at that place (they can walk out to it)
+            // or is already on the way to / in it.
+            if (a.unattended && insideHere.length === 0 && !inCar) return;
             // Where each sits, when the rows say — "MENON (driver)".
             const seatMap = seatsOf({
               desc: a.occupantDesc,

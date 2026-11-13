@@ -258,3 +258,16 @@ the year turning, 29 February) and a guard that fails if `new Date().toISOString
 page's clock to 23:38 UTC on the 12th and checks the New Running Sheet date is the 13th, the day
 before at 15:59 UTC, and across New Year (it failed on the old code first). And the New
 Intelligence browser test, which was failing at this very hour, passes.
+
+## Space bar no longer brackets "303 parked and unattended on …" (v2.83.31)
+
+Typing "Vehicle 1EMB303 parked and unattended on Murray Street, PERTH" then a space added
+"(303 parked and unattended on Murray Street)". The live address completion
+(`detectAddressSpaceCompletion`, `client/src/lib/mentionAutocomplete.ts`) took the "303" at the end of
+the plate as a street number, because its pattern had no start boundary, and read everything up to
+"Street, PERTH" as one address. Both patterns now require the street number to start a word
+(`(?<![A-Za-z0-9])`). "Vehicle 1EMB303 parked outside 12 Murray Street, PERTH" still brackets
+"(12 Murray Street)". Tests: `server/addressSpaceCompletion.test.ts` (fails on the old pattern).
+**Known and left alone:** the street words between the number and the street type are loose (up to
+40 letters), so a count in prose ("3 men walked along Murray Street, PERTH") can still be read as an
+address. Not changed without the owner's say-so.

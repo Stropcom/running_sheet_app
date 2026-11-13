@@ -192,9 +192,13 @@ const AU_STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 // space-bar trigger or converted on paste/blur by that function. Group 2
 // — the street portion, used as the bracket instead when there's no
 // business name.
+// The street number must start a word: "1EMB303 parked and unattended on
+// Murray Street, PERTH" has a "303" inside a rego, and without this the
+// match started there and bracketed "(303 parked and unattended on Murray
+// Street)" on the space bar. Both regexes below carry the same guard.
 const ADDRESS_SPACE_COMPLETION_RE = new RegExp(
   `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
-    `([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*[A-Za-z][A-Za-z'\\s]{0,40}?\\s+(?:${AU_STATE_CODES})$`,
+    `(?<![A-Za-z0-9])([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*[A-Za-z][A-Za-z'\\s]{0,40}?\\s+(?:${AU_STATE_CODES})$`,
   "i"
 );
 
@@ -247,7 +251,7 @@ const SUBURB_LEAD_WORDS = new Set([
 ]);
 const ADDRESS_SPACE_COMPLETION_NO_STATE_RE = new RegExp(
   `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
-    `([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*([A-Za-z]{1,}(?:['-][A-Za-z]+)?)$`,
+    `(?<![A-Za-z0-9])([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*([A-Za-z]{1,}(?:['-][A-Za-z]+)?)$`,
   "i"
 );
 

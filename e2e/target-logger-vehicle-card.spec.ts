@@ -143,3 +143,96 @@ test("Left address writes 'SANTOS exited <place> and walked ' and leaves the cur
     "SANTOS exited Almuna and walked across the road towards Woolworths."
   );
 });
+
+// A vehicle only written as "parked and unattended ... in the vicinity of <place>"
+// after the target went inside that place: the card still offers "Tgt to <rego>"
+// and "<rego> Depart" (shared/vehicleEventPatterns.ts matchUnattendedVehicles).
+async function unattendedSheet(page: import("@playwright/test").Page) {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Unattended ${Date.now()}`,
+  });
+  const opId = op.id ?? op.operationId ?? op;
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const target = await post("target.create", {
+    operationId: opId,
+    name: `SANTOS Unattended ${Date.now()}`,
+    firstNames: "Miguel",
+    surname: "SANTOS",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: opId,
+    targetId: target.id ?? target.targetId ?? target,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  const row = (observation: string) =>
+    post("row.create", { sheetId, observation });
+  await row(
+    "Surveillance commenced in the vicinity of Dental Boutique Perth, 634 Murray Street, WEST PERTH WA (Dental Boutique Perth)."
+  );
+  await row("SANTOS entered Dental Boutique Perth and continued out of sight.");
+  await row(
+    "Vehicle 1EMB303 parked and unattended on Murray Street, PERTH, in the vicinity of Dental Boutique Perth."
+  );
+  await page.goto(`/sheet/${sheetId}`);
+  await page.getByText("Target Logger", { exact: true }).first().click();
+}
+
+test("a vehicle found parked and unattended near where the target is inside gets Tgt to / Depart", async ({
+  page,
+}) => {
+  await unattendedSheet(page);
+  await expect(
+    page.getByRole("button", { name: "Tgt to 1EMB303", exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Left address", exact: true })
+  ).toBeVisible();
+  const depart = page.getByRole("button", {
+    name: "1EMB303 Depart",
+    exact: true,
+  });
+  await expect(depart).toBeVisible();
+  // Nobody was seen in it, so a depart pressed straight away says so.
+  await depart.click();
+  const departed = page
+    .locator("tbody tr")
+    .filter({ hasText: "departed Dental Boutique Perth" });
+  await expect(departed).toHaveCount(1);
+  await expect(departed).toContainText(
+    "Vehicle 1EMB303, unseen occupant/s, departed Dental Boutique Perth"
+  );
+});
+
+test("Tgt to an unattended vehicle, then Depart, names him in it", async ({
+  page,
+}) => {
+  await unattendedSheet(page);
+  await page
+    .getByRole("button", { name: "Tgt to 1EMB303", exact: true })
+    .click();
+  await expect(
+    page
+      .locator("tbody tr")
+      .filter({ hasText: "walked towards Vehicle 1EMB303" })
+  ).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "1EMB303 Depart", exact: true })
+    .click();
+  const departed = page
+    .locator("tbody tr")
+    .filter({ hasText: "departed Dental Boutique Perth" });
+  await expect(departed).toHaveCount(1);
+  await expect(departed).toContainText("SANTOS");
+  await expect(departed).not.toContainText("unseen occupant");
+});

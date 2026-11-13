@@ -43,7 +43,9 @@ describe("tactical marker library", () => {
     const h = createHash("sha256")
       .update(JSON.stringify(TACTICAL_ICONS))
       .digest("hex");
-    expect(h).toBe("9fe976b76fedc5fd005c16cad8563c42c13d24012e42d45dfc0b68b1efb82424");
+    expect(h).toBe(
+      "9fe976b76fedc5fd005c16cad8563c42c13d24012e42d45dfc0b68b1efb82424"
+    );
   });
 
   it("looks icons up by key", () => {

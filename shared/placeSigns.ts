@@ -125,7 +125,7 @@ const NOT_A_PARK_RE =
 const CAFE_RE =
   /\b(?:cafes?|coffee|espresso|roasters?|roastery|barista|starbucks|gloria\s+jean'?s|zarraffa'?s)\b/i;
 const FAST_FOOD_RE =
-  /\b(?:burgers?|takeaway|take-?away|fast\s+food|fish\s+(?:and|&)\s+chips|fish\s*n\s*chips|kebabs?|mcdonald'?s|macca'?s|hungry\s+jack'?s|kfc|subway(?!\s+station)|red\s+rooster|domino'?s|pizza\s+hut|nando'?s|grill'?d|oporto|chicken\s+treat|zambrero|guzman|taco\s+bell|krispy\s+kreme)\b/i;
+  /\b(?:burgers?|takeaway|take-?away|fast\s+food|fish\s+(?:and|&)\s+chips|fish\s*n\s*chips|kebabs?|mc\s?donald'?s|macca'?s|hungry\s+jack'?s?|kfc|k\.f\.c\.?|kentucky\s+fried\s+chicken|subway(?!\s+station)|red\s?rooster|domino'?s|pizza\s+hut|nando'?s|grill'?d|oporto|chicken\s?treat|zambrero|guzman|taco\s+bell|krispy\s+kreme)(?![A-Za-z])/i;
 const RESTAURANT_RE =
   /\b(?:restaurant|bistro|brasserie|trattoria|osteria|ristorante|pizzeria|diner|grill|eatery|steakhouse|cantina|izakaya|kitchen)\b/i;
 const AIRPORT_RE =

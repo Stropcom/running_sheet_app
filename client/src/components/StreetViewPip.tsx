@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
+import { defaultPipPosition } from "@shared/pipLayout";
+import { otherPipRects, registerPip, unregisterPip } from "@/lib/pipRegistry";
 
 const MIN_WIDTH = 220;
 const MIN_HEIGHT = 160;
@@ -149,6 +151,22 @@ export function StreetViewPip({
     panoramaRef.current?.setVisible(false);
   };
 
+  // Where the panel puts itself when it opens (set by the effect below).
+  const placeDefaultRef = useRef<(() => void) | null>(null);
+  // Opening puts the panel in its default place (beside the Photos panel if
+  // that is open) and lets the other panel see it; closing lets go of the spot.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    if (open) {
+      placeDefaultRef.current?.();
+      registerPip(panel);
+    } else {
+      unregisterPip(panel);
+    }
+    return () => unregisterPip(panel);
+  }, [open]);
+
   // Initial position/size + drag + resize, all via direct style mutation.
   useEffect(() => {
     const panel = panelRef.current;
@@ -158,15 +176,23 @@ export function StreetViewPip({
     const container = panel.parentElement;
     if (!container) return;
 
+    // Top-left under the Follow me row, the same place as the Photos panel;
+    // beside it when that is already open (shared/pipLayout.ts). Run every
+    // time the panel opens (see the `open` effect below), not only on mount.
     const placeDefault = () => {
-      const cw = container.clientWidth;
-      const ch = container.clientHeight;
-      const w = panel.offsetWidth;
-      const h = panel.offsetHeight;
-      panel.style.left = `${clamp(cw * 0.56, 8, Math.max(8, cw - w - 8))}px`;
-      panel.style.top = `${clamp(ch * 0.3, 8, Math.max(8, ch - h - 8))}px`;
+      const pos = defaultPipPosition({
+        container: {
+          width: container.clientWidth,
+          height: container.clientHeight,
+        },
+        size: { width: panel.offsetWidth, height: panel.offsetHeight },
+        others: otherPipRects(panel, container),
+      });
+      panel.style.left = `${pos.left}px`;
+      panel.style.top = `${pos.top}px`;
     };
     placeDefault();
+    placeDefaultRef.current = placeDefault;
 
     let drag: {
       startX: number;

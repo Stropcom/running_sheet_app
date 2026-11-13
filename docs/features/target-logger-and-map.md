@@ -577,3 +577,34 @@ to another location" / "Walked to 1EMB303". He has gone nowhere, so now (owner's
   `e2e/target-logger-out-the-front.spec.ts` (the screenshot case: pill, buttons, "Returned inside"
   writes the sentence and he is inside again; failing on the old code). The Map's Quick Entry card uses
   the same rule but cannot be driven in the sandbox — check it on the live Map.
+
+## The burger chains all get the hamburger (fast food) sign (v2.86.1)
+
+McDonald's, KFC, Hungry Jack's, Chicken Treat and Red Rooster already got the **Fast Food Sign** (the
+burger, `place_fast_food`) as their default map pin — by name, in `FAST_FOOD_RE`
+(`shared/placeSigns.ts`), whichever way the place reached the map (a sheet row, a Google place, a
+Fly / Nearby tap). What was missed was the way some of them are written. Now also read: **Mc Donald's**,
+**Kentucky Fried Chicken**, **K.F.C.**, **Hungry Jack** (no "s"), **ChickenTreat**, **RedRooster**. A
+longer word is still not a chain ("Hungry Jackson Hall", "Chicken Licken" stay as they were). An
+officer's own chosen icon always wins, and pins already saved with another icon keep it. Tests:
+`server/placeSigns.test.ts` ("the burger chains all get the fast food (hamburger) sign", 23 spellings
+through `placeSignOfName` and `signIconOf`). **If a McDonald's or KFC pin still shows another icon, it
+is either an icon the officer chose, or a name the rule has not seen — send the label as it is on the
+map.**
+
+## Street View and Photos open in the same place, side by side (v2.86.1)
+
+The two picture-in-picture panels on the Map page used to open in different places (Photos at the
+top-left under the Follow me buttons; Street View 56% across and 30% down). Now one rule,
+`shared/pipLayout.ts` (`defaultPipPosition`, tests `server/pipLayout.test.ts`), puts **either** of them
+at **left 10, top 110** — the top-left, just under the Centre on me / Follow me row (which sits at top 60,
+40 high). **When the other panel is already open there, the new one goes to its right on the same row**
+(a 10 px gap), so the two sit side by side across the top; with no room to the right (a phone, 390 wide)
+it goes on the next row down, back at the left; a third would continue the row or start another. A panel
+the officer has dragged somewhere is never moved — only where a panel **opens** changed, and Street View
+now re-places itself every time it opens (Photos always did, as it is mounted fresh). The panels find
+each other through `client/src/lib/pipRegistry.ts` (Street View registers while it is open, Photos while
+it is mounted). Used on the Map page and RS Mapping (both use the same two components). **Not looked at
+in a browser** — Google Maps cannot run in the build sandbox; the placement rule itself is unit-tested.
+Check on the live Map: open Photos then Street View (and the other way round) on an iPad held both ways
+up, and on a phone.

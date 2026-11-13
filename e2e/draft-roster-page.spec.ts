@@ -79,21 +79,12 @@ test("Draft Roster: a cell's shift sheet saves a shift into the draft, Bulk Edit
   await expect(sheet).toBeHidden();
   await expect.poll(savedShifts).toBe(1);
 
-  // 2. Bulk Edit: drag across two empty cells (a plain tap on a cell selects
-  // and then unselects it on this page — see docs/features/dev-and-ops.md,
-  // phase 3k), Apply, pick Rest Day, apply to both.
+  // 2. Bulk Edit: tap two empty cells (a tap selects a cell and stays
+  // selected — it used to select and unselect), Apply, pick Rest Day, apply to
+  // both.
   await page.getByRole("button", { name: "Bulk Edit" }).click();
-  const cells: { x: number; y: number }[] = [];
-  for (const el of await empty.all()) {
-    const b = await el.boundingBox();
-    if (b && b.x > 420 && b.x + b.width < 1200)
-      cells.push({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-  }
-  expect(cells.length).toBeGreaterThan(2);
-  await page.mouse.move(cells[0].x, cells[0].y);
-  await page.mouse.down();
-  await page.mouse.move(cells[1].x, cells[1].y, { steps: 5 });
-  await page.mouse.up();
+  await tap(0);
+  await tap(1);
   await page.getByRole("button", { name: /^Apply \(2\)/ }).click();
   const bulk = page.getByRole("dialog");
   await bulk.getByRole("button", { name: "R Rest Day", exact: true }).click();

@@ -302,3 +302,35 @@ the Keyboard button on the Map's Quick Entry:
   scroll). **The real keyboard is not tried on an iPad / iPhone here — check there after deploy:
   that the icon raises and drops the keyboard on an open cell, and that tapping a chip with the
   keyboard off still leaves the cell open.**
+
+## New rows open by themselves; the keyboard goes off when a row closes (v2.86.0)
+
+Two owner changes to the running sheet:
+
+- **Add Row opens the new row at once, the cursor in it** (`useRowActions.ts`, `addRow`; every
+  device). Until now only the first row of a sheet (the one that comes with "Surveillance commenced in
+  the vicinity of ") opened by itself; any later row came in empty and had to be tapped. Now every new
+  row's observation opens, focused: an **empty row with the cursor at the start**, the first row with
+  the cursor after its opening text (the address goes there — unchanged). On a phone or tablet it opens
+  with no keyboard unless the keyboard icon is on (v2.85.0). Online only: a row added while offline is
+  not opened (the offline path is unchanged).
+- **The keyboard icon goes back to off whenever a row closes** (touch only; `resetKeyboard` in
+  `ObservationKeyboardContext.tsx`, called from the cell's blur in `EditableCell.tsx`). Switching it on
+  is for typing in the row that is open; the next row starts without the keyboard again. (The icon still
+  shows on / off as before and still works on an open row.) This replaces the "stays on across rows" of
+  v2.85.0.
+
+Checked: `e2e/touch-keyboard.spec.ts` (touch: a new row opens by itself, focused, caret at 0, no
+keyboard; the icon switches an open row on and off; switching it on then leaving the row turns it off;
+the next new row opens without the keyboard; laptop: a new row opens by itself and is never "none");
+`e2e/screens-07-target-logger.spec.ts` (the second row opens empty and focused, with nobody on it).
+**Not tried on a real iPad / iPhone — check there after deploy.**
+
+## Draft Roster: a tap in Bulk Edit / Bulk Copy keeps the cell selected (v2.86.0)
+
+The bug logged in `docs/features/dev-and-ops.md` (phase 3k): on the Draft Roster page a plain tap on a
+cell in Bulk Edit or Bulk Copy selected it and unselected it at once, because the cell toggled the
+selection on pointer-down **and** again in `handleCellTap` on click. `handleCellTap` now does nothing in
+the two bulk modes (the selection is made on pointer-down, so dragging across cells still works). The
+live Team Duty Roster page was never affected. Test: `e2e/draft-roster-page.spec.ts` now selects the two
+cells by tapping them (it dragged before, to get round the bug).

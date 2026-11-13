@@ -76,10 +76,12 @@ test("The first row of a sheet comes with the opening and the whole team on it",
   // Only the first row: the next one starts empty, with nobody on it.
   await page.getByRole("button", { name: "Add Row" }).click();
   await expect(page.locator("tbody tr")).toHaveCount(2);
+  // (It opens by itself, empty, with the cursor in it.)
   const second = page
     .locator("tbody tr")
-    .filter({ hasText: "Enter observation…" });
+    .filter({ hasNotText: "Surveillance commenced" });
   await expect(second).toHaveCount(1);
+  await expect(second.locator("textarea")).toBeFocused();
   await expect(second.getByText(cin, { exact: true })).toHaveCount(0);
 });
 

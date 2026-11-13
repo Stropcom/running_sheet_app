@@ -28,7 +28,7 @@ test("a registry target opens to show its associates and residents, and an assoc
   const target = await post("target.create", {
     operationId: opId,
     name: targetName,
-    hbf: "12 Smith Street, PERTH WA",
+    hbf: `${stamp % 1000} Registrypage Street, PERTH WA`,
   });
   const targetId = target.id ?? target.targetId ?? target;
   const associateName = `ASSOCPIECE Person ${stamp}`;

@@ -501,26 +501,10 @@ export default function DraftRosterPage() {
         handlePasteBlock(memberId, date);
         return;
       }
-      if (bulkCopyMode) {
-        const key = `${memberId}_${date}`;
-        setSelectedCells(prev => {
-          const next = new Set(prev);
-          if (next.has(key)) next.delete(key);
-          else next.add(key);
-          return next;
-        });
-        return;
-      }
-      if (bulkEditMode) {
-        const key = `${memberId}_${date}`;
-        setSelectedCells(prev => {
-          const next = new Set(prev);
-          if (next.has(key)) next.delete(key);
-          else next.add(key);
-          return next;
-        });
-        return;
-      }
+      // In Bulk Edit / Bulk Copy the cell is selected on pointer-down (so a
+      // drag can select several); a tap's click must not toggle it a second
+      // time — it used to select and then unselect the cell.
+      if (bulkCopyMode || bulkEditMode) return;
       const shift = shiftMap.get(`${memberId}_${date}`);
       const code = shift?.shiftCode ?? "";
       const isLocked = !isStandalone && (code === "l" || code === "c");

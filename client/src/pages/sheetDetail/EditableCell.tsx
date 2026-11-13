@@ -99,8 +99,12 @@ export function EditableCell({
   // and off (ObservationKeyboardContext). Tapping in the text does nothing
   // special. Laptop / desktop always type straight away.
   const isTouch = useIsTouchDevice();
-  const { keyboardOn, setKeyboardApplier, clearKeyboardApplier } =
-    useObservationKeyboard();
+  const {
+    keyboardOn,
+    resetKeyboard,
+    setKeyboardApplier,
+    clearKeyboardApplier,
+  } = useObservationKeyboard();
   // No keyboard for this field: on a touch device while the icon is off; on a
   // laptop only for the cell a card opened (it types once clicked).
   const keyboardBlocked = isTouch ? !keyboardOn : noKeyboard;
@@ -655,6 +659,8 @@ export function EditableCell({
             onBlur={() => {
               if (refocusingRef.current) return;
               clearKeyboardApplier(applyKeyboard);
+              // The row closed: the keyboard goes back to off (touch devices).
+              if (isTouch) resetKeyboard();
               // A click on a suggestion fires its own onMouseDown (which
               // preventDefault's) before this blur — so by the time blur
               // actually runs here, mentionWord is only still set if focus

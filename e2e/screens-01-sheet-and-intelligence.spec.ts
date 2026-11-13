@@ -161,7 +161,11 @@ test("Add Row, sort and search stay at the top while the rows scroll", async ({
   await createOperationAndSheet(page);
   for (let i = 0; i < 25; i++) {
     await page.getByRole("button", { name: /^Add/ }).first().click();
-    await page.waitForTimeout(120);
+    // Each new row opens itself, so wait for it before the next click (the
+    // button is off while a row is being made).
+    await expect(page.locator("tbody tr")).toHaveCount(i + 1, {
+      timeout: 10_000,
+    });
   }
   await expect(page.locator("tbody tr")).toHaveCount(25, { timeout: 20_000 });
 

@@ -24,6 +24,9 @@ test("the operation page shows its sheet cards in both views, the summaries tab 
     return (await r.json()).result.data.json;
   };
   const stamp = Date.now();
+  // An address of its own: a shared one ("12 Smith Street") becomes a second
+  // entity on other tests' operations that type it (screens-01 expects one).
+  const street = `${stamp % 1000} Piecespage Street`;
   const op = await post("operation.create", { name: `Op page ${stamp}` });
   const opId = op.id ?? op.operationId ?? op;
   const today = new Date().toLocaleDateString("en-CA", {
@@ -33,7 +36,7 @@ test("the operation page shows its sheet cards in both views, the summaries tab 
   const target = await post("target.create", {
     operationId: opId,
     name: targetName,
-    hbf: "12 Smith Street, PERTH WA",
+    hbf: `${street}, PERTH WA`,
     v1f: "white Toyota Camry sedan, bearing 1ABC123",
   });
   const targetId = target.id ?? target.targetId ?? target;
@@ -46,7 +49,7 @@ test("the operation page shows its sheet cards in both views, the summaries tab 
   const sheetId = sheet.id ?? sheet.sheetId;
   await post("row.create", {
     sheetId,
-    observation: "Surveillance commenced in the vicinity of 12 Smith Street.",
+    observation: `Surveillance commenced in the vicinity of ${street}.`,
   });
 
   const noError = async (what: string) =>

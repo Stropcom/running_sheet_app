@@ -4,7 +4,8 @@
  * Phone / tablet only: whether the on-screen keyboard is switched on for the
  * running sheet's observation cells. Off by default, so tapping a cell opens it
  * with the caret in place and the shortcut chips and the row stay in view; the
- * keyboard icon in the sheet's toolbar switches it on (and off again). Same idea
+ * keyboard icon in the sheet's toolbar switches it on (and off again), and it
+ * goes back to off whenever a row closes. Same idea
  * as the Keyboard button on the Map's Quick Entry. Laptop / desktop never use
  * this — their cells type straight away.
  *
@@ -28,6 +29,8 @@ interface ObservationKeyboardValue {
   /** The on-screen keyboard is switched on (touch devices). */
   keyboardOn: boolean;
   toggleKeyboard: () => void;
+  /** A row closed: the keyboard goes back to off. */
+  resetKeyboard: () => void;
   /** The open cell offers its re-focus function (and takes it back). */
   setKeyboardApplier: (fn: Applier) => void;
   clearKeyboardApplier: (fn: Applier) => void;
@@ -37,6 +40,7 @@ const ObservationKeyboardContext = createContext<ObservationKeyboardValue>({
   // Outside the running sheet nothing restricts the keyboard.
   keyboardOn: true,
   toggleKeyboard: () => {},
+  resetKeyboard: () => {},
   setKeyboardApplier: () => {},
   clearKeyboardApplier: () => {},
 });
@@ -57,6 +61,10 @@ export function ObservationKeyboardProvider({
     // Inside the tap, so the browser raises / drops the keyboard.
     applierRef.current?.(next);
   }, []);
+  const resetKeyboard = useCallback(() => {
+    onRef.current = false;
+    setKeyboardOn(false);
+  }, []);
   const setKeyboardApplier = useCallback((fn: Applier) => {
     applierRef.current = fn;
   }, []);
@@ -68,10 +76,17 @@ export function ObservationKeyboardProvider({
     () => ({
       keyboardOn,
       toggleKeyboard,
+      resetKeyboard,
       setKeyboardApplier,
       clearKeyboardApplier,
     }),
-    [keyboardOn, toggleKeyboard, setKeyboardApplier, clearKeyboardApplier]
+    [
+      keyboardOn,
+      toggleKeyboard,
+      resetKeyboard,
+      setKeyboardApplier,
+      clearKeyboardApplier,
+    ]
   );
   return (
     <ObservationKeyboardContext.Provider value={value}>

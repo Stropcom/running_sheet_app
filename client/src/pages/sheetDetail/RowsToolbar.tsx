@@ -46,6 +46,10 @@ export function RowsToolbar({ s }: { s: SheetScreen }) {
             size="sm"
             variant="outline"
             className="gap-2 shrink-0"
+            // mousedown is held back so an open row keeps the focus until the
+            // new row opens: the open row closing between mouse-down and
+            // mouse-up moved the toolbar and the tap was lost.
+            onMouseDown={e => e.preventDefault()}
             onClick={() => addRow.mutate({ sheetId })}
             disabled={addRow.isPending}
           >

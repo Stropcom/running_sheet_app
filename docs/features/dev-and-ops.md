@@ -139,3 +139,16 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 ## CI red from v2.50.0 to v2.57.0: a unit test could not build the Places export (fixed v2.57.1)
 
 `check-and-test` failed on every push from v2.50.0 (the Places Report export drew its kind icons by rendering them into a page element, `document.createElement`), because `server/placesReportExport.test.ts` builds that export in Node where there is no `document`. The browser tests (`e2e`) were green throughout, so only the unit-test job was red. It went unnoticed because the local test run was piped through `tail`, which hid the "Test Files … failed" line and the exit code. **When running the suite, read the "Test Files" line and the exit code (e.g. `pnpm vitest run > /tmp/vt.log; echo $?`), not just the tail.** `kindIconSvg` now returns no icon when there is no `document`, and the test also checks the card layout. Also run `pnpm check` and `scripts/check-no-runtime-ai.sh` the same way.
+
+- **CI note (v2.86.0): a test of mine that polluted another.** From v2.83.22 the browser workflow in CI
+  (a brand-new database, tests in file order) failed on `screens-01 … a person typed on a sheet reaches
+  Intelligence`, while it passed every time on the long-lived local database. Cause: the new
+  `operation-page.spec.ts` (which runs before it) registered a target with the home address "12 Smith
+  Street, PERTH WA", and `screens-01` types "12 Smith Street, Perth" on its own sheet — once that address
+  is registered it counts as a second entity ("2 entities", the test expects "1 entity"). Both new
+  specs that register an address (`operation-page`, `target-registry-page`) now use an address of their
+  own. (The earlier failures of `new-intelligence` and `search-lines` at v2.83.28 / 2.83.29 were runs made
+  between midnight and 08:00 UTC, the Perth-date bug fixed in v2.83.30.) **Lesson: check CI after every
+  push, and reproduce a CI failure on a fresh database (`createdb`, migrate, create the test officer,
+  start the app, run the suite in file order) — a database full of old test data hides this kind of
+  clash.**

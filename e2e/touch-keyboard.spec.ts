@@ -1,7 +1,8 @@
 // On a phone or tablet the observation opens WITHOUT the on-screen keyboard (so
 // the shortcut chips and the row stay in view while chips are tapped), and the
 // keyboard icon in the sheet's toolbar switches the keyboard on and off — off by
-// default. Tapping in the text does nothing special (the old "tap again for the
+// default and again whenever a row closes, and every new row opens by itself
+// with the cursor in it. Tapping in the text does nothing special (the old "tap again for the
 // keyboard" is gone). On a laptop / desktop the cell types straight away and
 // there is no keyboard icon. The keyboard itself cannot be seen in a test, so
 // this checks the field's `inputmode`, which is what tells the browser whether to
@@ -19,7 +20,7 @@ test.skip(
 test.describe("touch device", () => {
   test.use({ hasTouch: true });
 
-  test("the keyboard icon switches the keyboard on and off, off by default; a second tap in the text does nothing", async ({
+  test("the keyboard icon switches the keyboard on and off, off by default and again whenever a row closes; a second tap in the text does nothing", async ({
     page,
   }) => {
     await createOperationAndSheet(page);
@@ -39,13 +40,15 @@ test.describe("touch device", () => {
       page.locator("tbody tr").filter({ hasText: "First row of the sheet" })
     ).toHaveCount(1);
 
-    // A later, empty row that the officer taps into: no keyboard.
+    // A later row opens by itself, empty, with the cursor in it — no keyboard.
     await page.getByRole("button", { name: "Add Row" }).click();
-    await page.getByText("Enter observation…").first().click();
     const box = page.locator("textarea").first();
     await expect(box).toBeVisible();
-    await expect(box).toHaveAttribute("inputmode", "none");
     await expect(box).toBeFocused();
+    await expect(box).toHaveAttribute("inputmode", "none");
+    expect(
+      await box.evaluate((el: HTMLTextAreaElement) => el.selectionStart)
+    ).toBe(0);
 
     // Tapping in the text again no longer brings the keyboard.
     await box.click();
@@ -74,13 +77,24 @@ test.describe("touch device", () => {
       page.locator("tbody tr").filter({ hasText: "Typed with the keyboard on" })
     ).toHaveCount(1);
 
-    // With the keyboard on, the next cell opens with it.
-    await toggle.click();
+    // The keyboard goes back to off when a row closes: switch it on in the next
+    // new row, leave the row, and the icon is off again.
     await page.getByRole("button", { name: "Add Row" }).click();
-    await page.getByText("Enter observation…").first().click();
     const next = page.locator("textarea").first();
     await expect(next).toBeVisible();
-    expect(await next.getAttribute("inputmode")).not.toBe("none");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect
+      .poll(async () => await next.getAttribute("inputmode"))
+      .not.toBe("none");
+    await page.locator("h1").first().click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    // So the next new row opens without the keyboard again.
+    await page.getByRole("button", { name: "Add Row" }).click();
+    const again = page.locator("textarea").first();
+    await expect(again).toBeVisible();
+    await expect(again).toHaveAttribute("inputmode", "none");
   });
 });
 
@@ -100,11 +114,11 @@ test.describe("laptop / desktop", () => {
     await expect(
       page.locator("tbody tr").filter({ hasText: "First row of the sheet" })
     ).toHaveCount(1);
-    // A later, empty row that the officer taps into.
+    // A later row opens by itself, empty, the cursor in it.
     await page.getByRole("button", { name: "Add Row" }).click();
-    await page.getByText("Enter observation…").first().click();
     const box = page.locator("textarea").first();
     await expect(box).toBeVisible();
+    await expect(box).toBeFocused();
     expect(await box.getAttribute("inputmode")).not.toBe("none");
   });
 });

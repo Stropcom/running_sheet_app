@@ -11,6 +11,7 @@ import {
 } from "@shared/flagMarker";
 import { findVehicleMarker } from "@shared/vehicleMarker";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
+import { TARGET_USER_ICON_SVG } from "@/lib/flyMarkerIcon";
 import {
   commencedPosition,
   samePlace,
@@ -592,8 +593,16 @@ export function useMapMarkers(
         ";border-radius:999px;padding:3px 10px 3px 7px;" +
         "font:600 11px/1.2 system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.3);";
       const em = document.createElement("span");
-      em.textContent = ended ? "⏹" : targetEmoji(pos.state, pos.transitMode);
-      em.style.cssText = "font-size:15px;";
+      // "Commenced" wears the Intelligence folder's target icon (the person
+      // silhouette, rose) instead of an emoji.
+      const userIcon = !ended && pos.state === "commenced";
+      if (userIcon) {
+        em.innerHTML = TARGET_USER_ICON_SVG(16);
+        em.style.cssText = "display:flex;align-items:center;";
+      } else {
+        em.textContent = ended ? "⏹" : targetEmoji(pos.state, pos.transitMode);
+        em.style.cssText = "font-size:15px;";
+      }
       const label = document.createElement("span");
       const who = (token ?? "Target").toUpperCase();
       // Everyone with him (the vehicle's occupants, or those inside /
@@ -626,6 +635,7 @@ export function useMapMarkers(
         lat,
         lng,
         emoji: ended ? "⏹" : targetEmoji(pos.state, pos.transitMode),
+        userIcon,
         text: label.textContent ?? "",
         unsure,
       };

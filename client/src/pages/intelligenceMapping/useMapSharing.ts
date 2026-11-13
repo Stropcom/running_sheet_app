@@ -452,6 +452,7 @@ export function useMapSharing(
       );
       const pic = composeFlyTargetFlag({
         emoji: flag.emoji,
+        userIcon: flag.userIcon,
         text: flag.text,
         unsure: flag.unsure,
         lift: pin?.height ? pin.height - 5 : 81,

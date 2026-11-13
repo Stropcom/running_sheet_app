@@ -80,7 +80,7 @@ describe("commencedPosition — the Commenced flag", () => {
       label: "Commenced 08:39 AM",
       rowId: 1,
     });
-    expect(targetEmoji("commenced")).toBe("▶️");
+    expect(targetEmoji("commenced")).toBe("👤");
   });
   it("gives way to any logged position", () => {
     const where: TargetPosition = {

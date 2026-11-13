@@ -106,7 +106,9 @@ export const TARGET_EMOJI: Record<TargetState, string> = {
   oos: "❔",
   vessel: "🛥️",
   transit: "🚌",
-  commenced: "▶️",
+  // The map flag draws the Intelligence folder's person icon for this state
+  // (client/src/lib/flyMarkerIcon.ts); this is only the plain-text fallback.
+  commenced: "👤",
 };
 
 /** The flag emoji for a state — a train and a tram get their own. */

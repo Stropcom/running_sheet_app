@@ -611,7 +611,7 @@ up, and on a phone.
 
 ## Surveillance commenced shows as a flag on its place — "Commenced 08:39 AM" (v2.87.0)
 Before any movement names the target, the Map page's target flag now marks **where the surveillance
-commenced**: the usual white pill with the rose border, ▶️ and **"SANTOS · Commenced 08:39 AM"**, on the pin
+commenced**: the usual white pill with the rose border, the **Intelligence folder's target icon** (the rose person silhouette, lucide `User`, as on the Intelligence Targets tab — not an emoji; drawn by `TARGET_USER_ICON_SVG` / `composeFlyTargetFlag` `userIcon`) and **"SANTOS · Commenced 08:39 AM"**, on the pin
 of the place the "Surveillance commenced in the vicinity of …" row names (the short form, as the other
 flags use). Rules (`shared/targetPosition.ts` `commencedPosition`, fed by `shared/surveillanceState.ts`,
 tests `server/commencedFlag.test.ts`):
@@ -622,7 +622,7 @@ tests `server/commencedFlag.test.ts`):
 - Gone once the surveillance has ended (the grey dashed "ceased at …" flag takes over), and not shown when the
   commenced row names no place — nothing is guessed. A location target (it does not move) still has no flag.
 - `surveillanceState` (the `row.surveillanceState` query) now also returns `commencedByRowId`,
-  `commencedAtTime` and `commencedPlace`. New `TargetState` `"commenced"` (emoji ▶️); the flag marker rule
+  `commencedAtTime` and `commencedPlace`. New `TargetState` `"commenced"` (plain-text fallback 👤); the flag marker rule
   treats it like "inside" (a place marker).
 - **Not looked at in a browser** (Google Maps cannot run in the sandbox); the rule and the state are unit-tested.
   Check on the live Map with a new sheet: commence at an address, flag shows "Commenced <time>"; log an arrival and

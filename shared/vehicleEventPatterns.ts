@@ -273,6 +273,53 @@ function extractArrivalAddressRaw(text: string): string | null {
   return null;
 }
 
+/** A vehicle (or several) written as "parked and unattended" at a place the
+ * row names: "Vehicle 1EMB303 parked and unattended on Murray Street, PERTH,
+ * in the vicinity of Dental Boutique Perth." or "... (Vehicle 1SEA310) ...
+ * parked and unattended in the driveway at 12 Marine Parade." Nobody was seen
+ * arriving, so `matchVehicleArrival` ignores these on purpose; this reads only
+ * what the row states — each rego and the place after a connector ("at",
+ * "near", "outside", "in the vicinity of"...) — so the Target Logger can offer
+ * a person logged at that place the walk out to the vehicle. No place written
+ * (a bare street, no "at/near/vicinity of") reads as nothing. */
+export interface UnattendedVehiclesMatch {
+  regos: string[];
+  address: string;
+}
+
+export function matchUnattendedVehicles(
+  text: string
+): UnattendedVehiclesMatch | null {
+  const u = /\bunattended\b/i.exec(text);
+  if (!u) return null;
+  const before = text.slice(0, u.index);
+  const regos: string[] = [];
+  const re = /(\(\s*)?\bVehicle\s+([A-Za-z0-9]{5,8})\b/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(before))) {
+    const rego = m[2].toUpperCase();
+    // A plate has a digit, or is the bracket short form "(Vehicle HOGES)" —
+    // so "Vehicle parked" never reads "parked" as a plate.
+    if (!m[1] && !/\d/.test(rego)) continue;
+    if (!regos.includes(rego)) regos.push(rego);
+  }
+  if (regos.length === 0) return null;
+  const after = text.slice(u.index + u[0].length);
+  const c = new RegExp(`\\b${ARRIVAL_LOCATION_CONNECTORS}\\s+`, "i").exec(
+    after
+  );
+  if (!c) return null;
+  let rest = after.slice(c.index + c[0].length);
+  let stripped: string;
+  while ((stripped = rest.replace(LEADING_LOCATION_CONNECTOR_RE, "")) !== rest)
+    rest = stripped;
+  const bracket = rest.match(/\(([^)]{1,80})\)/);
+  const plain = rest.match(/^(.+?)(?:\s+and\s+\w+|[.\n]|$)/i);
+  const place = (bracket ? bracket[1] : (plain?.[1] ?? "")).trim();
+  if (!place) return null;
+  return { regos, address: fullStreetTypes(place) };
+}
+
 // A vehicle seen on the move part-way through a trip — "Vehicle 1FAT001,
 // HOGAN driver and sole occupant, travelled on Leach Highway, FREMANTLE and
 // continued via:". Written after a departure whose occupants weren't seen

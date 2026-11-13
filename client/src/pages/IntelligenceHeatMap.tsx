@@ -37,11 +37,12 @@ import {
   buildHeatMapLocationsTableHtml,
   fetchHeatMapMapHtml,
 } from "@/lib/heatMapSection";
+import { perthDateISO } from "@shared/runningSheetTitle";
 
 type WhenMode = "sheet" | "last7" | "last30" | "custom";
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return perthDateISO(new Date());
 }
 
 // ─── PDF export ─────────────────────────────────────────────────────────────

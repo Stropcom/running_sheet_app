@@ -228,15 +228,14 @@ export function useRowActions(
       }) => {
         if (isOnline) {
           _addRowOnline.mutate(input, {
-            // The first row comes with "Surveillance commenced in the
-            // vicinity of " and the team already on it: open it for typing
-            // with the caret after the text, ready for the address.
+            // A new row opens for typing at once, the caret in it: an empty row
+            // at the start, the first row (which comes with "Surveillance
+            // commenced in the vicinity of " and the team already on it) after
+            // that text, ready for the address.
             onSuccess: created => {
-              if (created.autoFilled) {
-                setJustAddedKeyboard(true);
-                setJustAddedRowId(created.id);
-                setTimeout(() => setJustAddedRowId(null), 6000);
-              }
+              setJustAddedKeyboard(true);
+              setJustAddedRowId(created.id);
+              setTimeout(() => setJustAddedRowId(null), 6000);
             },
           });
         } else {

@@ -191,14 +191,39 @@ function mayFold(l: IntelCue, c: IntelCue, sentence: string): boolean {
   return countIn(sentence, c.matched) <= inside;
 }
 
+/** A mobile phone device cue ("Mobile phone", "Second mobile phone"). */
+const isMobilePhone = (c: IntelCue) =>
+  c.category === "devices" && /(?:^|\s)mobile phone$/i.test(c.heading);
+/** Wording about USING a phone: texting / messaging apps, a phone call. */
+const isPhoneUse = (c: IntelCue) =>
+  c.category === "devices" &&
+  (c.heading === "Messaging" || c.heading === "Phone call");
+
 /** The cues of ONE sentence with each shorter pickup of the same thing folded
  * into the longest wording. Every input cue ends up either as a leader or in
  * exactly one leader's `also` — none is dropped. Leaders keep the order they
- * came in. Pure. */
+ * came in. Pure.
+ *
+ * Phone and what is done with it: "he was holding a mobile phone and appeared
+ * to be texting" is one thing, so the messaging / phone-call wording is folded
+ * into the mobile phone's line — but only when the sentence has exactly ONE
+ * mobile phone. With two phones it cannot be said which one was used, so
+ * nothing is guessed and the lines stay separate. */
 export function foldCuesInSentence(
   cues: IntelCue[]
 ): Array<{ cue: IntelCue; also: IntelCue[] }> {
   if (cues.length < 2) return cues.map(cue => ({ cue, also: [] }));
+  const phones = cues.filter(isMobilePhone);
+  const uses = cues.filter(isPhoneUse);
+  if (phones.length === 1 && uses.length > 0) {
+    const useSet = new Set(uses);
+    const folded = foldCuesInSentence(cues.filter(c => !useSet.has(c)));
+    const holder =
+      folded.find(f => f.cue === phones[0]) ??
+      folded.find(f => f.also.includes(phones[0]))!;
+    holder.also.push(...uses);
+    return folded;
+  }
   const order = cues
     .map((cue, i) => ({ cue, i }))
     .sort((a, b) => {

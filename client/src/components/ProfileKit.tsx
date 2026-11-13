@@ -59,7 +59,14 @@ export function scrollToSection(id: string) {
 export const personCardId = (key: string) =>
   `p-${key.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
-/** Sticky chip row that jumps to each section of a long profile. */
+/** Sticky chip row that jumps to each section of a long profile.
+ *
+ * Two elements on purpose: the OUTER one is `position: sticky` and has no overflow
+ * of its own; the chip row (`nav`) inside it is what scrolls sideways on a phone.
+ * Put on one element (sticky + `overflow-x: auto`) Safari on an iPhone stops
+ * pinning it — the running sheet's toolbar, which has no overflow of its own,
+ * sticks fine. The background is solid (no blur filter) for the same reason.
+ * `e2e/profile-jump-bar.spec.ts` checks the rule. */
 export function JumpBar({
   items,
 }: {
@@ -67,29 +74,31 @@ export function JumpBar({
   items: Array<{ id: string; label: string; before?: () => void }>;
 }) {
   return (
-    <nav
-      aria-label="Jump to"
-      className="sticky top-0 z-30 -mx-1 mb-4 flex items-center gap-2 overflow-x-auto border-b border-border bg-background/95 px-1 py-2 backdrop-blur md:flex-wrap md:overflow-visible"
-    >
-      <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-foreground/70">
-        Jump to
-      </span>
-      {items.map(i => (
-        <button
-          key={i.id}
-          type="button"
-          onClick={() => {
-            if (i.before) {
-              i.before();
-              window.setTimeout(() => scrollToSection(i.id), 60);
-            } else scrollToSection(i.id);
-          }}
-          className="shrink-0 rounded-full border border-blue-600/60 bg-blue-100 px-3 py-1 text-xs font-bold text-blue-950 hover:bg-blue-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:bg-blue-950/50 dark:text-blue-100 dark:hover:bg-blue-900/60"
-        >
-          {i.label}
-        </button>
-      ))}
-    </nav>
+    <div className="sticky top-0 z-30 -mx-1 mb-4 border-b border-border bg-background px-1">
+      <nav
+        aria-label="Jump to"
+        className="flex items-center gap-2 overflow-x-auto py-2 md:flex-wrap md:overflow-visible"
+      >
+        <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+          Jump to
+        </span>
+        {items.map(i => (
+          <button
+            key={i.id}
+            type="button"
+            onClick={() => {
+              if (i.before) {
+                i.before();
+                window.setTimeout(() => scrollToSection(i.id), 60);
+              } else scrollToSection(i.id);
+            }}
+            className="shrink-0 rounded-full border border-blue-600/60 bg-blue-100 px-3 py-1 text-xs font-bold text-blue-950 hover:bg-blue-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:bg-blue-950/50 dark:text-blue-100 dark:hover:bg-blue-900/60"
+          >
+            {i.label}
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 }
 

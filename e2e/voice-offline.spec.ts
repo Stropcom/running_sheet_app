@@ -63,6 +63,11 @@ test("voice input on RS Quick Entry makes no external network calls while offlin
     () => typeof (window as any).__intelRsQuickEntry === "function"
   );
 
+  // The app has to have FINISHED loading first: the Map page's own Google Maps
+  // script request can land either side of this moment (it made this test fail
+  // about one run in three), and it is the map's, not the voice feature's.
+  await page.waitForLoadState("networkidle");
+
   // Airplane mode from here on — every request that isn't already served
   // from cache will fail, and none of them should ever target an
   // external host regardless of that.

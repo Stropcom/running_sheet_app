@@ -73,6 +73,8 @@ export interface TargetPositionInput {
     fromVessel?: string;
     /** Got off a bus or train ("the bus") and is now on foot. */
     fromTransit?: string;
+    /** Stood out the front of `from` and stayed there (shared/outFront.ts). */
+    outFront?: boolean;
     rowId: number;
   }[];
   placements: {
@@ -172,7 +174,9 @@ export function locateTarget(
         ? "alighted, on foot"
         : h.fromVessel
           ? "disembarked, on foot"
-          : "departed on foot",
+          : h.outFront
+            ? "out the front"
+            : "departed on foot",
       people: targetFirst(splitPeopleNames(h.names), t),
       rowId: h.rowId,
       ...(fromArrival ? { rego: fromArrival.rego } : {}),

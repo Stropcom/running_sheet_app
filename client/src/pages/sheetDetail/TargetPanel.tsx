@@ -30,6 +30,14 @@ import {
   subjectCompanions,
   trackedTargetCode,
 } from "@shared/trackedTarget";
+import { shortcutInsertText, shortcutRowSubject } from "@shared/shortcutRow";
+import { returnedInsideSentence } from "@shared/outFront";
+import {
+  continuedOccupantWording,
+  leftAddressSentence,
+  vehicleDepartLabel,
+  walkedToVehicleLabel,
+} from "@shared/vehicleCardWording";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -186,6 +194,8 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
             return arrivalsHere.map(a => ({
               key: `wo-${w.location}-${a.rego}`,
               rego: a.rego,
+              // Who walked, for the button's label ("Tgt to …" or "Walked to …").
+              who: w.names,
               text: w.route
                 ? `${names} exited ${w.location} and walked ${w.route} towards Vehicle ${a.rego}.`
                 : `${names} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
@@ -200,7 +210,12 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
             key: `la-${w.location}`,
             rego: "",
             label: w.location,
-            text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked [route] towards [location].`,
+            // Stops after "walked " for the officer to type on (no
+            // [route] / [location] placeholders to delete).
+            text: leftAddressSentence(
+              shortenAlreadyMentionedNames(w.names, usedBracketCodes),
+              w.location
+            ),
           }));
           const enteredChips = (pendingHeadingTo ?? []).map(h => ({
             key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
@@ -313,6 +328,10 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
               pendingPlacements ?? []
             );
             const inNames = occupants.filter(o => !toNames.includes(o));
+            // A vehicle only written as "parked and unattended" gets a card
+            // once someone is logged at that place (they can walk out to it)
+            // or is already on the way to / in it.
+            if (a.unattended && insideHere.length === 0 && !inCar) return;
             // Where each sits, when the rows say — "MENON (driver)".
             const seatMap = seatsOf({
               desc: a.occupantDesc,
@@ -369,7 +388,7 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
             // weren't seen.
             const departingAction = {
               key: `dep-${rego}`,
-              label: "Vehicle Depart",
+              label: vehicleDepartLabel(rego),
               // Everyone known to be in it, or "unseen occupant/s" when
               // nobody is — the usual wording for a departure whose
               // occupants weren't seen.
@@ -390,7 +409,26 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                         carNames,
                       usedBracketCodes
                     )
-                  : "unseen occupant/s"
+                  : // Nobody is logged in it (the driver went inside and
+                    // "walked to vehicle" was not pressed): carry on from how
+                    // it arrived, not "unseen occupant/s".
+                    shortenAlreadyMentionedNames(
+                      continuedOccupantWording({
+                        rego,
+                        arrivalDesc: a.occupantDesc,
+                        arrivalRowId: a.rowId,
+                        onFootElsewhere: [
+                          ...(pendingWalkIns ?? [])
+                            .filter(w => !sameAddr(w.location, a.address))
+                            .map(w => w.names),
+                          ...(pendingHeadingTo ?? []).map(h => h.names),
+                        ],
+                        insideThisAddress: insideHere.map(w => w.names),
+                        placements: pendingPlacements ?? [],
+                        allVehicleRows,
+                      }),
+                      usedBracketCodes
+                    )
               }, departed ${a.address} and continued via:`,
             };
             // Most likely next step first: parked with someone in it, the
@@ -404,7 +442,7 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                     )
                     .map(c => ({
                       key: c.key,
-                      label: "Walked to Vehicle",
+                      label: walkedToVehicleLabel(rego, c.who, trackedTarget),
                       text: c.text,
                     })),
                   ...insideHere.flatMap(w =>
@@ -419,7 +457,11 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                 ? [
                     {
                       key: `wov-oos-${rego}`,
-                      label: "Walked to Vehicle",
+                      label: walkedToVehicleLabel(
+                        rego,
+                        arrivalPeople.join(" and "),
+                        trackedTarget
+                      ),
                       text: `${oosNames} exited ${a.address} and walked towards Vehicle ${rego}.`,
                     },
                     {
@@ -436,7 +478,11 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                       // walk out to THIS one.
                       {
                         key: `wov-oos-${rego}`,
-                        label: "Walked to Vehicle",
+                        label: walkedToVehicleLabel(
+                          rego,
+                          otherOosPeople.join(" and "),
+                          trackedTarget
+                        ),
                         text: `${shortenAlreadyMentionedNames(otherOosPeople.join(" and "), usedBracketCodes)} exited ${a.address} and walked towards Vehicle ${rego}.`,
                       },
                       departingAction,
@@ -623,30 +669,50 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
               usedBracketCodes
             );
             const destKnown = !h.destination.includes("[");
+            // Stepped out the front of a place and stayed there (phone call,
+            // a smoke): at that place, outside it. The next step is back
+            // inside, on elsewhere, or to a vehicle — not "Entered a
+            // location" / "Inside" (shared/outFront.ts).
+            const outFront = !!h.outFront && !h.fromTransit && !h.fromVessel;
+            const outFrontState = `Out the front of ${h.from}${sinceText(h.rowId)}`;
             // On foot, the next step is one of: enter where they were
             // heading, walk on to somewhere else, or walk back towards a
             // vehicle that is parked.
             continuityCards.push({
               key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
               title: h.names,
-              pill: h.fromTransit
-                ? "Alighted"
-                : h.fromVessel
-                  ? "Disembarked"
-                  : "Departed on foot",
+              pill: outFront
+                ? "Out the front"
+                : h.fromTransit
+                  ? "Alighted"
+                  : h.fromVessel
+                    ? "Disembarked"
+                    : "Departed on foot",
               attn: true,
               who: destKnown ? `Walking to ${h.destination}` : "On foot",
-              state: `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
+              state: outFront
+                ? outFrontState
+                : `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
               actions: [
-                ...cardAction(
-                  chip,
-                  destKnown ? "Entered" : "Entered a location"
-                ),
-                {
-                  key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                  label: "Inside",
-                  text: `${walkers} inside ${destKnown ? h.destination : "[location]"} [observation].`,
-                },
+                ...(outFront
+                  ? [
+                      {
+                        key: `ri-${h.from}-${h.names}`,
+                        label: "Returned inside",
+                        text: returnedInsideSentence(walkers, h.from),
+                      },
+                    ]
+                  : [
+                      ...cardAction(
+                        chip,
+                        destKnown ? "Entered" : "Entered a location"
+                      ),
+                      {
+                        key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                        label: "Inside",
+                        text: `${walkers} inside ${destKnown ? h.destination : "[location]"} [observation].`,
+                      },
+                    ]),
                 {
                   key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                   label: "Walked to another location",
@@ -654,11 +720,13 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                 },
                 // Heading for, or just got off at, a bus stop or train
                 // station: boarding.
-                ...transitBoardActions({
-                  keyBase: `h-${h.destination}-${h.names}`,
-                  names: walkers,
-                  place: destKnown ? h.destination : h.from,
-                }),
+                ...(outFront
+                  ? []
+                  : transitBoardActions({
+                      keyBase: `h-${h.destination}-${h.names}`,
+                      names: walkers,
+                      place: destKnown ? h.destination : h.from,
+                    })),
                 ...reachableVehicles(h.names, h.from).map(a => ({
                   key: `wv-${a.rego}`,
                   label: `Walked to ${a.rego}`,
@@ -669,15 +737,19 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
               holds: surnameTokens(h.names),
               people: splitPeopleNames(h.names),
               locus: {
-                headline: (() => {
-                  const how = h.fromTransit
-                    ? "Alighted, on foot"
-                    : h.fromVessel
-                      ? "Disembarked, on foot"
-                      : "Departed on foot";
-                  return destKnown ? `${how} to ${h.destination}` : how;
-                })(),
-                sub: `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
+                headline: outFront
+                  ? `Out the front of ${h.from}`
+                  : (() => {
+                      const how = h.fromTransit
+                        ? "Alighted, on foot"
+                        : h.fromVessel
+                          ? "Disembarked, on foot"
+                          : "Departed on foot";
+                      return destKnown ? `${how} to ${h.destination}` : how;
+                    })(),
+                sub: outFront
+                  ? `On foot${sinceText(h.rowId)}`
+                  : `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
               },
             });
           });
@@ -1149,10 +1221,21 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                                             start
                                           );
                                           const after = el.value.slice(end);
+                                          // An Own row chip (TP, TEXT …) pressed
+                                          // with an observation open goes in here;
+                                          // it starts with the target's name when
+                                          // it begins a new sentence.
+                                          const text = f.startsRow
+                                            ? (shortcutInsertText(
+                                                shortcutRowSubject(t),
+                                                f.value,
+                                                before
+                                              ) ?? f.value!)
+                                            : f.value!;
                                           const insert =
                                             before && !before.endsWith(" ")
-                                              ? ` ${f.value!}`
-                                              : f.value!;
+                                              ? ` ${text}`
+                                              : text;
                                           try {
                                             document.execCommand(
                                               "insertText",
@@ -1201,7 +1284,12 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                                           onInsert={() =>
                                             f.startsRow &&
                                             f.shortcutId !== undefined &&
-                                            isOnline
+                                            isOnline &&
+                                            // No observation open: its own row,
+                                            // as before. One open: it goes in
+                                            // at the cursor (insertIntoFocused).
+                                            !openObservationCell()?.dataset
+                                              .obsCell
                                               ? ownRowShortcut.press(
                                                   {
                                                     sheetId,

@@ -10,6 +10,8 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 - Target Logger buttons are blue, not rose (v1.193.2)
 - Map marker entity count (v1.193.4)
 - NEARBY LOCATION (Map page, right-hand pane, v1.184.0)
+- Vehicle card: "Tgt to <rego>", "<rego> Depart", a depart carries on from the arrival (v2.83.19)
+- "Left address" stops after "walked " (v2.83.21)
 - Target Logger: a vehicle seen on the move names who is in it (v1.204.4)
 - Target Logger: a sighting row keeps the place they entered (v1.206.4)
 - Target Logger: a departure that names its occupants moves them out of "inside" (v1.206.6)
@@ -472,3 +474,106 @@ nobody inside); `e2e/screens.spec.ts` (card keeps Crown Towers).
 **Operation name (Show & Share) in the banner on an iPad held sideways (v2.81.3)** — the operation name in the top banner, which is also the Show & Share switch (`BannerOperation.tsx`), used to appear only from 1280 px wide (`xl`), so an iPad held sideways (1024–1194 px) had no name and no switch in the header. It now shows from 1024 px (`lg`), a little narrower so it clears the RunLog wordmark: up to 120 px wide below 1100 px, 150 px from 1100 px, the full 220 px from 1280 px (the name is cut with "…" and the full name is the button's tooltip). Measured with a long operation name at 1024 / 1080 / 1099 / 1100 / 1180 / 1194 px: 30 px or more clear of the wordmark at every width, and inside the screen with Active RS and Map Settings beside it. Held upright (820 px and narrower) there is still no room, so it stays hidden there. Browser check: `e2e/screens.spec.ts` "the operation name shows on an iPad held sideways".
 
 **Marker rotation slider no longer flicks back to north up (v2.83.3)** — the Rotation slider in a map marker's popup (custom markers, and the Intelligence pins) turned the marker at once but the turn was often **never saved**, so the next refresh of the markers (custom markers re-read every 5 seconds) redrew it north up. Cause: the slider's save is debounced (400 ms after the last move) and the handler was set up in an effect that depended on the save mutation object — a **new object on every render**, and the Map page re-renders about once a second (the location polls). Each re-render ran the effect's cleanup, which cancelled the pending save; so a save was lost whenever a re-render landed inside the 400 ms. Fixed in both handlers (`__cmPopupRotate` for custom markers, `__intelPopupRotate` for Intelligence pins) in `IntelligenceMapping.tsx`: the handler is set up once, reaches the mutation through a ref, and a save still waiting when the page is left is sent at once. The Fly marker card's slider (refs and its own timer) and the Edit dialog (saves on Save) were not affected. The Google map cannot be driven in the build sandbox, so this was checked by reading the code and `pnpm check`; look at it on the live site: turn a marker, wait ten seconds, and it should stay turned (and still be turned after a reload).
+
+## Vehicle card: "Tgt to <rego>", "<rego> Depart", and a depart carries on from the arrival (v2.83.19)
+
+The buttons on a parked vehicle's Target Logger card (running sheet, `TargetPanel.tsx`,
+and the Map's Quick Entry card, `QeAddressCard.tsx`) were renamed at the owner's request;
+the sentence each one writes is unchanged. All of it is one pure rule,
+`shared/vehicleCardWording.ts` (tests `server/vehicleCardWording.test.ts`):
+
+- **"Walked to Vehicle" → "Tgt to 1EMB303"** when the sheet's person target is among those
+  walking out to the vehicle; **"Walked to 1EMB303"** for anyone else (and always when the
+  sheet has no person target — a vehicle or location target, or none, is never "Tgt").
+- **"Vehicle Depart" → "1EMB303 Depart"** (capital D, as the owner typed it).
+- **A depart pressed with nobody logged in the vehicle** (the driver went inside the address
+  and "Tgt to" was not pressed first) used to write "Vehicle 1EMB303, unseen occupant/s,
+  departed …". It now carries on from how the vehicle arrived — "SANTOS driver and sole
+  occupant", or the driver and passenger as they were worded. Anyone a later row has put
+  somewhere else is left out: inside ANOTHER address, heading elsewhere, or in another vehicle
+  (the row that put him inside THIS address does not count as "somewhere else"). Nobody left,
+  or an arrival that itself said "unseen occupant/s": still "unseen occupant/s".
+- Because the sentence now names him, the Target Logger reads him as in the vehicle and no
+  longer inside the address (the "departure that names its occupants moves them out of
+  inside" rule, v1.206.6) — no separate walk step is needed. The row does now state that he
+  left in the vehicle though nobody saw him get in; that is the owner's choice.
+- Unchanged: the "Walked away", "Walked in", "Left address" buttons, and the usual depart
+  wording when someone is logged in the vehicle.
+
+Checked: unit tests for the rule; `e2e/target-logger-vehicle-card.spec.ts` (the exact
+screenshot case: target arrives as driver and sole occupant, goes inside; the buttons read
+"Tgt to 1EMB303" and "1EMB303 Depart"; Depart writes "…SANTOS driver and sole occupant,
+departed…"). **The Map's Quick Entry card uses the same rule but cannot be driven in the
+sandbox (no Google Map) — check it on the live Map.**
+
+## "Left address" stops after "walked " (v2.83.21)
+
+The Left address button on a Target Logger card used to write "SANTOS exited Almuna and
+walked [route] towards [location]." — two placeholders to delete before typing. It now writes
+**"SANTOS exited Almuna and walked "** and stops, with the one trailing space and the cursor
+after it, ready to type the route and where to (owner's change). The sentence is
+`leftAddressSentence` in `shared/vehicleCardWording.ts`, used by both the running sheet
+(`TargetPanel.tsx`) and the Map's Quick Entry card (`QeAddressCard.tsx`). With no row open the
+tap makes a row that opens with the caret at the end (as every card tap does); with a cell
+open it goes in as the next paragraph, caret at the end. Only "Left address" changed:
+"Walked away", "Walked in", the vehicle walk-out buttons and the transit / boat cards still
+write their placeholders. The Target Logger reads the unfinished row exactly as it read the
+placeholder one (they have left the address, heading somewhere not yet said), so an officer
+who leaves it unfinished changes nothing about where the logger thinks they are — checked
+against `scanWalkEvents`. Checked: unit test; `e2e/target-logger-vehicle-card.spec.ts` (the
+row opens with exactly that text, the caret at the end, and typing carries on). The Map's
+Quick Entry side shares the sentence but cannot be driven in the sandbox — check it live.
+
+## A vehicle found "parked and unattended" near the target gets Tgt to / Depart (v2.83.31)
+
+A row such as "Vehicle 1EMB303 parked and unattended on Murray Street, PERTH, in the vicinity of
+Dental Boutique Perth." written **after** the target went inside Dental Boutique Perth made no
+vehicle card, so there was no "Tgt to 1EMB303" and no "1EMB303 Depart" (owner's screenshot).
+`matchVehicleArrival` still ignores an "unattended" row on purpose (nobody was seen arriving), so
+the new `matchUnattendedVehicles` (`shared/vehicleEventPatterns.ts`) reads only what the row
+states: every plate on it (a plate has a digit, or is the bracket form "(Vehicle HOGES)" — "Vehicle
+parked" never reads "parked" as a plate) and the place after a connector ("at", "near", "outside",
+"in the vicinity of", the bracket short form first). **No place written = nothing read**, as before.
+`computePendingVehicleArrivals` lists it as parked at that place with `unattended: true` and
+"unseen occupant/s". The sheet's card (`TargetPanel.tsx`) shows it **only once someone is logged
+inside that place (or is on the way to / in the vehicle)**; with nobody there nothing is offered,
+as before. Then "Tgt to 1EMB303" / "Walked to 1EMB303", "Left address" and "1EMB303 Depart" work
+as on any parked vehicle: Depart pressed straight away says "Vehicle 1EMB303, unseen occupant/s,
+departed Dental Boutique Perth and continued via:", after "Tgt to" it names him. A later depart
+row removes it. Also seen by anything that reads pending arrivals (the target-position scan, so a
+vehicle target now has a "parked" position from such a row). Tests: `server/unattendedVehicle.test.ts`;
+browser: `e2e/target-logger-vehicle-card.spec.ts` (both cases, failing on the old code). The Map's
+Quick Entry card takes the same list but cannot be driven in the sandbox — check it live.
+
+## Out the front: "Returned inside" (v2.84.0)
+
+A very common moment: the target is inside a place and steps out the front to talk on the phone
+("SANTOS exited 21 Hope Road, stood out the front was talking on a mobile phone."). The logger used to
+read that as "Departed on foot — Left 21 Hope Road" with "Entered a location" / "Inside" / "Walked
+to another location" / "Walked to 1EMB303". He has gone nowhere, so now (owner's request):
+
+- **The state.** One pure rule, `shared/outFront.ts` (tests `server/outFront.test.ts`), read by
+  `scanWalkEvents` (`ScannedHeadingTo.outFront`): an exit row whose rest says he **stood / waited /
+  stayed / remained / lingered out the front, out front or outside**, or **went / walked / stepped /
+  came out the front or outside**, with **no destination ("towards …") and no vehicle** — "exited X
+  and walked out the front towards Smith Street" is still a walk. Also a row with **no "exited"** —
+  "SANTOS went out the front of 21 Hope Road", "SANTOS stood out the front" — but **only for someone
+  logged inside a place** (and only that place); nobody is put out the front from nothing.
+  "Out of sight" and "outside the vehicle" are not read.
+- **The card** (sheet Target Logger and the Map's Quick Entry card): pill **Out the front**, state
+  "Out the front of 21 Hope Road · since 11:45 AM". Buttons: **Returned inside**, **Walked to another
+  location**, and the walk to a parked vehicle ("Walked to 1EMB303", as before). **Not** shown:
+  "Entered a location", "Inside", and the bus / train boarding buttons.
+- **Returned inside** writes **"SANTOS walked back to 21 Hope Road and continued out of sight."** (the
+  name as the row wrote it, the place he stood out the front of; `returnedInsideSentence`). The logger
+  reads it as inside that place again. Typed by hand it works too — "walked / went / came back to
+  <place>", "walked back inside", "returned inside" — **only for someone who is logged out the front,
+  and only for that place**; "walked back to" any other place stays an ordinary walk.
+- **Ends** like any on-foot state: a later row putting him somewhere (a walk "towards …", a vehicle,
+  inside) replaces it. The map flag says "out the front" at that place (`locateTarget` label; state
+  is still "walking", so the marker is a place marker).
+- Rows already saved are read live, so the cards correct themselves on reload; nothing is rewritten.
+- Checked: unit tests for the rule, the scan (including the guards above) and the flag; browser test
+  `e2e/target-logger-out-the-front.spec.ts` (the screenshot case: pill, buttons, "Returned inside"
+  writes the sentence and he is inside again; failing on the old code). The Map's Quick Entry card uses
+  the same rule but cannot be driven in the sandbox — check it on the live Map.

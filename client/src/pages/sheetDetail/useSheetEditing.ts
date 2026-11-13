@@ -10,6 +10,7 @@ import type { CinEntry } from "./types";
 import { exportToPDF } from "./exportToPDF";
 import type { SheetDataState } from "./useSheetData";
 import type { SheetViewStateState } from "./useSheetViewState";
+import { perthDateISO } from "@shared/runningSheetTitle";
 
 export function useSheetEditing(
   s: Pick<
@@ -142,7 +143,7 @@ export function useSheetEditing(
   const openEditSheet = () => {
     setEditSheetDate(
       (sheet as { sheetDate?: string | null } | undefined)?.sheetDate ??
-        new Date().toISOString().slice(0, 10)
+        perthDateISO(new Date())
     );
     setEditTargetName(sheet?.targetName ?? "");
     setEditTargetMode("none");

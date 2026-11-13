@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { shortcutRowSubject, shortcutRowText } from "../shared/shortcutRow";
+import {
+  shortcutInsertText,
+  shortcutRowSubject,
+  shortcutRowText,
+  startsNewSentence,
+} from "../shared/shortcutRow";
 
 const TP =
   "had a mobile phone to his ear and appeared to be in conversation on the phone.";
@@ -63,5 +68,50 @@ describe("shortcutRowText", () => {
     expect(shortcutRowText("", TP)).toBeNull();
     expect(shortcutRowText("SANTOS", "  ")).toBeNull();
     expect(shortcutRowText("SANTOS", null)).toBeNull();
+  });
+});
+
+describe("an Own row chip pressed while an observation is open", () => {
+  it("goes in as saved, at the cursor, in the middle of a sentence", () => {
+    expect(
+      shortcutInsertText("SANTOS", TP, "SANTOS walked to the door and ")
+    ).toBe(TP);
+    expect(shortcutInsertText("SANTOS", TP, "SANTOS entered the shop, ")).toBe(
+      TP
+    );
+  });
+
+  it("starts with the target's name when it begins a new sentence", () => {
+    expect(shortcutInsertText("SANTOS", TP, "")).toBe(`SANTOS ${TP}`);
+    expect(shortcutInsertText("SANTOS", TP, "   ")).toBe(`SANTOS ${TP}`);
+    expect(
+      shortcutInsertText("SANTOS", TP, "SANTOS exited the vehicle. ")
+    ).toBe(`SANTOS ${TP}`);
+    expect(
+      shortcutInsertText("SANTOS", TP, "SANTOS exited the vehicle.\n\n")
+    ).toBe(`SANTOS ${TP}`);
+  });
+
+  it("never doubles a name the expansion already starts with", () => {
+    const own = `SANTOS ${TP}`;
+    expect(shortcutInsertText("SANTOS", own, "")).toBe(own);
+  });
+
+  it("with no person target the expansion alone goes in", () => {
+    expect(shortcutInsertText(null, TP, "")).toBe(TP);
+    expect(shortcutInsertText(null, TP, "He stopped. ")).toBe(TP);
+  });
+
+  it("nothing to insert for an empty expansion", () => {
+    expect(shortcutInsertText("SANTOS", "  ", "")).toBeNull();
+    expect(shortcutInsertText("SANTOS", null, "x")).toBeNull();
+  });
+
+  it("knows where a sentence ends", () => {
+    expect(startsNewSentence("")).toBe(true);
+    expect(startsNewSentence("It ended.")).toBe(true);
+    expect(startsNewSentence('He said "stop." ')).toBe(true);
+    expect(startsNewSentence("It is continuing")).toBe(false);
+    expect(startsNewSentence("went to ")).toBe(false);
   });
 });

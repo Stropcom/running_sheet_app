@@ -159,3 +159,178 @@ The Calendar page used to cut each running sheet's name to fit its day ("2026102
 **Imagery Saved by: moved to the right of the row (v2.83.1)** — the CIN and name of the officer who marked an Imagery row Saved now sit at the **right-hand end of the row**, like the Team Leader items' tag, with the tick left alone in the Saved column (it was under the tick). The table has a sixth, unlabelled 6.5 rem column for it from tablet width up (`sm`, 640 px); on a phone there is no room beside the tick, so it stays under the tick there. Nothing about who is recorded changed (v2.83.0).
 
 **Parked idea — an "Actions & Items" report in Intelligence (decided 2026-11-12: keep for later, not building now)** — a report across the page in Intelligence → Reports, laid out like the Supervisor Summary and the Weekly Report, listing the actions and items picked up from running sheet rows, for one sheet or for all sheets. There is room for another report in the Intelligence folder's reports list. A mock-up was made and published as the artifact "Actions and Items Report" (https://claude.ai/artifact/Cq9b4U2Dm7X6R5HZxCRj7k). Nothing is built. If it is picked up: reuse the New Intelligence lines (`shared/sheetIntel.ts`, one thing = one line, "Also picked up…" for folded pickups) so it cannot disagree with the Summary, and keep the rule that lines are the officer's own sentence with no counts (CLAUDE.md, Intelligence rules).
+
+## Touch: the first tap opens the observation without the keyboard (v2.83.17)
+
+On a phone or tablet the on-screen keyboard used to come up the moment the
+observation of a row was tapped, covering the shortcut chips and the row so the
+officer could not see what a chip tap was putting in. Now (`EditableCell.tsx`,
+touch devices only, `useIsTouchDevice`): **one tap** opens the observation with the
+caret at the end and **no keyboard** (`inputMode="none"`), so the chips can be
+tapped and the text watched; **a second tap in the text** brings the keyboard up
+(the field is blurred and focused again, with the caret kept, because a browser
+only raises the keyboard on a fresh focus — the same way the Map's Quick Entry
+does it). The re-focus is not treated as leaving the cell (no save, no close).
+Laptop / desktop are unchanged: the cell types straight away. The first row of a
+new sheet ("Surveillance commenced in the vicinity of") and the Cease row follow the
+same rule on touch (owner's decision): they open with the caret at the end and no
+keyboard, and a tap in the text brings it up. Checked in `e2e/touch-keyboard.spec.ts`
+(a touch browser: `inputmode` is "none" after the first tap, and for the first row
+of a new sheet, and not after the second tap; desktop is never "none"); **the real
+keyboard is not tried on an iPad here — check there after deploy.**
+
+## New Intelligence: a phone and what is done with it is one line (v2.83.18)
+
+"…he was holding a mobile phone and appeared to be texting, or similar." gave two
+Devices lines — "Mobile phone" and "Messaging" — for one thing in one sentence (the
+TEXT shortcut). `foldCuesInSentence` (`shared/sheetIntel.ts`) now folds the
+messaging / phone-call wording (**Messaging**, **Phone call**) into the mobile
+phone's line when the sentence has **exactly one** mobile phone: one line, "Mobile
+phone", with "Also picked up in this sentence: Messaging (Devices)" and both words
+highlighted, as for the other folds (nothing is dropped; the phone keeps its tick
+key). **Not guessed:** two phones in one sentence ("a mobile phone and a second
+mobile phone … texting") cannot say which was used, so the messaging stays its own
+line; texting with no phone named stays its own line; the same wording on two rows
+is still two sightings. Pay phone / public phone is untouched. Tests:
+`server/foldCues.test.ts` ("a phone and what is done with it is one line").
+
+## Own row chips (TP, TEXT): into the open observation, else their own row (v2.83.20)
+
+An "Own row" chip used to make a new row on every tap. Now (owner's change; the rule is
+`shortcutInsertText` in `shared/shortcutRow.ts`, tests `server/shortcutRow.test.ts`):
+
+- **An observation is open and being written → the chip's text goes in at the cursor**, like
+  any other chip, and no row is made. On the running sheet "open" is the observation cell
+  that is focused right now (`openObservationCell` in `TargetPanel.tsx`, the same test the
+  continuity cards use), even if still empty. On the Map's Quick Entry it is a box with
+  text in it; the Map's chips have always added to the END of the box (not at a cursor), and
+  TP / TEXT do the same there.
+- **No observation open → its own row with the time, as before** (and an empty Quick Entry
+  box on the Map).
+- The text goes in **exactly as saved**. One addition: when it would begin a new sentence
+  (an empty box, or right after a full stop) the target's name goes first — "SANTOS had a
+  mobile phone to his ear …" — because the expansion is written to follow a name; in the
+  middle of a sentence ("SANTOS walked to the door and " → "…and had a mobile phone …") it
+  already reads on. No person target: the expansion alone, as the other chips do.
+- Unchanged: the Undo toast and the "no person target" fallback of the own-row path.
+
+Checked: unit tests; `e2e/shortcut-own-row.spec.ts` (open box mid-sentence, empty open box,
+after a full stop, and the own row still made with nothing open). **The Map's Quick Entry
+side cannot be driven in the sandbox (no Google Map) — check it on the live Map.**
+
+## Shortcuts page on a phone: each shortcut stacks (v2.83.28)
+
+On a phone the Shortcuts list squeezed handle, trigger, arrow, text and the −RS / edit /
+delete buttons onto one line, so the text wrapped a word at a time and the last button was
+cut off. Below the `sm` breakpoint (640 px) a row now stacks (`ShortcutsPage.tsx`): **line 1**
+is the grab handle and trigger on the left and the −RS / +RS, edit and delete buttons on the
+right; **line 2** is the shortcut's text at the full width (the arrow is hidden). The edit row
+and the New Shortcut form stack the same way (trigger above, text below, trigger box full
+width). Tablet and laptop widths are unchanged — the single line. Checked at 390, 820 and
+1280 px by eye, and in `e2e/shortcuts-phone.spec.ts` (390 px: the page does not scroll
+sideways, delete is wholly on screen, the text sits under the trigger; 1280 px: the text is on
+the trigger's line), which failed on the old layout first.
+
+## New sheets and "today" use the Perth date (v2.83.30)
+
+**The bug.** The New Running Sheet dialog (and Edit Sheet, the Heat Map's date, the Intel Export
+file name) worked out "today" with `new Date().toISOString().slice(0, 10)` — the **UTC** date.
+Perth is UTC+8, so from midnight to 08:00 in Perth that is still *yesterday*: a sheet started
+at 07:38 on the 13th was dated the 12th ("20261112 - …"), and because the server only stamps a
+new row's time on a sheet dated today, its rows came up "Set time" instead of the current time.
+Found when a browser test that creates a sheet failed every run between 00:00 and 08:00 Perth.
+
+**The fix.** Every "today" now goes through `perthDateISO(new Date())` (`shared/runningSheetTitle.ts`,
+UTC+8, no daylight saving): the three New Running Sheet defaults and Edit Sheet
+(`OperationDetail.tsx`, `useSheetEditing.ts`), the Heat Map default (`IntelligenceHeatMap.tsx`),
+the Intel Export file name, the server's three roster / secondment "today" checks
+(`server/ctoRoster.ts` — a secondment ending "yesterday" Perth-time no longer shows until 08:00),
+the witness-list file name, and the "created at → date" fallback for a sheet with no date
+(`rollupSection.ts`, `DeploymentRollup.tsx`, `IntelPackages.tsx`). **Left as they are, on purpose:**
+calendar arithmetic on dates built in UTC (the week helpers, roster `shiftDate` columns,
+`Date.UTC(…)` then `.toISOString()`), which has no time-zone conversion in it; and the screens that
+use the device's own clock (`format(new Date(), "yyyy-MM-dd")` on the roster), which is Perth on an
+officer's phone or laptop.
+
+**Checked.** `server/perthDate.test.ts`: the helper at the boundaries (15:59:59 vs 16:00:00 UTC,
+the year turning, 29 February) and a guard that fails if `new Date().toISOString().slice(0, 10)`
+(or `.split("T")[0]`) appears anywhere in the source again. `e2e/perth-date.spec.ts` sets the
+page's clock to 23:38 UTC on the 12th and checks the New Running Sheet date is the 13th, the day
+before at 15:59 UTC, and across New Year (it failed on the old code first). And the New
+Intelligence browser test, which was failing at this very hour, passes.
+
+## Space bar no longer brackets "303 parked and unattended on …" (v2.83.31)
+
+Typing "Vehicle 1EMB303 parked and unattended on Murray Street, PERTH" then a space added
+"(303 parked and unattended on Murray Street)". The live address completion
+(`detectAddressSpaceCompletion`, `client/src/lib/mentionAutocomplete.ts`) took the "303" at the end of
+the plate as a street number, because its pattern had no start boundary, and read everything up to
+"Street, PERTH" as one address. Both patterns now require the street number to start a word
+(`(?<![A-Za-z0-9])`). "Vehicle 1EMB303 parked outside 12 Murray Street, PERTH" still brackets
+"(12 Murray Street)". Tests: `server/addressSpaceCompletion.test.ts` (fails on the old pattern).
+**Known and left alone:** the street words between the number and the street type are loose (up to
+40 letters), so a count in prose ("3 men walked along Murray Street, PERTH") can still be read as an
+address. Not changed without the owner's say-so.
+
+## Touch: a keyboard icon in the toolbar instead of "tap twice" (v2.85.0)
+
+Replaces the second-tap rule of v2.83.17 (owner's change; **phone and tablet only — laptop /
+desktop are untouched**: the cell types straight away and there is no icon). On a touch device
+the sheet's sticky toolbar (Add Row, sort, undo, search) now has a **keyboard icon button** (same
+size as the sort button; it turns blue when on; `data-testid="keyboard-toggle"`), the same idea as
+the Keyboard button on the Map's Quick Entry:
+
+- **Off by default** (every time the sheet page opens). With it off, every observation opens with
+  the caret where it belongs (end of the text when opened by a tap or a card) and **no on-screen
+  keyboard** (`inputMode="none"`), so the chips and the row stay in view. The first row of a new
+  sheet and the Cease row follow the same rule.
+- **Tapping in the text does nothing special any more** — the old "second tap brings the keyboard"
+  is gone.
+- **Tap the icon to switch the keyboard on** (it stays on for the next cells you open until you
+  switch it off or leave the page) and tap again to switch it off. With a cell already open it
+  works at once: the field is blurred and focused again inside the tap, caret and text kept, and
+  the re-focus is not treated as leaving the cell (no save, no close). The icon's mouse-down is
+  held back so tapping it never takes the focus from an open cell (the same as the chips).
+- Where: `client/src/contexts/ObservationKeyboardContext.tsx` (the on / off state, and the open
+  cell's re-focus function), the button in `RowsToolbar.tsx`, the field in `EditableCell.tsx`; the
+  provider wraps the sheet in `SheetDetail.tsx` (so the sheet embedded on the Map page has it too).
+- Checked: `e2e/touch-keyboard.spec.ts` (a touch browser: the icon is there and off; the first row and a
+  tapped row open with `inputmode="none"`; a second tap changes nothing; the icon switches an open
+  cell on and off with the same text and focus; with it on the next cell opens with the keyboard;
+  on desktop there is no icon and the field is never "none" — failing on the old code), and the
+  toolbar measured at phone and iPad widths (the icon is 36 × 36 like the sort button, no sideways
+  scroll). **The real keyboard is not tried on an iPad / iPhone here — check there after deploy:
+  that the icon raises and drops the keyboard on an open cell, and that tapping a chip with the
+  keyboard off still leaves the cell open.**
+
+## New rows open by themselves; the keyboard goes off when a row closes (v2.86.0)
+
+Two owner changes to the running sheet:
+
+- **Add Row opens the new row at once, the cursor in it** (`useRowActions.ts`, `addRow`; every
+  device). Until now only the first row of a sheet (the one that comes with "Surveillance commenced in
+  the vicinity of ") opened by itself; any later row came in empty and had to be tapped. Now every new
+  row's observation opens, focused: an **empty row with the cursor at the start**, the first row with
+  the cursor after its opening text (the address goes there — unchanged). On a phone or tablet it opens
+  with no keyboard unless the keyboard icon is on (v2.85.0). Online only: a row added while offline is
+  not opened (the offline path is unchanged).
+- **The keyboard icon goes back to off whenever a row closes** (touch only; `resetKeyboard` in
+  `ObservationKeyboardContext.tsx`, called from the cell's blur in `EditableCell.tsx`). Switching it on
+  is for typing in the row that is open; the next row starts without the keyboard again. (The icon still
+  shows on / off as before and still works on an open row.) This replaces the "stays on across rows" of
+  v2.85.0.
+
+Checked: `e2e/touch-keyboard.spec.ts` (touch: a new row opens by itself, focused, caret at 0, no
+keyboard; the icon switches an open row on and off; switching it on then leaving the row turns it off;
+the next new row opens without the keyboard; laptop: a new row opens by itself and is never "none");
+`e2e/screens-07-target-logger.spec.ts` (the second row opens empty and focused, with nobody on it).
+**Not tried on a real iPad / iPhone — check there after deploy.**
+
+## Draft Roster: a tap in Bulk Edit / Bulk Copy keeps the cell selected (v2.86.0)
+
+The bug logged in `docs/features/dev-and-ops.md` (phase 3k): on the Draft Roster page a plain tap on a
+cell in Bulk Edit or Bulk Copy selected it and unselected it at once, because the cell toggled the
+selection on pointer-down **and** again in `handleCellTap` on click. `handleCellTap` now does nothing in
+the two bulk modes (the selection is made on pointer-down, so dragging across cells still works). The
+live Team Duty Roster page was never affected. Test: `e2e/draft-roster-page.spec.ts` now selects the two
+cells by tapping them (it dragged before, to get round the bug).

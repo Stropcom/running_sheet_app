@@ -220,15 +220,17 @@ export default function ShortcutsPage() {
         {isAdmin && adding && (
           <div className="rounded-lg border bg-card p-4 space-y-3">
             <p className="text-sm font-medium">New Shortcut</p>
-            <div className="flex gap-2 items-center">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
-                className="w-28 font-mono text-sm"
+                className="w-full sm:w-28 font-mono text-sm"
                 placeholder="trigger"
                 value={newTrigger}
                 onChange={e => setNewTrigger(e.target.value.toLowerCase())}
                 maxLength={64}
               />
-              <span className="text-muted-foreground text-sm">→</span>
+              <span className="hidden sm:inline text-muted-foreground text-sm">
+                →
+              </span>
               <Input
                 className="flex-1 text-sm"
                 placeholder="Full expansion text"
@@ -300,16 +302,16 @@ export default function ShortcutsPage() {
                       <>
                         {editingId === s.id ? (
                           <div className="space-y-2">
-                            <div className="flex gap-2 items-center">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                               <Input
-                                className="w-28 font-mono text-sm"
+                                className="w-full sm:w-28 font-mono text-sm"
                                 value={editTrigger}
                                 onChange={e =>
                                   setEditTrigger(e.target.value.toLowerCase())
                                 }
                                 maxLength={64}
                               />
-                              <span className="text-muted-foreground text-sm">
+                              <span className="hidden sm:inline text-muted-foreground text-sm">
                                 →
                               </span>
                               <Input
@@ -370,15 +372,15 @@ export default function ShortcutsPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:flex-nowrap">
                             {handle}
                             <span className="font-mono text-sm bg-muted px-2 py-0.5 rounded text-primary font-semibold min-w-[4rem] text-center">
                               {s.trigger}
                             </span>
-                            <span className="text-muted-foreground text-xs">
+                            <span className="hidden sm:inline text-muted-foreground text-xs">
                               →
                             </span>
-                            <span className="flex-1 text-sm">
+                            <span className="order-last basis-full text-sm sm:order-none sm:basis-auto sm:flex-1">
                               {s.expansion}
                               {s.startsRow && (
                                 <span
@@ -390,7 +392,7 @@ export default function ShortcutsPage() {
                                 </span>
                               )}
                             </span>
-                            <div className="flex gap-1 shrink-0 items-center">
+                            <div className="ml-auto flex gap-1 shrink-0 items-center sm:ml-0">
                               {/* +RS / -RS toggle — available to all users */}
                               <button
                                 onClick={() =>

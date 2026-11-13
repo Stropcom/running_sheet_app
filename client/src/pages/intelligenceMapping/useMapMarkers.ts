@@ -12,6 +12,7 @@ import {
 import { findVehicleMarker } from "@shared/vehicleMarker";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
 import {
+  commencedPosition,
   samePlace,
   shortUnidentified,
   targetEmoji,
@@ -435,7 +436,10 @@ export function useMapMarkers(
         flyTickRef.current?.();
       }
     };
-    const pos = rsTargetPosition;
+    // Until a logged movement names him, the flag marks where the surveillance
+    // commenced: "Commenced 08:39 AM" (shared/targetPosition.ts).
+    const pos =
+      rsTargetPosition ?? commencedPosition(null, rsSurveillance ?? null);
     const token = trackedTargetCode(rsTrackedTarget);
     if (!trackingSettings.location) {
       setTargetFlagStatus("");
@@ -639,6 +643,9 @@ export function useMapMarkers(
     rsTargetPosition,
     rsSurveillance?.ended,
     rsSurveillance?.endedAtTime,
+    rsSurveillance?.commencedByRowId,
+    rsSurveillance?.commencedAtTime,
+    rsSurveillance?.commencedPlace,
     rsTrackedTarget,
     rsSelectedSheetId,
     rsSelectedOpId,

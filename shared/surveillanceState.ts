@@ -15,6 +15,8 @@
  * order.
  */
 
+import { surveillancePlace } from "./surveillanceHandover";
+
 export interface SurveillanceRow {
   id: number;
   observation: string | null;
@@ -33,6 +35,14 @@ export interface SurveillanceState {
   endedAtTime: string | null;
   /** CINs that are still on. */
   stillOn: string[];
+  /** The "Surveillance commenced" row that started the live stretch — the
+   * first commenced, or the first after everyone had ceased. Null when no row
+   * says commenced, or the surveillance has ended. */
+  commencedByRowId: number | null;
+  /** That row's time, e.g. "08:39 AM". */
+  commencedAtTime: string | null;
+  /** The place that row names ("Dental Boutique Perth, 634 Murray Street … (Dental Boutique Perth)"), as written. */
+  commencedPlace: string | null;
 }
 
 type Signal = "ceased" | "commenced" | null;
@@ -64,9 +74,14 @@ export function surveillanceState(
   let endedByRowId: number | null = null;
   let endedAtTime: string | null = null;
   const allOff = () => on.size > 0 && Array.from(on.values()).every(v => !v);
+  let commencedRow: SurveillanceRow | null = null;
   for (const r of rows) {
     const signal = surveillanceSignal(r.observation);
     if (!signal) continue;
+    // The live stretch starts at the first commenced, or the first one after
+    // everyone had ceased; later commenced rows (another officer joining) are
+    // not a new start.
+    if (signal === "commenced" && (ended || !commencedRow)) commencedRow = r;
     for (const c of r.members) {
       if (norm(c)) on.set(norm(c), signal === "commenced");
     }
@@ -80,6 +95,7 @@ export function surveillanceState(
       endedAtTime = null;
     }
     ended = now;
+    if (ended) commencedRow = null;
   }
   return {
     ended,
@@ -88,5 +104,10 @@ export function surveillanceState(
     stillOn: Array.from(on.entries())
       .filter(([, v]) => v)
       .map(([k]) => k),
+    commencedByRowId: commencedRow ? commencedRow.id : null,
+    commencedAtTime: commencedRow ? (commencedRow.time ?? null) : null,
+    commencedPlace: commencedRow
+      ? surveillancePlace(commencedRow.observation, "commenced")
+      : null,
   };
 }

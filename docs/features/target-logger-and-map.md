@@ -608,3 +608,22 @@ it is mounted). Used on the Map page and RS Mapping (both use the same two compo
 in a browser** — Google Maps cannot run in the build sandbox; the placement rule itself is unit-tested.
 Check on the live Map: open Photos then Street View (and the other way round) on an iPad held both ways
 up, and on a phone.
+
+## Surveillance commenced shows as a flag on its place — "Commenced 08:39 AM" (v2.87.0)
+Before any movement names the target, the Map page's target flag now marks **where the surveillance
+commenced**: the usual white pill with the rose border, ▶️ and **"SANTOS · Commenced 08:39 AM"**, on the pin
+of the place the "Surveillance commenced in the vicinity of …" row names (the short form, as the other
+flags use). Rules (`shared/targetPosition.ts` `commencedPosition`, fed by `shared/surveillanceState.ts`,
+tests `server/commencedFlag.test.ts`):
+- It shows **only while nothing logged says where he is** — the first arrival, walk-in, sighting or vehicle row
+  takes the flag over, exactly as before. It is never drawn over a real position.
+- The start is the first "commenced" row, or the first after **every** member had ceased; another officer
+  commencing later is not a new start. The time is that row's own time.
+- Gone once the surveillance has ended (the grey dashed "ceased at …" flag takes over), and not shown when the
+  commenced row names no place — nothing is guessed. A location target (it does not move) still has no flag.
+- `surveillanceState` (the `row.surveillanceState` query) now also returns `commencedByRowId`,
+  `commencedAtTime` and `commencedPlace`. New `TargetState` `"commenced"` (emoji ▶️); the flag marker rule
+  treats it like "inside" (a place marker).
+- **Not looked at in a browser** (Google Maps cannot run in the sandbox); the rule and the state are unit-tested.
+  Check on the live Map with a new sheet: commence at an address, flag shows "Commenced <time>"; log an arrival and
+  it moves to the real position. The Fly flag takes the same text. The Target Logger card on the sheet is unchanged.

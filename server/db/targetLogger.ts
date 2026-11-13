@@ -701,6 +701,8 @@ export interface PendingHeadingTo {
   from: string;
   fromVessel?: string;
   fromTransit?: string;
+  /** Stepped out the front of `from` and stayed there (shared/outFront.ts). */
+  outFront?: boolean;
   sheetId: number;
   rowId: number;
 }

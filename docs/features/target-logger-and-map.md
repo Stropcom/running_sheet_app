@@ -544,3 +544,36 @@ row removes it. Also seen by anything that reads pending arrivals (the target-po
 vehicle target now has a "parked" position from such a row). Tests: `server/unattendedVehicle.test.ts`;
 browser: `e2e/target-logger-vehicle-card.spec.ts` (both cases, failing on the old code). The Map's
 Quick Entry card takes the same list but cannot be driven in the sandbox — check it live.
+
+## Out the front: "Returned inside" (v2.84.0)
+
+A very common moment: the target is inside a place and steps out the front to talk on the phone
+("SANTOS exited 21 Hope Road, stood out the front was talking on a mobile phone."). The logger used to
+read that as "Departed on foot — Left 21 Hope Road" with "Entered a location" / "Inside" / "Walked
+to another location" / "Walked to 1EMB303". He has gone nowhere, so now (owner's request):
+
+- **The state.** One pure rule, `shared/outFront.ts` (tests `server/outFront.test.ts`), read by
+  `scanWalkEvents` (`ScannedHeadingTo.outFront`): an exit row whose rest says he **stood / waited /
+  stayed / remained / lingered out the front, out front or outside**, or **went / walked / stepped /
+  came out the front or outside**, with **no destination ("towards …") and no vehicle** — "exited X
+  and walked out the front towards Smith Street" is still a walk. Also a row with **no "exited"** —
+  "SANTOS went out the front of 21 Hope Road", "SANTOS stood out the front" — but **only for someone
+  logged inside a place** (and only that place); nobody is put out the front from nothing.
+  "Out of sight" and "outside the vehicle" are not read.
+- **The card** (sheet Target Logger and the Map's Quick Entry card): pill **Out the front**, state
+  "Out the front of 21 Hope Road · since 11:45 AM". Buttons: **Returned inside**, **Walked to another
+  location**, and the walk to a parked vehicle ("Walked to 1EMB303", as before). **Not** shown:
+  "Entered a location", "Inside", and the bus / train boarding buttons.
+- **Returned inside** writes **"SANTOS walked back to 21 Hope Road and continued out of sight."** (the
+  name as the row wrote it, the place he stood out the front of; `returnedInsideSentence`). The logger
+  reads it as inside that place again. Typed by hand it works too — "walked / went / came back to
+  <place>", "walked back inside", "returned inside" — **only for someone who is logged out the front,
+  and only for that place**; "walked back to" any other place stays an ordinary walk.
+- **Ends** like any on-foot state: a later row putting him somewhere (a walk "towards …", a vehicle,
+  inside) replaces it. The map flag says "out the front" at that place (`locateTarget` label; state
+  is still "walking", so the marker is a place marker).
+- Rows already saved are read live, so the cards correct themselves on reload; nothing is rewritten.
+- Checked: unit tests for the rule, the scan (including the guards above) and the flag; browser test
+  `e2e/target-logger-out-the-front.spec.ts` (the screenshot case: pill, buttons, "Returned inside"
+  writes the sentence and he is inside again; failing on the old code). The Map's Quick Entry card uses
+  the same rule but cannot be driven in the sandbox — check it on the live Map.

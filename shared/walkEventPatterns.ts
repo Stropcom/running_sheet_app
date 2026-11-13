@@ -34,6 +34,11 @@ import {
   withCompanionNames as withCompanions,
 } from "./companions";
 import {
+  matchWalkedBackInside,
+  matchWentOutFront,
+  saysStoodOutFront,
+} from "./outFront";
+import {
   extractArrivalAddress,
   VEHICLE_DEPART_PATTERN,
   matchVehicleArrival,
@@ -499,6 +504,10 @@ export interface ScannedWalkIn {
 }
 
 export interface ScannedHeadingTo {
+  /** The row says they stepped out the front of `from` and stayed there ("stood
+   * out the front talking on the phone"): at the place, outside it, not off
+   * somewhere (shared/outFront.ts). */
+  outFront?: boolean;
   names: string;
   /** Where they said they were heading, e.g. "13 Denford Street". */
   destination: string;
@@ -1003,12 +1012,16 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         });
       } else if (rowWalkers) {
         // Walking on with no destination written: on foot, heading
-        // "[location]" until an entry says where.
+        // "[location]" until an entry says where. Or stepped out the front and
+        // stayed there (shared/outFront.ts).
         clearHeadingFor(rowWalkers);
         heading.set(headingKey("[location]", rowWalkers), {
           names: rowWalkers,
           destination: "[location]",
           from,
+          ...(saysStoodOutFront(text.slice(exitMatch.index ?? 0))
+            ? { outFront: true }
+            : {}),
           ...where,
         });
       }
@@ -1101,6 +1114,62 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       clearHeadingFor(names);
       placePeople(names, "", row.id);
     };
+
+    // Back inside after standing out the front ("SANTOS walked back to 21 Hope
+    // Road and continued out of sight."): only for someone logged out the front
+    // of that place — otherwise "walked back to" is an ordinary walk.
+    const backIn = !exitMatch ? matchWalkedBackInside(text) : null;
+    if (backIn) {
+      const who = tok(backIn.names);
+      const out = Array.from(heading.values()).find(
+        h =>
+          h.outFront &&
+          who.length > 0 &&
+          tok(h.names).some(t => who.includes(t)) &&
+          (!backIn.place ||
+            key(bracketLabelOrSelf(backIn.place)) === key(h.from))
+      );
+      if (out) {
+        record(out.names, out.from, "");
+        return;
+      }
+    }
+
+    // "SANTOS went out the front of 21 Hope Road" / "stood out the front", with
+    // no "exited": out the front of the place he is logged inside, and no
+    // longer inside it. Never read for someone who is not logged inside a
+    // place (shared/outFront.ts).
+    const wentOut = !exitMatch ? matchWentOutFront(text) : null;
+    if (wentOut && !isVehicleSubject(wentOut.names)) {
+      const walkers = resolveWho(wentOut.names);
+      const insideAt = Array.from(lastWalkIn.entries()).find(
+        ([k, v]) =>
+          !walkedOut.has(k) &&
+          tok(walkers).length > 0 &&
+          tok(walkers).every(t => tok(v.names).includes(t))
+      )?.[1].location;
+      if (
+        walkers &&
+        !PRONOUN_RE.test(walkers) &&
+        insideAt &&
+        (!wentOut.place ||
+          key(bracketLabelOrSelf(wentOut.place)) === key(insideAt))
+      ) {
+        leavePlace(insideAt, walkers);
+        setAt(walkers, insideAt);
+        placePeople(walkers, "", row.id);
+        noteActors(wentOut.names, text);
+        clearHeadingFor(walkers);
+        heading.set(headingKey("[location]", walkers), {
+          names: walkers,
+          destination: "[location]",
+          from: insideAt,
+          outFront: true,
+          ...where,
+        });
+        return;
+      }
+    }
 
     const inMatch = text.match(WALK_IN_PATTERN);
     if (inMatch) {
@@ -1335,6 +1404,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
             names: walkers,
             destination: "[location]",
             from,
+            ...(saysStoodOutFront(text.slice(anyExit.index ?? 0))
+              ? { outFront: true }
+              : {}),
             ...where,
           });
         }
@@ -1586,7 +1658,9 @@ export function isReadAsMovement(
     (PERSON_EXIT_ONWARD_PATTERN.test(text) &&
       !/\bVehicle\b/i.test(text.split(/\b(?:exited|departed|left)\b/i)[0])) ||
     PERSON_EXIT_VEHICLE_WALK_PATTERN.test(text) ||
-    PERSON_WALK_PATTERN.test(text)
+    PERSON_WALK_PATTERN.test(text) ||
+    matchWentOutFront(text) ||
+    matchWalkedBackInside(text)
   ) {
     return true;
   }

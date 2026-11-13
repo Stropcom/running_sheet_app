@@ -31,6 +31,7 @@ import {
   trackedTargetCode,
 } from "@shared/trackedTarget";
 import { shortcutInsertText, shortcutRowSubject } from "@shared/shortcutRow";
+import { returnedInsideSentence } from "@shared/outFront";
 import {
   continuedOccupantWording,
   leftAddressSentence,
@@ -668,30 +669,50 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
               usedBracketCodes
             );
             const destKnown = !h.destination.includes("[");
+            // Stepped out the front of a place and stayed there (phone call,
+            // a smoke): at that place, outside it. The next step is back
+            // inside, on elsewhere, or to a vehicle — not "Entered a
+            // location" / "Inside" (shared/outFront.ts).
+            const outFront = !!h.outFront && !h.fromTransit && !h.fromVessel;
+            const outFrontState = `Out the front of ${h.from}${sinceText(h.rowId)}`;
             // On foot, the next step is one of: enter where they were
             // heading, walk on to somewhere else, or walk back towards a
             // vehicle that is parked.
             continuityCards.push({
               key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
               title: h.names,
-              pill: h.fromTransit
-                ? "Alighted"
-                : h.fromVessel
-                  ? "Disembarked"
-                  : "Departed on foot",
+              pill: outFront
+                ? "Out the front"
+                : h.fromTransit
+                  ? "Alighted"
+                  : h.fromVessel
+                    ? "Disembarked"
+                    : "Departed on foot",
               attn: true,
               who: destKnown ? `Walking to ${h.destination}` : "On foot",
-              state: `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
+              state: outFront
+                ? outFrontState
+                : `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
               actions: [
-                ...cardAction(
-                  chip,
-                  destKnown ? "Entered" : "Entered a location"
-                ),
-                {
-                  key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                  label: "Inside",
-                  text: `${walkers} inside ${destKnown ? h.destination : "[location]"} [observation].`,
-                },
+                ...(outFront
+                  ? [
+                      {
+                        key: `ri-${h.from}-${h.names}`,
+                        label: "Returned inside",
+                        text: returnedInsideSentence(walkers, h.from),
+                      },
+                    ]
+                  : [
+                      ...cardAction(
+                        chip,
+                        destKnown ? "Entered" : "Entered a location"
+                      ),
+                      {
+                        key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                        label: "Inside",
+                        text: `${walkers} inside ${destKnown ? h.destination : "[location]"} [observation].`,
+                      },
+                    ]),
                 {
                   key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                   label: "Walked to another location",
@@ -699,11 +720,13 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                 },
                 // Heading for, or just got off at, a bus stop or train
                 // station: boarding.
-                ...transitBoardActions({
-                  keyBase: `h-${h.destination}-${h.names}`,
-                  names: walkers,
-                  place: destKnown ? h.destination : h.from,
-                }),
+                ...(outFront
+                  ? []
+                  : transitBoardActions({
+                      keyBase: `h-${h.destination}-${h.names}`,
+                      names: walkers,
+                      place: destKnown ? h.destination : h.from,
+                    })),
                 ...reachableVehicles(h.names, h.from).map(a => ({
                   key: `wv-${a.rego}`,
                   label: `Walked to ${a.rego}`,
@@ -714,15 +737,19 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
               holds: surnameTokens(h.names),
               people: splitPeopleNames(h.names),
               locus: {
-                headline: (() => {
-                  const how = h.fromTransit
-                    ? "Alighted, on foot"
-                    : h.fromVessel
-                      ? "Disembarked, on foot"
-                      : "Departed on foot";
-                  return destKnown ? `${how} to ${h.destination}` : how;
-                })(),
-                sub: `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
+                headline: outFront
+                  ? `Out the front of ${h.from}`
+                  : (() => {
+                      const how = h.fromTransit
+                        ? "Alighted, on foot"
+                        : h.fromVessel
+                          ? "Disembarked, on foot"
+                          : "Departed on foot";
+                      return destKnown ? `${how} to ${h.destination}` : how;
+                    })(),
+                sub: outFront
+                  ? `On foot${sinceText(h.rowId)}`
+                  : `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
               },
             });
           });

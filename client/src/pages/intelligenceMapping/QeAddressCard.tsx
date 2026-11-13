@@ -36,6 +36,7 @@ import {
   subjectCompanions,
   trackedTargetCode,
 } from "@shared/trackedTarget";
+import { returnedInsideSentence } from "@shared/outFront";
 import {
   continuedOccupantWording,
   leftAddressSentence,
@@ -588,32 +589,52 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
             // This pin, rather than where they said.
             const here = !isDest;
             const keyTail = unwritten ? `-${h.names}` : "";
+            // Stepped out the front of a place and stayed there: out the front
+            // of it, not "departed on foot" (shared/outFront.ts).
+            const outFront = !!h.outFront && !h.fromTransit && !h.fromVessel;
             const how = h.fromTransit
               ? "Alighted, on foot"
               : h.fromVessel
                 ? "Disembarked, on foot"
                 : "Departed on foot";
-            const left =
-              alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`;
+            const left = outFront
+              ? `Out the front of ${h.from}`
+              : (alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`);
             const nm = names(h.names);
             cards.push({
               key: `head-${h.destination}${keyTail}`,
               title: h.names,
-              pill: h.fromTransit
-                ? "Alighted"
-                : h.fromVessel
-                  ? "Disembarked"
-                  : "Departed on foot",
+              pill: outFront
+                ? "Out the front"
+                : h.fromTransit
+                  ? "Alighted"
+                  : h.fromVessel
+                    ? "Disembarked"
+                    : "Departed on foot",
               attn: true,
               who: unwritten ? "On foot" : `Walking to ${h.destination}`,
               state: left,
               holds: surnameTokens(h.names),
               people: splitPeopleNames(h.names),
               locus: {
-                headline: unwritten ? how : `${how} to ${h.destination}`,
-                sub: left,
+                headline: outFront
+                  ? left
+                  : unwritten
+                    ? how
+                    : `${how} to ${h.destination}`,
+                sub: outFront ? "On foot" : left,
               },
               actions: [
+                // Back inside the place they stood out the front of.
+                ...(outFront
+                  ? [
+                      {
+                        key: `ri-${h.from}-${h.names}`,
+                        label: "Returned inside",
+                        text: returnedInsideSentence(nm, h.from),
+                      },
+                    ]
+                  : []),
                 // Got to this place on foot: any place —
                 // a street corner, a bus stop, a station.
                 ...(here
@@ -635,7 +656,7 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
                   : []),
                 // Going into it ("Entered"), or into a
                 // place that is not a stop or station.
-                ...(clickedTransit && here
+                ...((clickedTransit && here) || outFront
                   ? []
                   : [
                       {
@@ -660,7 +681,7 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
                 },
                 // Heading for a stop or station they said,
                 // or just got off at one.
-                ...(clickedTransit && here
+                ...((clickedTransit && here) || outFront
                   ? []
                   : transitBoardActions({
                       keyBase: `h-${h.destination}-${h.names}`,

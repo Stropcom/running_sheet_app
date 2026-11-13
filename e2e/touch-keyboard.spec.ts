@@ -1,9 +1,11 @@
-// On a phone or tablet the first tap on an observation opens it WITHOUT the
-// on-screen keyboard (so the shortcut chips and the row stay in view while
-// chips are tapped); a second tap in the text brings the keyboard up. On a
-// laptop / desktop the cell types straight away. The keyboard itself cannot be
-// seen in a test, so this checks the field's `inputmode`, which is what tells
-// the browser whether to raise it ("none" = no keyboard).
+// On a phone or tablet the observation opens WITHOUT the on-screen keyboard (so
+// the shortcut chips and the row stay in view while chips are tapped), and the
+// keyboard icon in the sheet's toolbar switches the keyboard on and off — off by
+// default. Tapping in the text does nothing special (the old "tap again for the
+// keyboard" is gone). On a laptop / desktop the cell types straight away and
+// there is no keyboard icon. The keyboard itself cannot be seen in a test, so
+// this checks the field's `inputmode`, which is what tells the browser whether to
+// raise it ("none" = no keyboard).
 //
 // Needs a running instance and a real account — see e2e/README.md.
 import { test, expect } from "@playwright/test";
@@ -17,12 +19,16 @@ test.skip(
 test.describe("touch device", () => {
   test.use({ hasTouch: true });
 
-  test("first tap opens the observation without the keyboard, second tap allows it", async ({
+  test("the keyboard icon switches the keyboard on and off, off by default; a second tap in the text does nothing", async ({
     page,
   }) => {
     await createOperationAndSheet(page);
-    // The first row of a sheet opens by itself (with the opening sentence), and
-    // on a touch device that is without the keyboard too.
+    const toggle = page.getByTestId("keyboard-toggle");
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    // The first row of a sheet opens by itself (with the opening sentence),
+    // without the keyboard.
     await page.getByRole("button", { name: "Add Row" }).click();
     const first = page.locator("textarea").first();
     await expect(first).toBeVisible();
@@ -32,28 +38,49 @@ test.describe("touch device", () => {
     await expect(
       page.locator("tbody tr").filter({ hasText: "First row of the sheet" })
     ).toHaveCount(1);
-    // A later, empty row that the officer taps into.
+
+    // A later, empty row that the officer taps into: no keyboard.
     await page.getByRole("button", { name: "Add Row" }).click();
     await page.getByText("Enter observation…").first().click();
-
     const box = page.locator("textarea").first();
     await expect(box).toBeVisible();
     await expect(box).toHaveAttribute("inputmode", "none");
     await expect(box).toBeFocused();
 
-    // Tapping into the text is the officer asking for the keyboard.
+    // Tapping in the text again no longer brings the keyboard.
     await box.click();
+    await expect(box).toHaveAttribute("inputmode", "none");
+    await expect(box).toBeFocused();
+
+    // The icon switches it on for the open cell, which stays open and focused.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect
       .poll(async () => await box.getAttribute("inputmode"))
       .not.toBe("none");
     await expect(box).toBeFocused();
+    await box.fill("Typed with the keyboard on");
 
-    // Still the same open cell — nothing was saved or closed by the re-focus.
-    await box.fill("Keyboard came up on the second tap");
+    // And off again, still the same open cell with its text.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(box).toHaveAttribute("inputmode", "none");
+    await expect(box).toBeFocused();
+    await expect(box).toHaveValue("Typed with the keyboard on");
+
+    // Nothing was saved or closed by the re-focus; leaving the cell saves it.
     await page.mouse.click(700, 620);
     await expect(
-      page.locator("tbody tr").filter({ hasText: "second tap" })
+      page.locator("tbody tr").filter({ hasText: "Typed with the keyboard on" })
     ).toHaveCount(1);
+
+    // With the keyboard on, the next cell opens with it.
+    await toggle.click();
+    await page.getByRole("button", { name: "Add Row" }).click();
+    await page.getByText("Enter observation…").first().click();
+    const next = page.locator("textarea").first();
+    await expect(next).toBeVisible();
+    expect(await next.getAttribute("inputmode")).not.toBe("none");
   });
 });
 
@@ -62,6 +89,7 @@ test.describe("laptop / desktop", () => {
     page,
   }) => {
     await createOperationAndSheet(page);
+    await expect(page.getByTestId("keyboard-toggle")).toHaveCount(0);
     // The first row of a sheet opens by itself, ready to type.
     await page.getByRole("button", { name: "Add Row" }).click();
     const first = page.locator("textarea").first();

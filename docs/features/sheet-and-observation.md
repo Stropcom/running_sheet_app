@@ -271,3 +271,34 @@ the plate as a street number, because its pattern had no start boundary, and rea
 **Known and left alone:** the street words between the number and the street type are loose (up to
 40 letters), so a count in prose ("3 men walked along Murray Street, PERTH") can still be read as an
 address. Not changed without the owner's say-so.
+
+## Touch: a keyboard icon in the toolbar instead of "tap twice" (v2.85.0)
+
+Replaces the second-tap rule of v2.83.17 (owner's change; **phone and tablet only — laptop /
+desktop are untouched**: the cell types straight away and there is no icon). On a touch device
+the sheet's sticky toolbar (Add Row, sort, undo, search) now has a **keyboard icon button** (same
+size as the sort button; it turns blue when on; `data-testid="keyboard-toggle"`), the same idea as
+the Keyboard button on the Map's Quick Entry:
+
+- **Off by default** (every time the sheet page opens). With it off, every observation opens with
+  the caret where it belongs (end of the text when opened by a tap or a card) and **no on-screen
+  keyboard** (`inputMode="none"`), so the chips and the row stay in view. The first row of a new
+  sheet and the Cease row follow the same rule.
+- **Tapping in the text does nothing special any more** — the old "second tap brings the keyboard"
+  is gone.
+- **Tap the icon to switch the keyboard on** (it stays on for the next cells you open until you
+  switch it off or leave the page) and tap again to switch it off. With a cell already open it
+  works at once: the field is blurred and focused again inside the tap, caret and text kept, and
+  the re-focus is not treated as leaving the cell (no save, no close). The icon's mouse-down is
+  held back so tapping it never takes the focus from an open cell (the same as the chips).
+- Where: `client/src/contexts/ObservationKeyboardContext.tsx` (the on / off state, and the open
+  cell's re-focus function), the button in `RowsToolbar.tsx`, the field in `EditableCell.tsx`; the
+  provider wraps the sheet in `SheetDetail.tsx` (so the sheet embedded on the Map page has it too).
+- Checked: `e2e/touch-keyboard.spec.ts` (a touch browser: the icon is there and off; the first row and a
+  tapped row open with `inputmode="none"`; a second tap changes nothing; the icon switches an open
+  cell on and off with the same text and focus; with it on the next cell opens with the keyboard;
+  on desktop there is no icon and the field is never "none" — failing on the old code), and the
+  toolbar measured at phone and iPad widths (the icon is 36 × 36 like the sort button, no sideways
+  scroll). **The real keyboard is not tried on an iPad / iPhone here — check there after deploy:
+  that the icon raises and drops the keyboard on an open cell, and that tapping a chip with the
+  keyboard off still leaves the cell open.**

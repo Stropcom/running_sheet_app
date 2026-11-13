@@ -12,6 +12,7 @@ import { EditSheetDialog } from "./sheetDetail/EditSheetDialog";
 import { NewTargetDialog } from "./sheetDetail/NewTargetDialog";
 import { EditRosterDialog } from "./sheetDetail/EditRosterDialog";
 import { SheetDialogs } from "./sheetDetail/SheetDialogs";
+import { ObservationKeyboardProvider } from "@/contexts/ObservationKeyboardContext";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -37,15 +38,17 @@ export default function SheetDetail({
   const Chrome = embedded ? React.Fragment : DashboardLayout;
   return (
     <Chrome>
-      <div className={embedded ? "p-4" : "p-6 lg:p-8"}>
-        <SheetHeader s={s} />
-        <ClosedBanner s={s} />
-        <RosterPanel s={s} />
-        <TargetPanel s={s} />
-        <RowsToolbar s={s} />
-        <RowsTable s={s} />
-        <SheetLegend s={s} />
-      </div>
+      <ObservationKeyboardProvider>
+        <div className={embedded ? "p-4" : "p-6 lg:p-8"}>
+          <SheetHeader s={s} />
+          <ClosedBanner s={s} />
+          <RosterPanel s={s} />
+          <TargetPanel s={s} />
+          <RowsToolbar s={s} />
+          <RowsTable s={s} />
+          <SheetLegend s={s} />
+        </div>
+      </ObservationKeyboardProvider>
       <EditSheetDialog s={s} />
       <NewTargetDialog s={s} />
       <EditRosterDialog s={s} />

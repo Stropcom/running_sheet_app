@@ -1,7 +1,6 @@
 {
   "server/ctoRoster.ts": 2838,
   "client/src/lib/tacticalMarkers.ts": 2550,
-  "client/src/pages/Intelligence.tsx": 2511,
   "server/db/intelligence.ts": 2488,
   "server/db/targets.ts": 2119,
   "client/src/pages/CtoRoster/DraftRosterPage.tsx": 2066,

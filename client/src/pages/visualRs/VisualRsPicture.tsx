@@ -35,13 +35,15 @@ function textWidth(text: string): number {
 }
 
 /** Where the picture is centred and how far in it is zoomed, and whether the
- * vehicle marker fits in it. The satellite is taken closer than the map. */
+ * vehicle marker fits in it. The picture mode does not change the view. */
 export function viewOfFrame(
   frame: VisualRsPlacedFrame,
   mode: PictureMode
 ): { view: PictureView; vehicleShown: boolean } | null {
   if (!frame.at) return null;
-  const maxZoom = mode === "sat" ? 19 : 17;
+  // Map and satellite share one zoom, so switching between them shows the
+  // same view (the officer's own wish).
+  const maxZoom = 17;
   const size = { width: PICTURE_W, height: PICTURE_H };
   const points = [frame.at, ...(frame.vehicle ? [frame.vehicle] : [])];
   const zoom = chooseZoom(points, size, { minZoom: 14, maxZoom, padding: 56 });

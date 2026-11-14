@@ -205,3 +205,4 @@ Rules (`shared/visualRs.ts`, tests `server/visualRs.test.ts`; server side `serve
 - **Not looked at on the live map** (Google/Nearmap cannot be reached from the build sandbox): the base picture
   was a stand-in in `e2e/visual-rs.spec.ts`; check a real sheet with Map and Satellite, a vehicle with and without
   a marker, and Export PDF on an iPad.
+- **v2.89.1:** the satellite picture is taken at the **same zoom as the map picture** (max zoom 17 for both, so switching Map ↔ Satellite shows the same view); it had been two levels closer.

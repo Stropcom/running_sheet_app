@@ -110,23 +110,21 @@ function Frame({
 }) {
   const { row, flag } = frame;
   return (
-    <article className="vrs-item grid grid-cols-1 gap-1 @lg:grid-cols-[4.5rem_minmax(0,1fr)] @lg:gap-3">
-      <div className="flex items-baseline gap-2 @lg:block @lg:pt-2.5 @lg:text-right">
-        <div className="font-mono text-[15px] font-semibold tabular-nums">
-          {row.time ?? "—"}
-        </div>
-        <div className="text-xs text-muted-foreground">
-          {frame.dwellMinutes != null
-            ? `for ${frame.dwellMinutes} min`
-            : "to the end"}
-        </div>
-      </div>
+    <article className="vrs-item">
       <div className="vrs-card grid min-w-0 grid-cols-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm @2xl:grid-cols-[minmax(0,22.5rem)_minmax(0,1fr)]">
         <div className="border-b border-border bg-muted/30 @2xl:border-b-0 @2xl:border-r">
           <VisualRsPicture frame={frame} mode={mode} />
         </div>
         <div className="flex min-w-0 flex-col gap-2 p-3.5">
-          <div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-mono text-[15px] font-semibold tabular-nums text-foreground">
+              {row.time ?? "—"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {frame.dwellMinutes != null
+                ? `for ${frame.dwellMinutes} min`
+                : "to the end"}
+            </span>
             <FlagChip flag={flag} />
           </div>
           <h3 className="m-0 text-base font-semibold leading-tight text-foreground">
@@ -174,10 +172,7 @@ function Frame({
 function Entry({ entry }: { entry: VisualRsEntry }) {
   const { row } = entry;
   return (
-    <article className="vrs-item grid grid-cols-1 gap-1 @lg:grid-cols-[4.5rem_minmax(0,1fr)] @lg:gap-3">
-      <div className="font-mono text-[13px] tabular-nums text-muted-foreground @lg:pt-2 @lg:text-right">
-        {row.time ?? "—"}
-      </div>
+    <article className="vrs-item">
       <div className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-dashed border-border bg-card px-3 py-2">
         <Observation
           rowNumber={row.rowNumber}
@@ -249,8 +244,7 @@ export default function IntelligenceVisualRs() {
     win.document.write(
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><base href="${window.location.origin}/"><title>Visual RS — ${report.sheet.title.replace(/[<&]/g, "")}</title>${styles}<style>
         body{background:#fff;color:#14181d;padding:16px}
-        .vrs-item{break-inside:avoid;margin-bottom:10px;grid-template-columns:4.6rem minmax(0,1fr)!important;gap:.6rem!important}
-        .vrs-item>div:first-child{display:block!important;text-align:right!important;padding-top:.5rem!important;white-space:nowrap}
+        .vrs-item{break-inside:avoid;margin-bottom:10px}
         /* on paper: the picture takes half the width, the text the other half */
         .vrs-card{grid-template-columns:1fr 1fr!important}
         .vrs-card>div:first-child{border-bottom:0!important;border-right:1px solid #d3dce4!important}

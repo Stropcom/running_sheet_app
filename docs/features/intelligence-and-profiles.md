@@ -206,3 +206,4 @@ Rules (`shared/visualRs.ts`, tests `server/visualRs.test.ts`; server side `serve
   was a stand-in in `e2e/visual-rs.spec.ts`; check a real sheet with Map and Satellite, a vehicle with and without
   a marker, and Export PDF on an iPad.
 - **v2.89.1:** the satellite picture is taken at the **same zoom as the map picture** (max zoom 17 for both, so switching Map ↔ Satellite shows the same view); it had been two levels closer.
+- **v2.89.3 (Export PDF layout):** on paper each frame is **half picture, half text** (the on-screen card stacks or sits 360px + text; the print window gives the picture 50% and the text 50%, with the time in its own column), because the text beside a fixed-width picture was too cramped on A4. Looked at by rendering the exported HTML at A4 width; not yet printed on a real printer.

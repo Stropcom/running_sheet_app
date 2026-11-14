@@ -121,7 +121,7 @@ function Frame({
             : "to the end"}
         </div>
       </div>
-      <div className="grid min-w-0 grid-cols-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm @2xl:grid-cols-[minmax(0,22.5rem)_minmax(0,1fr)]">
+      <div className="vrs-card grid min-w-0 grid-cols-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm @2xl:grid-cols-[minmax(0,22.5rem)_minmax(0,1fr)]">
         <div className="border-b border-border bg-muted/30 @2xl:border-b-0 @2xl:border-r">
           <VisualRsPicture frame={frame} mode={mode} />
         </div>
@@ -249,7 +249,11 @@ export default function IntelligenceVisualRs() {
     win.document.write(
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><base href="${window.location.origin}/"><title>Visual RS — ${report.sheet.title.replace(/[<&]/g, "")}</title>${styles}<style>
         body{background:#fff;color:#14181d;padding:16px}
-        .vrs-item{break-inside:avoid;margin-bottom:10px}
+        .vrs-item{break-inside:avoid;margin-bottom:10px;grid-template-columns:4.6rem minmax(0,1fr)!important;gap:.6rem!important}
+        .vrs-item>div:first-child{display:block!important;text-align:right!important;padding-top:.5rem!important;white-space:nowrap}
+        /* on paper: the picture takes half the width, the text the other half */
+        .vrs-card{grid-template-columns:1fr 1fr!important}
+        .vrs-card>div:first-child{border-bottom:0!important;border-right:1px solid #d3dce4!important}
         @page{size:A4;margin:12mm}
       </style></head><body><div class="vrs-print-notice" style="font-size:11px;color:#55677a;border-top:1px solid #c8d1d9;margin-top:12px;padding-top:6px">Not a certified evidentiary document. Pictures show the place from the source stated; they are not photographs of the event. Observations are taken from the running sheet. Generated from the running sheet by the Target Logger rules · no AI used.</div></body></html>`
     );

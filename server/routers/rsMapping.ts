@@ -25,6 +25,8 @@ export const rsMappingRouter = router({
         center: z.object({ lat: z.number(), lng: z.number() }).optional(),
         zoom: z.number().optional(),
         size: z.string().optional(),
+        // "roadmap" (default) or "satellite" (Google's own, not Nearmap).
+        maptype: z.enum(["roadmap", "satellite"]).optional(),
         routePath: z.string().optional(), // pipe-separated lat,lng pairs for route polyline
         // Extra lines, each its own colour (the Day Route draws travel in red
         // and a stretch no row covers in amber). Static Maps cannot dash a line.
@@ -56,7 +58,7 @@ export const rsMappingRouter = router({
       // Size defaults to 800x500 landscape for PDF
       const size = input.size ?? "800x500";
       url.searchParams.append("size", size);
-      url.searchParams.append("maptype", "roadmap");
+      url.searchParams.append("maptype", input.maptype ?? "roadmap");
       url.searchParams.append("scale", "2");
 
       // Center / zoom — auto-fit if not provided

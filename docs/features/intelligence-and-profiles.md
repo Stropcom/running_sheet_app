@@ -166,3 +166,42 @@ overflow set* — is checked in `e2e/profile-jump-bar.spec.ts` (390 px: the stic
 overflow and stays pinned to the top of the scroll area after scrolling; it failed on the old
 structure first). **Not tried on a real iPhone here — check after deploy:** open a profile
 with several targets, scroll down, and the bar should stay under the header.
+
+## Visual RS — the running sheet as a picture log (v2.89.0)
+A report in the Intelligence folder, **first among the Reports** (Visual RS · Ego Network · Heat Map · Places ·
+Day Route · Pattern of Life · Packages). Pick an operation and a running sheet; it lists the sheet in time order:
+- **A picture frame at every flag change** — the map (or satellite) of the place with the target flag drawn
+  exactly as on the Map page (white pill, rose edge, dashed/grey once out of sight or ceased; the person icon for
+  "Commenced"), the place pin, the flag state chip, "Place: A → B · Flag: X → Y", how long it lasted, and the
+  row's own observation ("Running sheet observation · Row N · time"). "Why this frame?" says what changed.
+- **Every other observation stays in place as a text entry** with no picture ("No flag change, no picture",
+  "Why no picture?"), switchable off with *Observations with no flag change*.
+- **Picture: Map | Satellite.** Map = Google Static Maps through the existing `rsMapping.getStaticMapImage`
+  (new optional `maptype`, no markers on the photo); Satellite = **Nearmap** through the new authenticated
+  `/api/nearmap/snapshot` (one WMS GetMap for the exact view; key stays on the server), with the photo date and
+  age (`intelligence.nearmapCaptureDate`, amber/red wording when old). Satellite is disabled when the server has
+  no Nearmap key. The overlay (pin, vehicle marker, flag) is SVG drawn over the plain photo from
+  `shared/staticMapProject.ts` (Web Mercator, tests `server/staticMapProject.test.ts`).
+- **Export PDF** opens the report in its own window with this page's styles (light) and prints it; frames don't
+  split across pages and every page carries "Not a certified evidentiary document … pictures show the place, not
+  the event … no AI used".
+
+Rules (`shared/visualRs.ts`, tests `server/visualRs.test.ts`; server side `server/db/visualRs.ts`,
+`intelligence.visualRs`, covered by the sheet-id access guard):
+- The flag after **each row** is worked out by running the Target Logger's own rules on the rows up to that row
+  (`locateTargetFromPending`, the same pending lists, `commencedPosition` before anyone is located, the grey
+  "ceased" flag once every member has ceased — `surveillanceState`). A frame is a row after which the flag's
+  state/wording (so another vehicle too) or place differs from before; the first row that places the target is
+  one. No row places him → no frames, only text. A location target or no target → no flags.
+- **A vehicle is only drawn where it has its own custom marker** (`findVehicleMarker`); with none the frame says
+  "Vehicle X is not shown: it has no marker on the map, so it is not placed." — never guessed. The flag goes on the
+  vehicle's marker when he is in it and it has one, else on the place pin.
+- A place is located from a marker that carries it first, else the cached geocoder the Supervisor Summary map uses
+  (`geocodeSummaryAddresses`). A place that can't be located gets "could not be found on the map" instead of a
+  picture. Photos on the sheet and the Page-preview view from the mock-up are **not built** yet.
+- Cost: the flag is recomputed per row (O(rows²)): ~6 s for a 300-row sheet, well under a second for a normal one.
+- Layout uses container queries so the card stacks when the pane is narrow (tablet with the sidebar open); the
+  Reports row hides its icons below `lg` and uses `text-xs` so seven equal buttons fit.
+- **Not looked at on the live map** (Google/Nearmap cannot be reached from the build sandbox): the base picture
+  was a stand-in in `e2e/visual-rs.spec.ts`; check a real sheet with Map and Satellite, a vehicle with and without
+  a marker, and Export PDF on an iPad.

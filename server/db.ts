@@ -264,6 +264,7 @@ export {
   findVagueVehicleMatch,
   isAddressAlreadyMentioned,
 } from "./db/targetLogger";
+export { computeRowFlags, getVisualRs } from "./db/visualRs";
 export type {
   PendingVehicleDeparture,
   PendingVehicleArrival,

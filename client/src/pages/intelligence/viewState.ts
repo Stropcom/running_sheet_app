@@ -21,6 +21,7 @@ export const INTEL_TABS: readonly string[] = [
   "heatmap",
   "places",
   "dayRoute",
+  "visualRs",
   "patternOfLife",
   "egonet",
   "packages",

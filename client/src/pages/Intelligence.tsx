@@ -22,6 +22,7 @@ import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
 import IntelligencePatternOfLife from "@/pages/IntelligencePatternOfLife";
 import EgoNetworkMap from "@/pages/EgoNetworkMap";
 import IntelligenceDayRoute from "@/pages/IntelligenceDayRoute";
+import IntelligenceVisualRs from "@/pages/IntelligenceVisualRs";
 import IntelligencePlaces from "@/pages/IntelligencePlaces";
 import IntelPackages from "@/pages/IntelPackages";
 import type {
@@ -135,6 +136,7 @@ export default function IntelligencePage() {
     activeTab === "heatmap" ||
     activeTab === "places" ||
     activeTab === "dayRoute" ||
+    activeTab === "visualRs" ||
     activeTab === "patternOfLife" ||
     activeTab === "egonet" ||
     activeTab === "packages";
@@ -560,13 +562,15 @@ export default function IntelligencePage() {
                     <button
                       key={tab.value}
                       onClick={() => setActiveTab(tab.value)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg border-2 text-[13px] font-bold transition-colors ${
+                      className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-1.5 xl:px-2 py-2.5 rounded-lg border-2 text-xs xl:text-[13px] font-bold leading-tight transition-colors ${
                         isActive
                           ? "border-indigo-500 bg-indigo-500/15 text-indigo-800 shadow-sm dark:text-indigo-300"
                           : "border-indigo-500/45 bg-card text-indigo-700 hover:bg-indigo-500/10 dark:text-indigo-300"
                       }`}
                     >
-                      {tab.icon}
+                      <span className="hidden shrink-0 lg:inline-flex">
+                        {tab.icon}
+                      </span>
                       {tab.label}
                     </button>
                   );
@@ -655,6 +659,9 @@ export default function IntelligencePage() {
 
         {/* Day Route tab content */}
         {activeTab === "dayRoute" && <IntelligenceDayRoute />}
+
+        {/* Visual RS tab content */}
+        {activeTab === "visualRs" && <IntelligenceVisualRs />}
 
         {/* Pattern of Life tab content — unlike Heat Map/Ego Network/Packages
             this isn't a canvas that needs to fill the viewport, it's a

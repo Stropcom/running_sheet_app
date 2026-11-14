@@ -61,6 +61,8 @@ import {
   getAllCtoRosterEbaRules,
   updateCtoRosterEbaRule,
   runCtoRosterEbaCheck,
+  dismissCtoRosterEbaFindings,
+  restoreCtoRosterEbaFindings,
   getCtoRosterOutlookSettings,
   updateCtoRosterOutlookSettings,
   getCtoRosterAuditLog,
@@ -100,6 +102,15 @@ const taskingSyncInput = z.object({
 // Ported from the standalone roster_app. Editing stays admin-only, matching
 // that app's own access model (unlike opManager's tasking board above,
 // which any full-access user can edit) — see the merge plan for why.
+const findingIdentityInput = z.object({
+  ruleKey: z.string().max(64),
+  memberId: z.number(),
+  dates: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+    .min(1)
+    .max(200),
+});
+
 export const ctoRosterRouter = router({
   teams: router({
     list: protectedProcedure.query(async () => {
@@ -1131,6 +1142,38 @@ export const ctoRosterRouter = router({
           input.endDate
         );
       }),
+
+    // Dismiss EA findings on the live roster: their red dots clear from the
+    // roster and the CTO Weekly Tasking, and each is written to the roster
+    // Audit Log (who, the dates, the shifts). Only findings the check finds now
+    // are dismissed. Admin only, like the EA Compliance page.
+    dismissFindings: adminProcedure
+      .input(
+        z.object({
+          scope: z.enum(["main", "custom"]),
+          startDate: z.string().optional(),
+          endDate: z.string().optional(),
+          findings: z.array(findingIdentityInput).min(1).max(500),
+        })
+      )
+      .mutation(async ({ input, ctx }) =>
+        dismissCtoRosterEbaFindings(input, {
+          id: ctx.user.id,
+          name: ctx.user.name,
+        })
+      ),
+
+    // Bring dismissed findings back.
+    restoreFindings: adminProcedure
+      .input(
+        z.object({ findings: z.array(findingIdentityInput).min(1).max(500) })
+      )
+      .mutation(async ({ input, ctx }) =>
+        restoreCtoRosterEbaFindings(input.findings, {
+          id: ctx.user.id,
+          name: ctx.user.name,
+        })
+      ),
 
     // Live findings against the main roster, for the red-dot overlay on the
     // roster grid — recomputed from current shift data on every call, so a

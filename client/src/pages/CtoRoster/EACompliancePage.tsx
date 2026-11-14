@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,8 +50,15 @@ interface EbaFinding {
   severity: "warning" | "error";
 }
 
+interface DismissedFinding extends EbaFinding {
+  dismissedBy: string | null;
+  dismissedAt: string | Date;
+}
+
 interface CheckResult {
   findings: EbaFinding[];
+  /** Live roster only: findings an admin has dismissed (kept in the Audit Log). */
+  dismissed?: DismissedFinding[];
   checkedShifts: number;
   missingTimeWarnings: Array<{
     memberName: string;
@@ -160,12 +167,43 @@ function CheckPanel() {
     new Set()
   );
 
+  // On the live roster a dismissal is saved (so the red dots clear from the
+  // roster and the CTO Weekly Tasking) and written to the roster Audit Log; on
+  // a draft or a saved roster it only hides the line on this screen.
+  const live = scope === "main" || scope === "custom";
+  const utils = trpc.useUtils();
+  // The range the check was last run with: a dismissal is matched against the
+  // same check.
+  const lastRun = useRef<{ startDate?: string; endDate?: string }>({});
+  const quietRerun = useRef(false);
+
   function dismissMember(memberName: string) {
+    if (live && result) {
+      dismissLive(result.findings.filter(f => f.memberName === memberName));
+      return;
+    }
     setDismissedMembers(prev => new Set(Array.from(prev).concat(memberName)));
   }
 
-  function dismissFinding(key: string) {
+  function dismissFinding(key: string, f?: EbaFinding) {
+    if (live && f) {
+      dismissLive([f]);
+      return;
+    }
     setDismissedFindings(prev => new Set(Array.from(prev).concat(key)));
+  }
+
+  function dismissLive(list: EbaFinding[]) {
+    dismissMutation.mutate({
+      scope: scope as "main" | "custom",
+      startDate: lastRun.current.startDate,
+      endDate: lastRun.current.endDate,
+      findings: list.map(f => ({
+        ruleKey: f.ruleKey,
+        memberId: f.memberId,
+        dates: f.dates,
+      })),
+    });
   }
 
   const draftsQuery = trpc.ctoRoster.draft.list.useQuery(undefined, {
@@ -175,9 +213,44 @@ function CheckPanel() {
     undefined,
     { staleTime: 60_000 }
   );
+  const afterChange = () => {
+    // Re-run the same check so the list is current, and refresh the dots.
+    quietRerun.current = true;
+    checkMutation.mutate({
+      scope,
+      draftId,
+      savedRosterId,
+      startDate: lastRun.current.startDate,
+      endDate: lastRun.current.endDate,
+    });
+    void utils.ctoRoster.eba.liveFindings.invalidate();
+    void utils.ctoRoster.eba.taskingBreaches.invalidate();
+  };
+  const dismissMutation = trpc.ctoRoster.eba.dismissFindings.useMutation({
+    onSuccess: r => {
+      toast.success(
+        `${r.dismissed} breach${r.dismissed !== 1 ? "es" : ""} dismissed — recorded in the roster Audit Log.`
+      );
+      afterChange();
+    },
+    onError: err => toast.error(`Could not dismiss: ${err.message}`),
+  });
+  const restoreMutation = trpc.ctoRoster.eba.restoreFindings.useMutation({
+    onSuccess: r => {
+      toast.success(
+        `${r.restored} breach${r.restored !== 1 ? "es" : ""} restored — recorded in the roster Audit Log.`
+      );
+      afterChange();
+    },
+    onError: err => toast.error(`Could not restore: ${err.message}`),
+  });
   const checkMutation = trpc.ctoRoster.eba.runCheck.useMutation({
     onSuccess: data => {
       setResult(data as CheckResult);
+      if (quietRerun.current) {
+        quietRerun.current = false;
+        return;
+      }
       if (data.findings.length === 0) {
         toast.success("No EA compliance issues found in the selected scope.");
       } else {
@@ -200,6 +273,10 @@ function CheckPanel() {
       toast.error("Please select a saved roster.");
       return;
     }
+    lastRun.current = {
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+    };
     checkMutation.mutate({
       scope,
       draftId,
@@ -468,7 +545,11 @@ function CheckPanel() {
                               size="sm"
                               variant="ghost"
                               className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                              title="Dismiss all issues for this member"
+                              title={
+                                live
+                                  ? "Dismiss all issues for this member (recorded in the roster Audit Log)"
+                                  : "Dismiss all issues for this member"
+                              }
                               onClick={e => {
                                 e.stopPropagation();
                                 dismissMember(memberName);
@@ -510,8 +591,14 @@ function CheckPanel() {
                                     size="sm"
                                     variant="ghost"
                                     className="h-6 px-1.5 text-xs text-muted-foreground hover:text-destructive shrink-0"
-                                    title="Dismiss this issue"
-                                    onClick={() => dismissFinding(findingKey)}
+                                    title={
+                                      live
+                                        ? "Dismiss this issue (recorded in the roster Audit Log)"
+                                        : "Dismiss this issue"
+                                    }
+                                    onClick={() =>
+                                      dismissFinding(findingKey, f)
+                                    }
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -540,6 +627,96 @@ function CheckPanel() {
                 }
               )}
             </>
+          )}
+
+          {/* Findings dismissed on the live roster: kept (and in the roster
+              Audit Log) until restored. */}
+          {live && (result.dismissed?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <CardTitle className="text-sm">
+                    Dismissed — {result.dismissed!.length} breach
+                    {result.dismissed!.length !== 1 ? "es" : ""} cleared from
+                    the roster and the Weekly Tasking
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={restoreMutation.isPending}
+                    onClick={() =>
+                      restoreMutation.mutate({
+                        findings: result.dismissed!.map(f => ({
+                          ruleKey: f.ruleKey,
+                          memberId: f.memberId,
+                          dates: f.dates,
+                        })),
+                      })
+                    }
+                  >
+                    Restore all
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0">
+                {result.dismissed!.map((f, i) => (
+                  <div
+                    key={i}
+                    className="rounded-md border border-border bg-muted/30 p-3 space-y-1"
+                  >
+                    <div className="flex items-start justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold">
+                          {f.memberName} — {f.ruleTitle}
+                        </span>
+                        {f.eaReference && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs font-mono"
+                          >
+                            {f.eaReference}
+                          </Badge>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs"
+                        disabled={restoreMutation.isPending}
+                        onClick={() =>
+                          restoreMutation.mutate({
+                            findings: [
+                              {
+                                ruleKey: f.ruleKey,
+                                memberId: f.memberId,
+                                dates: f.dates,
+                              },
+                            ],
+                          })
+                        }
+                      >
+                        Restore
+                      </Button>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{f.detail}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Dismissed
+                      {f.dismissedBy ? ` by ${f.dismissedBy}` : ""} on{" "}
+                      {new Date(f.dismissedAt).toLocaleString("en-AU", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      })}{" "}
+                      · dates {f.dates.join(", ")}
+                    </p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           )}
         </div>
       )}

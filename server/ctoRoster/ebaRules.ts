@@ -12,15 +12,27 @@ import {
   ctoRosterSavedRosterShifts,
   ctoRosterEbaRules,
   ctoRosterAuditLog,
+  ctoRosterDismissedFindings,
   CtoRosterEbaRule,
 } from "../../drizzle/schema";
-import { runEbaChecks, type ShiftRecord } from "../ctoRosterEbaEngine";
+import {
+  runEbaChecks,
+  type EbaFinding,
+  type ShiftRecord,
+} from "../ctoRosterEbaEngine";
 import { computeShiftInterval } from "../../shared/ctoRosterShiftDuration";
 import type { ShiftChange } from "../../shared/ctoRosterNotice";
+import {
+  datesKeyOf,
+  findingKey,
+  type FindingIdentity,
+} from "../../shared/ebaFindingKey";
+import { rosterCommandForWrite } from "../rosterContext";
 import {
   liveShiftScope,
   getAllCtoRosterMembers,
   inCommand,
+  writeCtoRosterAudit,
 } from "./liveRoster";
 
 // ── EA Compliance (EBA rule engine) ─────────────────────────────────────────────
@@ -276,13 +288,15 @@ async function liveShiftChanges(
   for (const a of audit) {
     const after = parse(a.newValue);
     if (!a.memberId || !a.shiftDate || !after) continue;
+    // Only people still on this Command's roster: a member who has been
+    // deleted keeps their audit entries, but there is nothing left to check.
+    if (!memberMap.has(a.memberId)) continue;
     const at = a.createdAt.getTime();
     const key = `${a.memberId}|${a.shiftDate}`;
     auditTimes.set(key, [...(auditTimes.get(key) ?? []), at]);
     out.push({
       memberId: a.memberId,
-      memberName:
-        memberMap.get(a.memberId) ?? a.memberName ?? `Member ${a.memberId}`,
+      memberName: memberMap.get(a.memberId)!,
       shiftDate: a.shiftDate,
       changedAtMs: at,
       before: parse(a.oldValue),
@@ -323,6 +337,12 @@ async function liveShiftChanges(
 }
 
 export type CtoRosterEbaScope = "main" | "draft" | "custom" | "saved";
+
+/** A finding an admin has dismissed, with who and when. */
+export interface DismissedEbaFinding extends EbaFinding {
+  dismissedBy: string | null;
+  dismissedAt: Date;
+}
 
 /**
  * Run the EA compliance engine against live shifts, a draft, a saved roster,
@@ -425,13 +445,39 @@ export async function runCtoRosterEbaCheck(
     shiftDurationHours: s.shiftDurationHours ?? null,
   }));
 
-  const findings = runEbaChecks(shiftRecords, rules, changes);
+  let findings = runEbaChecks(shiftRecords, rules, changes);
+  // Findings an admin has dismissed on the live roster are taken out (so the
+  // roster's and the Weekly Tasking's red dots clear) and handed back
+  // separately so the EA Compliance page can show them and restore them.
+  const dismissed: DismissedEbaFinding[] = [];
+  if (scope === "main" || scope === "custom") {
+    const rows = await db
+      .select()
+      .from(ctoRosterDismissedFindings)
+      .where(inCommand(ctoRosterDismissedFindings.command));
+    const byKey = new Map(
+      rows.map(r => [`${r.ruleKey}|${r.memberId}|${r.datesKey}`, r])
+    );
+    const kept: EbaFinding[] = [];
+    for (const f of findings) {
+      const row = byKey.get(findingKey(f));
+      if (row)
+        dismissed.push({
+          ...f,
+          dismissedBy: row.dismissedByName ?? null,
+          dismissedAt: row.createdAt,
+        });
+      else kept.push(f);
+    }
+    findings = kept;
+  }
   const missingTime = shiftRecords.filter(
     s => computeShiftInterval(s.shiftCode, s.shiftTime).missingRequiredTime
   );
 
   return {
     findings,
+    dismissed,
     checkedShifts: shiftRecords.length,
     missingTimeWarnings: missingTime.map(s => ({
       memberName: s.memberName,
@@ -439,4 +485,144 @@ export async function runCtoRosterEbaCheck(
       shiftCode: s.shiftCode,
     })),
   };
+}
+
+// ── Dismissing findings ──────────────────────────────────────────────────────
+
+const describeShifts = (
+  dates: string[],
+  shifts: { shiftDate: string; shiftCode: string; shiftTime: string | null }[]
+) =>
+  dates
+    .map(d => {
+      const s = shifts.find(x => x.shiftDate === d);
+      return `${d} ${
+        s && s.shiftCode
+          ? `${s.shiftCode}${s.shiftTime ? ` ${s.shiftTime}` : ""}`
+          : "no shift"
+      }`;
+    })
+    .join("; ");
+
+/**
+ * Dismiss EA findings on the live roster: they stop showing on the roster and
+ * the CTO Weekly Tasking, and each is written to the roster Audit Log — who,
+ * the rule, the dates and the shifts on those dates. Only findings the check
+ * finds right now (with the same range the admin ran it with) are dismissed;
+ * anything else asked for is ignored, so a dismissal never hides what was not
+ * seen.
+ */
+export async function dismissCtoRosterEbaFindings(
+  input: {
+    scope: "main" | "custom";
+    startDate?: string;
+    endDate?: string;
+    findings: FindingIdentity[];
+  },
+  actor: { id: number; name: string | null }
+): Promise<{ dismissed: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const check = await runCtoRosterEbaCheck(
+    input.scope,
+    undefined,
+    undefined,
+    input.startDate,
+    input.endDate
+  );
+  const wanted = new Set(input.findings.map(findingKey));
+  const targets = check.findings.filter(f => wanted.has(findingKey(f)));
+  let count = 0;
+  for (const f of targets) {
+    const dates = [...f.dates].sort();
+    const shifts = await db
+      .select({
+        shiftDate: ctoRosterShifts.shiftDate,
+        shiftCode: ctoRosterShifts.shiftCode,
+        shiftTime: ctoRosterShifts.shiftTime,
+      })
+      .from(ctoRosterShifts)
+      .where(
+        and(
+          eq(ctoRosterShifts.memberId, f.memberId),
+          gte(ctoRosterShifts.shiftDate, dates[0]),
+          lte(ctoRosterShifts.shiftDate, dates[dates.length - 1])
+        )
+      );
+    await db
+      .insert(ctoRosterDismissedFindings)
+      .values({
+        command: rosterCommandForWrite(),
+        ruleKey: f.ruleKey,
+        memberId: f.memberId,
+        datesKey: datesKeyOf(f.dates),
+        dismissedByUserId: actor.id,
+        dismissedByName: actor.name,
+      })
+      .onDuplicateKeyUpdate({ set: { ruleKey: f.ruleKey } });
+    await writeCtoRosterAudit({
+      userId: actor.id,
+      userName: actor.name,
+      action: "dismiss_ea_breach",
+      memberId: f.memberId,
+      memberName: f.memberName,
+      shiftDate: dates[0],
+      oldValue: JSON.stringify({
+        ruleKey: f.ruleKey,
+        ruleTitle: f.ruleTitle,
+        eaReference: f.eaReference,
+        dates,
+      }),
+      detail: `Dismissed EA breach "${f.ruleTitle}"${f.eaReference ? ` (${f.eaReference})` : ""} for ${f.memberName} — dates: ${dates.join(", ")}. Shifts: ${describeShifts(dates, shifts)}. Finding: ${f.detail}`,
+    });
+    count++;
+  }
+  return { dismissed: count };
+}
+
+/** Bring dismissed findings back (their dots return), written to the Audit Log. */
+export async function restoreCtoRosterEbaFindings(
+  findings: FindingIdentity[],
+  actor: { id: number; name: string | null }
+): Promise<{ restored: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rules = new Map(
+    (await getAllCtoRosterEbaRules()).map(r => [r.ruleKey, r])
+  );
+  const members = new Map(
+    (await getAllCtoRosterMembers()).map(m => [m.id, m.name])
+  );
+  let count = 0;
+  for (const f of findings) {
+    const datesKey = datesKeyOf(f.dates);
+    const found = await db
+      .select({ id: ctoRosterDismissedFindings.id })
+      .from(ctoRosterDismissedFindings)
+      .where(
+        and(
+          inCommand(ctoRosterDismissedFindings.command),
+          eq(ctoRosterDismissedFindings.ruleKey, f.ruleKey),
+          eq(ctoRosterDismissedFindings.memberId, f.memberId),
+          eq(ctoRosterDismissedFindings.datesKey, datesKey)
+        )
+      );
+    if (found.length === 0) continue;
+    await db
+      .delete(ctoRosterDismissedFindings)
+      .where(eq(ctoRosterDismissedFindings.id, found[0].id));
+    const rule = rules.get(f.ruleKey);
+    const name = members.get(f.memberId) ?? `Member ${f.memberId}`;
+    await writeCtoRosterAudit({
+      userId: actor.id,
+      userName: actor.name,
+      action: "restore_ea_breach",
+      memberId: f.memberId,
+      memberName: name,
+      shiftDate: [...f.dates].sort()[0],
+      detail: `Restored EA breach "${rule?.title ?? f.ruleKey}"${rule?.eaReference ? ` (${rule.eaReference})` : ""} for ${name} — dates: ${[...f.dates].sort().join(", ")}`,
+    });
+    count++;
+  }
+  return { restored: count };
 }

@@ -21,10 +21,9 @@ import {
 import { getDb } from "./core";
 import {
   computeGovernancePercent,
-  getGovernanceTodoForCin,
+  governanceOutstandingItems,
 } from "./governance";
 import { teamNameMap, visitorTeamMap } from "./accounts";
-import { getOutstandingSheetsForCin } from "./operations";
 
 export interface IncompleteSheetReport {
   sheetId: number;
@@ -52,37 +51,16 @@ export interface IncompleteSheetReport {
   createdAt: Date;
 }
 
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
 /**
- * The sheets the Reports page lists as incomplete, each with full status info
- * and team membership (from the users table, so the "Team Blended" logic can
- * be applied client-side). A non-deleted sheet is incomplete when it is not
- * closed, OR it has a row that is not signed off, OR its governance is under
- * 100%.
- *
- * Done in the database, not in memory: the unsigned-row count per sheet comes
- * from one aggregate query (indexed on row_members.rowId and
- * certifications.rowId/memberId), so only the sheets, their governance records
- * and a count per sheet are loaded — never every row, member and
- * certification ever recorded. The original loaded all of those into memory
- * and rescanned them for every sheet (30 s at one year of data, an error at
- * three); the answer is unchanged — scripts/dev/compare-incomplete-sheets.ts
- * proves it against a copy of the original. Row sign-off is the same rule as
- * isRowSignedOff (governance.ts): at least one real (non-"__SPACE__") member,
- * and every one of them has their OWN active certification.
+ * How many rows of each live sheet are NOT signed off — one aggregate query
+ * (indexed on row_members.rowId and certifications.rowId/memberId), never every
+ * row, member and certification loaded into memory. A row is not signed off
+ * when it has no real member, or any real member lacks an active certification
+ * of their own (same rule as isRowSignedOff, governance.ts).
  */
-export async function getIncompleteRunningSheets(
-  viewerCommand?: CommandCode | null
-): Promise<IncompleteSheetReport[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  const sheets = await db
-    .select()
-    .from(runningSheets)
-    .where(isNull(runningSheets.deletedAt))
-    .orderBy(runningSheets.id);
-  if (sheets.length === 0) return [];
-
+async function unsignedRowCountsBySheet(db: Db): Promise<Map<number, number>> {
   // A row is NOT signed off when it has no real member, or any real member
   // lacks an active certification of their own. (BINARY: the comparison with
   // "__SPACE__" is exact, like the JavaScript rule, not case-insensitive.)
@@ -133,9 +111,57 @@ export async function getIncompleteRunningSheets(
       )
     )
     .groupBy(sheetRows.sheetId);
-  const unsignedBySheet = new Map<number, number>(
+  return new Map<number, number>(
     unsignedCounts.map(r => [r.sheetId, Number(r.unsigned)])
   );
+}
+
+/** How many rows each live sheet has. */
+async function rowCountsBySheet(db: Db): Promise<Map<number, number>> {
+  const counts = await db
+    .select({
+      sheetId: sheetRows.sheetId,
+      n: sql<number>`COUNT(*)`,
+    })
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .where(isNull(runningSheets.deletedAt))
+    .groupBy(sheetRows.sheetId);
+  return new Map<number, number>(counts.map(r => [r.sheetId, Number(r.n)]));
+}
+
+/**
+ * The sheets the Reports page lists as incomplete, each with full status info
+ * and team membership (from the users table, so the "Team Blended" logic can
+ * be applied client-side). A non-deleted sheet is incomplete when it is not
+ * closed, OR it has a row that is not signed off, OR its governance is under
+ * 100%.
+ *
+ * Done in the database, not in memory: the unsigned-row count per sheet comes
+ * from one aggregate query (indexed on row_members.rowId and
+ * certifications.rowId/memberId), so only the sheets, their governance records
+ * and a count per sheet are loaded — never every row, member and
+ * certification ever recorded. The original loaded all of those into memory
+ * and rescanned them for every sheet (30 s at one year of data, an error at
+ * three); the answer is unchanged — scripts/dev/compare-incomplete-sheets.ts
+ * proves it against a copy of the original. Row sign-off is the same rule as
+ * isRowSignedOff (governance.ts): at least one real (non-"__SPACE__") member,
+ * and every one of them has their OWN active certification.
+ */
+export async function getIncompleteRunningSheets(
+  viewerCommand?: CommandCode | null
+): Promise<IncompleteSheetReport[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const sheets = await db
+    .select()
+    .from(runningSheets)
+    .where(isNull(runningSheets.deletedAt))
+    .orderBy(runningSheets.id);
+  if (sheets.length === 0) return [];
+
+  const unsignedBySheet = await unsignedRowCountsBySheet(db);
 
   // Governance records of the live sheets (a join, not a giant IN list).
   const govRows = await db
@@ -246,9 +272,144 @@ export interface OutstandingTodoUser {
   totalCount: number;
 }
 
+// A CIN is matched the way the database matches it (case and trailing spaces
+// ignored), as the per-person lookups always were.
+const cinKey = (cin: string) => cin.trim().toLowerCase();
+
+/**
+ * For each CIN, the number of distinct rows that CIN is a member of and has not
+ * certified, on sheets (and operations) that still exist — the sum of
+ * getOutstandingSheetsForCin's uncertifiedRowCount, for every CIN at once in
+ * one query. A member is uncertified when they have no active certification of
+ * their own on that row.
+ */
+async function uncertifiedRowCountsByCin(
+  db: Db,
+  cins: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (cins.length === 0) return out;
+  const rows = await db
+    .select({
+      cin: rowMembers.memberName,
+      n: sql<number>`COUNT(DISTINCT ${sheetRows.id})`,
+    })
+    .from(rowMembers)
+    .innerJoin(sheetRows, eq(sheetRows.id, rowMembers.rowId))
+    .innerJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .innerJoin(operations, eq(operations.id, runningSheets.operationId))
+    .where(
+      and(
+        inArray(rowMembers.memberName, cins),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(certifications)
+            .where(
+              and(
+                eq(certifications.rowId, rowMembers.rowId),
+                eq(certifications.memberId, rowMembers.id),
+                eq(certifications.isActive, true)
+              )
+            )
+        )
+      )
+    )
+    .groupBy(rowMembers.memberName);
+  for (const r of rows) {
+    const k = cinKey(r.cin);
+    out.set(k, (out.get(k) ?? 0) + Number(r.n));
+  }
+  return out;
+}
+
+/**
+ * For each CIN, how many governance items it owns as Team Leader / Author on
+ * live sheets whose operation still exists (everything getGovernanceTodoForCin
+ * lists except "Ready to close"), for every CIN at once: the sheets, their
+ * governance records and the signed-off counts are each read once, and the
+ * per-person rule is governanceOutstandingItems — the same one the to-do list
+ * uses.
+ */
+async function governanceCountsByCin(
+  db: Db,
+  cins: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (cins.length === 0) return out;
+  const wanted = new Set(cins);
+
+  const sheets = await db
+    .select({
+      id: runningSheets.id,
+      sheetCins: runningSheets.sheetCins,
+      closedAt: runningSheets.closedAt,
+    })
+    .from(runningSheets)
+    .innerJoin(operations, eq(operations.id, runningSheets.operationId))
+    .where(isNull(runningSheets.deletedAt));
+  if (sheets.length === 0) return out;
+
+  const recs = await db
+    .select({ rec: governanceRecords })
+    .from(governanceRecords)
+    .innerJoin(runningSheets, eq(runningSheets.id, governanceRecords.sheetId))
+    .where(isNull(runningSheets.deletedAt));
+  const recBySheet = new Map(recs.map(r => [r.rec.sheetId, r.rec]));
+  const [unsigned, rowCounts] = await Promise.all([
+    unsignedRowCountsBySheet(db),
+    rowCountsBySheet(db),
+  ]);
+
+  for (const sheet of sheets) {
+    let list: {
+      cin: string;
+      isTeamLeader?: boolean;
+      isAuthor?: boolean;
+    }[];
+    try {
+      list = JSON.parse(sheet.sheetCins ?? "[]");
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(list)) continue;
+    const seen = new Set<string>();
+    for (const e of list) {
+      const cin = e?.cin;
+      if (typeof cin !== "string" || !wanted.has(cin) || seen.has(cin))
+        continue;
+      seen.add(cin);
+      // On the to-do list a sheet counts for a CIN only if one of its entries
+      // is a Team Leader or Author; the items then come from its first entry.
+      if (!list.some(c => c.cin === cin && (c.isTeamLeader || c.isAuthor)))
+        continue;
+      const items = governanceOutstandingItems({
+        entry: list.find(c => c.cin === cin),
+        rec: recBySheet.get(sheet.id),
+        allSigned:
+          (rowCounts.get(sheet.id) ?? 0) > 0 &&
+          (unsigned.get(sheet.id) ?? 0) === 0,
+        closed: !!sheet.closedAt,
+      });
+      const n =
+        (items.teamLeader ?? []).filter(o => o !== "Ready to close").length +
+        (items.author ?? []).filter(o => o !== "Ready to close").length;
+      if (n > 0) out.set(cin, (out.get(cin) ?? 0) + n);
+    }
+  }
+  return out;
+}
+
 /**
  * Returns all users ranked by total outstanding to-do actions
  * (uncertified rows they are a member of + governance items they own as TL/Author).
+ *
+ * Worked out for everyone at once (a few queries, however many users there
+ * are). It used to ask the database about each user in turn — every user's
+ * rows, every sheet again, and every one of their sheets' rows — which took
+ * 32 s with 80 users and a year of data and made the Governance folder the
+ * slowest page; the answer is unchanged
+ * (scripts/dev/compare-outstanding-todos.ts runs the old way beside this one).
  */
 export async function getOutstandingTodosByUser(
   viewerCommand?: CommandCode | null
@@ -261,26 +422,17 @@ export async function getOutstandingTodosByUser(
   const teamNames = await teamNameMap();
   const visitorTeams = await visitorTeamMap(viewerCommand);
 
-  const results: OutstandingTodoUser[] = [];
+  const cins = Array.from(new Set(usersWithCin.map(u => u.cin!)));
+  const [uncertified, governance] = await Promise.all([
+    uncertifiedRowCountsByCin(db, cins),
+    governanceCountsByCin(db, cins),
+  ]);
 
+  const results: OutstandingTodoUser[] = [];
   for (const user of usersWithCin) {
     const cin = user.cin!;
-
-    // Uncertified rows for this CIN
-    const outstanding = await getOutstandingSheetsForCin(cin);
-    const uncertifiedCount = outstanding.reduce(
-      (sum, s) => sum + s.uncertifiedRowCount,
-      0
-    );
-
-    // Governance items for this CIN (TL + Author)
-    const govTodo = await getGovernanceTodoForCin(cin);
-    const governanceCount = govTodo.reduce(
-      (sum, s) =>
-        sum + s.outstanding.filter(o => o !== "Ready to close").length,
-      0
-    );
-
+    const uncertifiedCount = uncertified.get(cinKey(cin)) ?? 0;
+    const governanceCount = governance.get(cin) ?? 0;
     const totalCount = uncertifiedCount + governanceCount;
     if (totalCount === 0) continue;
 

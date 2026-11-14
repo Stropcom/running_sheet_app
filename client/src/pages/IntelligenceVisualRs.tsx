@@ -30,7 +30,6 @@ import type {
 } from "@shared/visualRs";
 import {
   VisualRsPicture,
-  viewOfFrame,
   type PictureMode,
 } from "@/pages/visualRs/VisualRsPicture";
 
@@ -130,33 +129,6 @@ function Frame({
           <h3 className="m-0 text-base font-semibold leading-tight text-foreground">
             {flag.place ?? "Place not named"}
           </h3>
-          {(frame.placeFrom || frame.flagFrom) && (
-            <p className="m-0 text-xs text-muted-foreground">
-              {frame.placeFrom && (
-                <>
-                  <b className="text-foreground">Place:</b> {frame.placeFrom} →{" "}
-                  {flag.place}
-                </>
-              )}
-              {frame.placeFrom && frame.flagFrom && " · "}
-              {frame.flagFrom && (
-                <>
-                  <b className="text-foreground">Flag:</b> {frame.flagFrom} →{" "}
-                  {flag.label}
-                </>
-              )}
-            </p>
-          )}
-          {flag.rego && (
-            <p className="m-0 text-xs text-muted-foreground">
-              <b className="text-foreground">Vehicle {flag.rego}</b>{" "}
-              {frame.vehicle
-                ? viewOfFrame(frame, mode)?.vehicleShown
-                  ? "is shown: it has a marker on the map."
-                  : "has a marker on the map, but it is too far from this place to fit in the picture."
-                : "is not shown: no marker in this operation has its registration in its label, so it is not placed."}
-            </p>
-          )}
           <Observation
             rowNumber={row.rowNumber}
             time={row.time}

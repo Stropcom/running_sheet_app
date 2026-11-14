@@ -125,10 +125,10 @@ test("Visual RS is the first report; frames at flag changes, text entries betwee
     /SANTOS · in 1VRS11, vehicle 1VRS11 marked/
   );
   await expect(flags.nth(2)).toHaveAttribute("aria-label", /SANTOS · inside$/);
-  // The vehicle has a marker: said so. After he is inside, no vehicle is shown.
-  await expect(
-    page.getByText("is shown: it has a marker on the map.").first()
-  ).toBeVisible();
+  // No explanatory lines under the place: no "Flag: X → Y" and no "Vehicle … shown /
+  // not shown" notes (the picture and the flag say it).
+  await expect(page.getByText(/Flag: .* →/)).toHaveCount(0);
+  await expect(page.getByText(/is shown|not shown/)).toHaveCount(0);
 
   // Export PDF opens the report in its own window with the notice, with no
   // controls and no "Why" buttons in it.

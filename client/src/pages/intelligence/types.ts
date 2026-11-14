@@ -20,6 +20,7 @@ export type TabView =
   | "heatmap"
   | "places"
   | "dayRoute"
+  | "visualRs"
   | "patternOfLife"
   | "egonet"
   | "packages";

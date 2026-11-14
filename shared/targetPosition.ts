@@ -20,7 +20,8 @@ export type TargetState =
   | "moving"
   | "oos"
   | "vessel"
-  | "transit";
+  | "transit"
+  | "commenced";
 
 export interface TargetPosition {
   /** The place as the sheet wrote it, or null when it can't be told (a
@@ -105,6 +106,9 @@ export const TARGET_EMOJI: Record<TargetState, string> = {
   oos: "❔",
   vessel: "🛥️",
   transit: "🚌",
+  // The map flag draws the Intelligence folder's person icon for this state
+  // (client/src/lib/flyMarkerIcon.ts); this is only the plain-text fallback.
+  commenced: "👤",
 };
 
 /** The flag emoji for a state — a train and a tram get their own. */
@@ -584,4 +588,33 @@ export function shortUnidentified(text: string): string {
     /\bunidentified\s+(?:male|female|child|person|adult|juvenile|youth)\b[^()\n]*\(\s*([A-Za-z]{1,3}\d+)\s*\)/gi,
     (_m, code: string) => code.toUpperCase()
   );
+}
+
+/** Surveillance has commenced but no movement names the target yet: the flag
+ * says "Commenced 08:39" on the place the commenced row names, until a logged
+ * movement, arrival or sighting takes over. Null once the surveillance has
+ * ended, when no commenced row names a place, or when `position` already says
+ * where the target is. A row names the place or nothing is flagged. */
+export function commencedPosition(
+  position: TargetPosition | null,
+  surveillance: {
+    ended: boolean;
+    commencedByRowId: number | null;
+    commencedAtTime: string | null;
+    commencedPlace: string | null;
+  } | null
+): TargetPosition | null {
+  if (position || !surveillance || surveillance.ended) return null;
+  if (surveillance.commencedByRowId == null || !surveillance.commencedPlace)
+    return null;
+  const place = shortAddressLabel(surveillance.commencedPlace);
+  if (!place) return null;
+  const at = surveillance.commencedAtTime?.trim();
+  return {
+    place,
+    state: "commenced",
+    label: at ? `Commenced ${at}` : "Commenced",
+    people: [],
+    rowId: surveillance.commencedByRowId,
+  };
 }

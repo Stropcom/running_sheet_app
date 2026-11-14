@@ -328,6 +328,66 @@ export async function getGovernanceRecordsBySheetIds(
 }
 
 /**
+ * The outstanding governance items one person has on one sheet, from their own
+ * entry on the sheet's team list — the single definition used by the to-do list
+ * (getGovernanceTodoForCin) and by the Governance ranking, so the two can never
+ * disagree.
+ *  - Team Leader: "Summary complete", "Sent to IO", and "Ready to close" while
+ *    the sheet is open.
+ *  - Author: only once every row is signed off, "Saved in Operation folder",
+ *    "Saved in Investigator transfer drive" and one line for unsaved imagery;
+ *    until then, "Sheet not fully certified".
+ * A role the person does not hold on the sheet is null.
+ */
+export function governanceOutstandingItems(args: {
+  entry: { isTeamLeader?: boolean; isAuthor?: boolean } | undefined;
+  rec: GovernanceRecord | null | undefined;
+  allSigned: boolean;
+  closed: boolean;
+}): { teamLeader: string[] | null; author: string[] | null } {
+  const { entry, rec, allSigned, closed } = args;
+  let teamLeader: string[] | null = null;
+  let author: string[] | null = null;
+
+  if (entry?.isTeamLeader) {
+    teamLeader = [];
+    if (!rec?.isurv) teamLeader.push("Summary complete");
+    if (!rec?.sentToIO) teamLeader.push("Sent to IO");
+    // "Ready to close" notification: always shown for open sheets (Team
+    // Leader must close).
+    if (!closed) teamLeader.push("Ready to close");
+  }
+
+  if (entry?.isAuthor) {
+    author = [];
+    // Operative items only actionable once sheet is fully certified
+    if (allSigned) {
+      if (!rec?.savedInOpFolder) author.push("Saved in Operation folder");
+      if (!rec?.savedInInvestigatorTransferDrive)
+        author.push("Saved in Investigator transfer drive");
+      // Any unsaved imagery rows are outstanding for the author
+      if (rec?.imageryEntries) {
+        try {
+          const entries: { saved?: boolean }[] = JSON.parse(rec.imageryEntries);
+          const unsavedCount = entries.filter(e => !e.saved).length;
+          if (unsavedCount > 0) {
+            author.push(
+              `${unsavedCount} imagery entr${unsavedCount === 1 ? "y" : "ies"} not saved`
+            );
+          }
+        } catch {
+          /* ignore parse errors */
+        }
+      }
+    } else {
+      // Sheet not yet fully certified — flag it as pending certification
+      author.push("Sheet not fully certified");
+    }
+  }
+  return { teamLeader, author };
+}
+
+/**
  * Returns outstanding governance to-do items for a given CIN.
  * - If the CIN is the Team Leader on a sheet: returns TL items (summaryNotification, sentToIO) that are incomplete.
  * - If the CIN is the Author on a sheet: returns Operative items (savedInOpFolder, savedInInvestigatorTransferDrive)
@@ -409,70 +469,34 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
     })();
     const cinEntry = cinList.find(c => c.cin === cin);
 
-    if (cinEntry?.isTeamLeader) {
-      const outstanding: string[] = [];
-      if (!rec?.isurv) outstanding.push("Summary complete");
-      if (!rec?.sentToIO) outstanding.push("Sent to IO");
-
-      // "Ready to close" notification: always shown for open sheets (Team Leader must close)
-      const govPercent = computeGovernancePercent(rec ?? null, allSigned);
-      if (!sheet.closedAt) {
-        outstanding.push("Ready to close");
-      }
-
-      if (outstanding.length > 0) {
-        results.push({
-          sheetId: sheet.id,
-          sheetTitle: sheet.title,
-          operationId: sheet.operationId,
-          operationName: op?.name ?? "Unknown",
-          role: "teamLeader",
-          outstanding,
-          allSigned,
-          govPercent,
-        });
-      }
+    const items = governanceOutstandingItems({
+      entry: cinEntry,
+      rec,
+      allSigned,
+      closed: !!sheet.closedAt,
+    });
+    if (items.teamLeader && items.teamLeader.length > 0) {
+      results.push({
+        sheetId: sheet.id,
+        sheetTitle: sheet.title,
+        operationId: sheet.operationId,
+        operationName: op?.name ?? "Unknown",
+        role: "teamLeader",
+        outstanding: items.teamLeader,
+        allSigned,
+        govPercent: computeGovernancePercent(rec ?? null, allSigned),
+      });
     }
-
-    if (cinEntry?.isAuthor) {
-      // Operative items only actionable once sheet is fully certified
-      const outstanding: string[] = [];
-      if (allSigned) {
-        if (!rec?.savedInOpFolder)
-          outstanding.push("Saved in Operation folder");
-        if (!rec?.savedInInvestigatorTransferDrive)
-          outstanding.push("Saved in Investigator transfer drive");
-        // Check imagery entries — any unsaved imagery rows are outstanding for the author
-        if (rec?.imageryEntries) {
-          try {
-            const entries: { saved?: boolean }[] = JSON.parse(
-              rec.imageryEntries
-            );
-            const unsavedCount = entries.filter(e => !e.saved).length;
-            if (unsavedCount > 0) {
-              outstanding.push(
-                `${unsavedCount} imagery entr${unsavedCount === 1 ? "y" : "ies"} not saved`
-              );
-            }
-          } catch {
-            /* ignore parse errors */
-          }
-        }
-      } else {
-        // Sheet not yet fully certified — flag it as pending certification
-        outstanding.push("Sheet not fully certified");
-      }
-      if (outstanding.length > 0) {
-        results.push({
-          sheetId: sheet.id,
-          sheetTitle: sheet.title,
-          operationId: sheet.operationId,
-          operationName: op?.name ?? "Unknown",
-          role: "author",
-          outstanding,
-          allSigned,
-        });
-      }
+    if (items.author && items.author.length > 0) {
+      results.push({
+        sheetId: sheet.id,
+        sheetTitle: sheet.title,
+        operationId: sheet.operationId,
+        operationName: op?.name ?? "Unknown",
+        role: "author",
+        outstanding: items.author,
+        allSigned,
+      });
     }
   }
 

@@ -12,6 +12,7 @@ import {
   MapPinned,
   Route,
   Radar,
+  Eye,
   PackageOpen,
 } from "lucide-react";
 import type { TabView } from "./types";
@@ -60,6 +61,12 @@ export const REPORT_TAB_OPTIONS: Array<{
   label: string;
   icon: React.ReactNode;
 }> = [
+  // Visual RS goes first: it is the report officers reach for to read a sheet.
+  {
+    value: "visualRs",
+    label: "Visual RS",
+    icon: <Eye className="w-3.5 h-3.5" />,
+  },
   {
     value: "egonet",
     label: "Ego Network",

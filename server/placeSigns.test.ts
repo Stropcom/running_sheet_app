@@ -80,6 +80,41 @@ describe("place signs by how the place is written", () => {
   });
 });
 
+describe("the burger chains all get the fast food (hamburger) sign", () => {
+  it.each([
+    "McDonald's",
+    "McDonalds",
+    "MCDONALD'S",
+    "Mc Donald's",
+    "Macca's",
+    "Maccas",
+    "McDonald\u2019s Rockingham",
+    "McDonald's Rockingham, 1 Council Avenue, ROCKINGHAM WA",
+    "KFC",
+    "K.F.C.",
+    "KFC Rockingham",
+    "Kentucky Fried Chicken",
+    "Hungry Jack's",
+    "Hungry Jacks",
+    "HUNGRY JACK'S",
+    "Hungry Jack\u2019s Burgers",
+    "Hungry Jack",
+    "Chicken Treat",
+    "Chicken Treat Baldivis",
+    "ChickenTreat",
+    "Red Rooster",
+    "Red Rooster Kwinana",
+    "RedRooster",
+  ])("%s", name => {
+    expect(placeSignOfName(name)).toBe("place_fast_food");
+    expect(signIconOf(name)).toBe("place_fast_food");
+  });
+  it("does not take a longer word for a chain", () => {
+    expect(placeSignOfName("Hungry Jackson Hall")).toBeNull();
+    expect(placeSignOfName("Chicken Licken")).toBeNull();
+  });
+});
+
 describe("cafe, restaurant, fast food and airport signs", () => {
   it("by wording", () => {
     expect(placeSignOfName("Highway Cafe, 12 Hay Street, PERTH")).toBe(

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import { ENV } from "./_core/env";
 import { latestCaptureDate, nearmapSpot } from "../shared/nearmapAge";
+import { webMercatorBBox } from "../shared/staticMapProject";
 
 /**
  * Nearmap aerial-imagery overlay, served as a Simple WMS layer through this
@@ -58,6 +59,83 @@ function tileToWebMercatorBBox(
 }
 
 export function registerNearmapProxy(app: Express) {
+  // One Nearmap picture of a spot (Visual RS satellite frames): a single WMS
+  // GetMap over the box a `w` x `h` picture centred on lat,lng at Google zoom
+  // `z` covers — the same view the overlay is drawn for (shared/staticMapProject).
+  app.get(
+    "/api/nearmap/snapshot",
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        await sdk.authenticateRequest(req);
+      } catch {
+        res.status(401).send("Unauthorized");
+        return;
+      }
+      if (!ENV.nearmapApiKey) {
+        res.status(500).send("Nearmap is not configured on this server");
+        return;
+      }
+      const lat = Number(req.query.lat);
+      const lng = Number(req.query.lng);
+      const z = Number(req.query.z);
+      const w = Number(req.query.w);
+      const h = Number(req.query.h);
+      if (
+        !(lat >= -90 && lat <= 90) ||
+        !(lng >= -180 && lng <= 180) ||
+        !Number.isInteger(z) ||
+        z < 10 ||
+        z > 21 ||
+        !Number.isInteger(w) ||
+        !Number.isInteger(h) ||
+        w < 64 ||
+        h < 64 ||
+        w > 1280 ||
+        h > 1280
+      ) {
+        res.status(400).send("Invalid snapshot request");
+        return;
+      }
+      const { minX, minY, maxX, maxY } = webMercatorBBox({
+        center: { lat, lng },
+        zoom: z,
+        width: w,
+        height: h,
+      });
+      const wmsUrl = new URL(`${NEARMAP_WMS_BASE}/${ENV.nearmapApiKey}`);
+      wmsUrl.searchParams.set("SERVICE", "WMS");
+      wmsUrl.searchParams.set("VERSION", NEARMAP_WMS_VERSION);
+      wmsUrl.searchParams.set("REQUEST", "GetMap");
+      wmsUrl.searchParams.set("LAYERS", NEARMAP_LAYER);
+      wmsUrl.searchParams.set("STYLES", "");
+      wmsUrl.searchParams.set("SRS", "EPSG:3857");
+      wmsUrl.searchParams.set("BBOX", `${minX},${minY},${maxX},${maxY}`);
+      wmsUrl.searchParams.set("WIDTH", String(w * 2));
+      wmsUrl.searchParams.set("HEIGHT", String(h * 2));
+      wmsUrl.searchParams.set("FORMAT", "image/jpeg");
+      wmsUrl.searchParams.set("TRANSPARENT", "false");
+      try {
+        const upstream = await fetch(wmsUrl);
+        const contentType =
+          upstream.headers.get("content-type") ?? "image/jpeg";
+        if (!upstream.ok || contentType.includes("xml")) {
+          const body = await upstream.text().catch(() => "");
+          console.error(
+            `[NearmapProxy] snapshot upstream ${upstream.status}: ${body.slice(0, 300)}`
+          );
+          res.status(502).send("Nearmap upstream error");
+          return;
+        }
+        res.set("Content-Type", contentType);
+        res.set("Cache-Control", "private, max-age=86400");
+        res.send(Buffer.from(await upstream.arrayBuffer()));
+      } catch (err) {
+        console.error("[NearmapProxy] snapshot failed:", err);
+        res.status(502).send("Nearmap proxy error");
+      }
+    }
+  );
+
   app.get(
     "/api/nearmap/tile",
     async (req: Request, res: Response): Promise<void> => {

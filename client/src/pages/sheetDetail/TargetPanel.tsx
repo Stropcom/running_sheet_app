@@ -35,6 +35,8 @@ import { returnedInsideSentence } from "@shared/outFront";
 import {
   continuedOccupantWording,
   leftAddressSentence,
+  parkedAtCommencement,
+  parkedDepartOptions,
   vehicleDepartLabel,
   walkedToVehicleLabel,
 } from "@shared/vehicleCardWording";
@@ -331,7 +333,21 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
             // A vehicle only written as "parked and unattended" gets a card
             // once someone is logged at that place (they can walk out to it)
             // or is already on the way to / in it.
-            if (a.unattended && insideHere.length === 0 && !inCar) return;
+            // At the very start (surveillance just commenced at this place,
+            // nobody logged anywhere yet) it gets a card anyway, offering
+            // "Depart TGT" / "Depart US" (shared/vehicleCardWording.ts).
+            const atStart =
+              !!a.unattended &&
+              insideHere.length === 0 &&
+              !inCar &&
+              parkedAtCommencement({
+                address: a.address,
+                commencedPlace: surveillance?.commencedPlace,
+                ended: !!surveillance?.ended,
+                positionLogged: !!targetPosition,
+              });
+            if (a.unattended && insideHere.length === 0 && !inCar && !atStart)
+              return;
             // Where each sits, when the rows say — "MENON (driver)".
             const seatMap = seatsOf({
               desc: a.occupantDesc,
@@ -487,27 +503,33 @@ export function TargetPanel({ s }: { s: SheetScreen }) {
                       },
                       departingAction,
                     ]
-                  : [
-                      departingAction,
-                      ...(inCar && !inside && !outOfSight
-                        ? [
-                            // Left the vehicle and walked off somewhere other
-                            // than here (a car park or street space).
-                            {
-                              key: `wa-${rego}`,
-                              label: "Walked away",
-                              rego,
-                              text: `${carNames} exited the vehicle and walked [route] towards [location].`,
-                            },
-                            {
-                              key: `wi-${rego}`,
-                              label: "Walked in",
-                              rego,
-                              text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
-                            },
-                          ]
-                        : []),
-                    ];
+                  : atStart
+                    ? parkedDepartOptions({
+                        rego,
+                        address: a.address,
+                        target: trackedTarget,
+                      })
+                    : [
+                        departingAction,
+                        ...(inCar && !inside && !outOfSight
+                          ? [
+                              // Left the vehicle and walked off somewhere other
+                              // than here (a car park or street space).
+                              {
+                                key: `wa-${rego}`,
+                                label: "Walked away",
+                                rego,
+                                text: `${carNames} exited the vehicle and walked [route] towards [location].`,
+                              },
+                              {
+                                key: `wi-${rego}`,
+                                label: "Walked in",
+                                rego,
+                                text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
+                              },
+                            ]
+                          : []),
+                      ];
             continuityCards.push({
               key: `veh-${rego}`,
               title: rego,

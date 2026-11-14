@@ -527,6 +527,9 @@ export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
 export interface FlyTargetFlagSpec {
   /** The state emoji (TARGET_EMOJI), e.g. "🧍". */
   emoji: string;
+  /** Draw the Intelligence page's target icon (the person silhouette, rose)
+   * in place of the emoji — used for "Commenced". */
+  userIcon?: boolean;
   /** The wording, e.g. "RAHMAN · inside". */
   text: string;
   /** Dashed border when the target is out of sight. */
@@ -537,6 +540,12 @@ export interface FlyTargetFlagSpec {
 }
 
 const FLAG_PINK = "#e11d48";
+/** The lucide `User` icon (24x24 grid) — the target icon used in the
+ * Intelligence folder (its Targets tab). Shared with the flat map's flag. */
+export const TARGET_USER_ICON_PATH =
+  "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2";
+export const TARGET_USER_ICON_SVG = (size: number) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${FLAG_PINK}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${TARGET_USER_ICON_PATH}"/><circle cx="12" cy="7" r="4"/></svg>`;
 // The 3D map shows a picture at its own pixel size and ignores the width and
 // height it is given, so the flag must be drawn at exactly its on-screen size
 // (a 2x picture appears twice as big, and twice as high above the pin).
@@ -561,7 +570,7 @@ export function composeFlyTargetFlag(spec: FlyTargetFlagSpec): {
   measure.font = font;
   const textW = measure.measureText(spec.text).width;
   measure.font = emojiFont;
-  const emojiW = measure.measureText(spec.emoji).width;
+  const emojiW = spec.userIcon ? 16 : measure.measureText(spec.emoji).width;
   // Flat map pill: 2px border, padding 3px 10px 3px 7px, 6px gap.
   const pillW = Math.ceil(2 + 8 + emojiW + 6 + textW + 11 + 2);
   const pillH = 27;
@@ -600,9 +609,24 @@ export function composeFlyTargetFlag(spec: FlyTargetFlagSpec): {
   const cy = py + pillH / 2;
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  ctx.font = emojiFont;
-  ctx.fillStyle = "#000000";
-  ctx.fillText(spec.emoji, px + 2 + 8, Math.round(cy) + 1);
+  if (spec.userIcon) {
+    ctx.save();
+    ctx.translate(px + 2 + 8, Math.round(cy) - 8);
+    ctx.scale(16 / 24, 16 / 24);
+    ctx.strokeStyle = FLAG_PINK;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke(new Path2D(TARGET_USER_ICON_PATH));
+    ctx.beginPath();
+    ctx.arc(12, 7, 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    ctx.font = emojiFont;
+    ctx.fillStyle = "#000000";
+    ctx.fillText(spec.emoji, px + 2 + 8, Math.round(cy) + 1);
+  }
   ctx.font = font;
   ctx.fillStyle = "#000000";
   ctx.fillText(spec.text, Math.round(px + 2 + 8 + emojiW + 6), Math.round(cy));

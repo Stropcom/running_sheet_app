@@ -23,6 +23,7 @@ import {
   getIntelligenceHeatMapLocations,
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
+  getVisualRs,
   getIntelPlaceCoords,
   getIntelTargetPredictor,
   getOperationTrail,
@@ -698,6 +699,19 @@ export const intelligenceRouter = router({
           message: "Location not found.",
         });
       return profile;
+    }),
+
+  /** Visual RS: one running sheet in time order, a picture's worth of facts at
+   * every flag change (where the target is, where on the map, the vehicle only
+   * when it has a marker) and every other observation as a text entry. Deterministic
+   * rules only (shared/visualRs.ts); the sheet is reached through the access guard. */
+  visualRs: protectedProcedure
+    .input(z.object({ sheetId: z.number() }))
+    .query(async ({ input }) => {
+      const report = await getVisualRs(input.sheetId);
+      if (!report)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found" });
+      return report;
     }),
 
   /** Whether this server has a Nearmap key — the Map page offers the

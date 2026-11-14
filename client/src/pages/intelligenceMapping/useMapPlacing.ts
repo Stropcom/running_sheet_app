@@ -87,6 +87,7 @@ export function useMapPlacing(s: Pick<MapPanesState, "narrowScreen">) {
     lat: number;
     lng: number;
     emoji: string;
+    userIcon?: boolean;
     text: string;
     unsure: boolean;
   } | null>(null);

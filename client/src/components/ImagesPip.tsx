@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
+import { defaultPipPosition } from "@shared/pipLayout";
+import { otherPipRects, registerPip, unregisterPip } from "@/lib/pipRegistry";
 
 const MIN_WIDTH = 220;
 const MIN_HEIGHT = 170;
@@ -130,18 +132,23 @@ export function ImagesPip({
     if (!container) return;
 
     // Top-left, just below the map's own search bar + centre-on-me/follow
-    // button row (those sit at top:10px/60px, left:10px — see
-    // IntelligenceMapping.tsx) — clamp is only a safety bound for a
-    // container too small to fit the panel there at all.
+    // button row (those sit at top:10px/60px, left:10px — see MapArea.tsx).
+    // Street View opens in the same place; when the other panel is already
+    // there this one goes beside it (shared/pipLayout.ts).
     const placeDefault = () => {
-      const cw = container.clientWidth;
-      const ch = container.clientHeight;
-      const w = panel.offsetWidth;
-      const h = panel.offsetHeight;
-      panel.style.left = `${clamp(10, 8, Math.max(8, cw - w - 8))}px`;
-      panel.style.top = `${clamp(110, 8, Math.max(8, ch - h - 8))}px`;
+      const pos = defaultPipPosition({
+        container: {
+          width: container.clientWidth,
+          height: container.clientHeight,
+        },
+        size: { width: panel.offsetWidth, height: panel.offsetHeight },
+        others: otherPipRects(panel, container),
+      });
+      panel.style.left = `${pos.left}px`;
+      panel.style.top = `${pos.top}px`;
     };
     placeDefault();
+    registerPip(panel);
 
     let drag: {
       startX: number;
@@ -232,6 +239,7 @@ export function ImagesPip({
     handle.addEventListener("pointercancel", onHandleUp);
 
     return () => {
+      unregisterPip(panel);
       header.removeEventListener("pointerdown", onHeaderDown);
       header.removeEventListener("pointermove", onHeaderMove);
       header.removeEventListener("pointerup", onHeaderUp);

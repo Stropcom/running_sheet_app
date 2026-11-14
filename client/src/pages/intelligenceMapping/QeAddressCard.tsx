@@ -40,6 +40,8 @@ import { returnedInsideSentence } from "@shared/outFront";
 import {
   continuedOccupantWording,
   leftAddressSentence,
+  parkedAtCommencement,
+  parkedDepartOptions,
   vehicleDepartLabel,
   walkedToVehicleLabel,
 } from "@shared/vehicleCardWording";
@@ -213,6 +215,7 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
               rowId: number;
               saved: boolean;
               outOfSight: boolean;
+              unattended?: boolean;
             }
           >();
           (rsPendingArrivals ?? [])
@@ -224,6 +227,7 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
                 rowId: a.rowId,
                 saved: true,
                 outOfSight: a.outOfSight,
+                unattended: a.unattended,
               })
             );
           const draftArrive = matchVehicleArrival(rsInlineText);
@@ -300,7 +304,30 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
             const outOfSight = v.outOfSight && !inside && !movedOn;
             const occNames = names(occupants.join(" and "));
             const actions: ContinuityCardData["actions"] = [];
-            if (v.saved) {
+            // At the very start — surveillance just commenced at this place,
+            // nobody logged anywhere yet — a vehicle only written as "parked
+            // and unattended" offers "Depart TGT" / "Depart US" instead of the
+            // single Depart (shared/vehicleCardWording.ts).
+            const atStart =
+              !!v.unattended &&
+              v.saved &&
+              !inside &&
+              !inCar &&
+              parkedAtCommencement({
+                address: shortAddr,
+                commencedPlace: rsSurveillance?.commencedPlace,
+                ended: !!rsSurveillance?.ended,
+                positionLogged: !!rsTargetPosition,
+              });
+            if (atStart)
+              actions.push(
+                ...parkedDepartOptions({
+                  rego: v.rego,
+                  address: shortAddr,
+                  target: rsTrackedTarget,
+                })
+              );
+            else if (v.saved) {
               actions.push({
                 key: `dep-${v.rego}`,
                 label: vehicleDepartLabel(v.rego),

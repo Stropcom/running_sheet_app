@@ -577,3 +577,73 @@ to another location" / "Walked to 1EMB303". He has gone nowhere, so now (owner's
   `e2e/target-logger-out-the-front.spec.ts` (the screenshot case: pill, buttons, "Returned inside"
   writes the sentence and he is inside again; failing on the old code). The Map's Quick Entry card uses
   the same rule but cannot be driven in the sandbox — check it on the live Map.
+
+## The burger chains all get the hamburger (fast food) sign (v2.86.1)
+
+McDonald's, KFC, Hungry Jack's, Chicken Treat and Red Rooster already got the **Fast Food Sign** (the
+burger, `place_fast_food`) as their default map pin — by name, in `FAST_FOOD_RE`
+(`shared/placeSigns.ts`), whichever way the place reached the map (a sheet row, a Google place, a
+Fly / Nearby tap). What was missed was the way some of them are written. Now also read: **Mc Donald's**,
+**Kentucky Fried Chicken**, **K.F.C.**, **Hungry Jack** (no "s"), **ChickenTreat**, **RedRooster**. A
+longer word is still not a chain ("Hungry Jackson Hall", "Chicken Licken" stay as they were). An
+officer's own chosen icon always wins, and pins already saved with another icon keep it. Tests:
+`server/placeSigns.test.ts` ("the burger chains all get the fast food (hamburger) sign", 23 spellings
+through `placeSignOfName` and `signIconOf`). **If a McDonald's or KFC pin still shows another icon, it
+is either an icon the officer chose, or a name the rule has not seen — send the label as it is on the
+map.**
+
+## Street View and Photos open in the same place, side by side (v2.86.1)
+
+The two picture-in-picture panels on the Map page used to open in different places (Photos at the
+top-left under the Follow me buttons; Street View 56% across and 30% down). Now one rule,
+`shared/pipLayout.ts` (`defaultPipPosition`, tests `server/pipLayout.test.ts`), puts **either** of them
+at **left 10, top 110** — the top-left, just under the Centre on me / Follow me row (which sits at top 60,
+40 high). **When the other panel is already open there, the new one goes to its right on the same row**
+(a 10 px gap), so the two sit side by side across the top; with no room to the right (a phone, 390 wide)
+it goes on the next row down, back at the left; a third would continue the row or start another. A panel
+the officer has dragged somewhere is never moved — only where a panel **opens** changed, and Street View
+now re-places itself every time it opens (Photos always did, as it is mounted fresh). The panels find
+each other through `client/src/lib/pipRegistry.ts` (Street View registers while it is open, Photos while
+it is mounted). Used on the Map page and RS Mapping (both use the same two components). **Not looked at
+in a browser** — Google Maps cannot run in the build sandbox; the placement rule itself is unit-tested.
+Check on the live Map: open Photos then Street View (and the other way round) on an iPad held both ways
+up, and on a phone.
+
+## Surveillance commenced shows as a flag on its place — "Commenced 08:39 AM" (v2.87.0)
+Before any movement names the target, the Map page's target flag now marks **where the surveillance
+commenced**: the usual white pill with the rose border, the **Intelligence folder's target icon** (the rose person silhouette, lucide `User`, as on the Intelligence Targets tab — not an emoji; drawn by `TARGET_USER_ICON_SVG` / `composeFlyTargetFlag` `userIcon`) and **"SANTOS · Commenced 08:39 AM"**, on the pin
+of the place the "Surveillance commenced in the vicinity of …" row names (the short form, as the other
+flags use). Rules (`shared/targetPosition.ts` `commencedPosition`, fed by `shared/surveillanceState.ts`,
+tests `server/commencedFlag.test.ts`):
+- It shows **only while nothing logged says where he is** — the first arrival, walk-in, sighting or vehicle row
+  takes the flag over, exactly as before. It is never drawn over a real position.
+- The start is the first "commenced" row, or the first after **every** member had ceased; another officer
+  commencing later is not a new start. The time is that row's own time.
+- Gone once the surveillance has ended (the grey dashed "ceased at …" flag takes over), and not shown when the
+  commenced row names no place — nothing is guessed. A location target (it does not move) still has no flag.
+- `surveillanceState` (the `row.surveillanceState` query) now also returns `commencedByRowId`,
+  `commencedAtTime` and `commencedPlace`. New `TargetState` `"commenced"` (plain-text fallback 👤); the flag marker rule
+  treats it like "inside" (a place marker).
+- **Not looked at in a browser** (Google Maps cannot run in the sandbox); the rule and the state are unit-tested.
+  Check on the live Map with a new sheet: commence at an address, flag shows "Commenced <time>"; log an arrival and
+  it moves to the real position. The Fly flag takes the same text. The Target Logger card on the sheet is unchanged.
+
+## At the start: "Depart TGT" / "Depart US" for vehicles parked where surveillance commenced (v2.88.0)
+Owner's screenshots: a sheet opened with "…1DAR77 … and … 1ARD64 …, park and unattended in the driveway
+at 38 Lawley Crescent." then "Surveillance commenced in the vicinity of 38 Lawley Crescent". The Quick
+Entry card showed both vehicles but **the running sheet's Target Logger showed nothing**, because the sheet
+hid a "parked and unattended" vehicle until someone was logged at that place (v2.83.31).
+Now, **at the very start** — the surveillance is live, commenced at that same place
+(`parkedAtCommencement`, `shared/vehicleCardWording.ts`), and nothing logged yet says where the target is — each
+such vehicle gets a card (sheet `TargetPanel.tsx` and Map Quick Entry `QeAddressCard.tsx`) with two buttons in
+place of the single Depart:
+- **"1DAR77 Depart TGT"** → "Vehicle 1DAR77, DARYANI driver and sole occupant, departed 38 Lawley Crescent and
+  continued via:" (the sheet's person target's surname; only offered when the sheet has a person target).
+- **"1DAR77 Depart US"** (US = unseen) → "Vehicle 1DAR77, occupant/s unseen, departed 38 Lawley Crescent and
+  continued via:" (`OCCUPANTS_UNSEEN`; already read as "no name" by the occupant rules).
+Once any row locates the target (inside the place, walking to a vehicle …) the card falls back to the old
+behaviour, and a vehicle parked anywhere else is still hidden until someone is there. Tests:
+`server/parkedDepart.test.ts` (wording, both sentences read back as departures, the owner's two-vehicle sheet),
+browser `e2e/target-logger-vehicle-card.spec.ts` (sheet card, 1DAR77 Depart TGT writes the row). The Quick Entry
+card shares the same rule but cannot be driven in the sandbox — check it live. The older Depart wording for an
+unattended vehicle ("unseen occupant/s") is unchanged elsewhere.

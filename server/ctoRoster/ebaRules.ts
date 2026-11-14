@@ -2,7 +2,7 @@
 // Moved out of that file unchanged — only imports and `export` keywords differ; see
 // docs/features/dev-and-ops.md (Big-file plan, phase 3).
 
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import {
   ctoRosterShifts,
@@ -11,11 +11,17 @@ import {
   ctoRosterSavedRosterMembers,
   ctoRosterSavedRosterShifts,
   ctoRosterEbaRules,
+  ctoRosterAuditLog,
   CtoRosterEbaRule,
 } from "../../drizzle/schema";
 import { runEbaChecks, type ShiftRecord } from "../ctoRosterEbaEngine";
 import { computeShiftInterval } from "../../shared/ctoRosterShiftDuration";
-import { liveShiftScope, getAllCtoRosterMembers } from "./liveRoster";
+import type { ShiftChange } from "../../shared/ctoRosterNotice";
+import {
+  liveShiftScope,
+  getAllCtoRosterMembers,
+  inCommand,
+} from "./liveRoster";
 
 // ── EA Compliance (EBA rule engine) ─────────────────────────────────────────────
 
@@ -149,6 +155,16 @@ const DEFAULT_EBA_RULES: Omit<
     thresholdValue2: null,
     isActive: true,
   },
+  {
+    ruleKey: "min_notice_of_change",
+    title: "Minimum notice of a change to attendance",
+    description:
+      "An Employee will be given a minimum of 24 hours notice of any change to their normal pattern of attendance. A change is notified by direct verbal communication unless another arrangement is mutually agreed; the safety net may be breached for an Operational Requirement. Flags a saved change made less than 24 hours before the shift starts.",
+    eaReference: "s.33(16)(a)",
+    thresholdValue: 24,
+    thresholdValue2: null,
+    isActive: true,
+  },
 ];
 
 async function ensureCtoRosterEbaRulesSeeded(): Promise<void> {
@@ -193,6 +209,119 @@ export async function updateCtoRosterEbaRule(
     .where(eq(ctoRosterEbaRules.id, id));
 }
 
+/** A row whose last change is within this many seconds of its creation was
+ * made in one go (the insert), not changed later. */
+const SAME_WRITE_SECONDS = 5;
+/** An audit entry and a row's updatedAt this close are the same write. */
+const SAME_EVENT_MS = 30_000;
+
+/**
+ * The saved changes to the live roster (s.33(16)(a) needs to know WHEN each
+ * was made):
+ *  - single edits and Weekly Tasking syncs are in the audit log with the old
+ *    and the new shift and the exact time (`upsert_shift`);
+ *  - bulk update, bulk copy, repeat cycle and draft merge are logged as one
+ *    summary line with no dates, so for those the only trace is the shift's own
+ *    last-changed time: a row changed after it was created, with no audit entry
+ *    at the same moment, is a change whose earlier shift is not recorded.
+ */
+async function liveShiftChanges(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  rows: {
+    memberId: number;
+    shiftDate: string;
+    shiftCode: string;
+    shiftTime: string | null;
+    shiftDurationHours?: number | null;
+    createdAt?: Date;
+    updatedAt?: Date;
+  }[],
+  memberMap: Map<number, string>,
+  startDate?: string,
+  endDate?: string
+): Promise<ShiftChange[]> {
+  const out: ShiftChange[] = [];
+  const parse = (json: string | null) => {
+    if (!json) return null;
+    try {
+      const v = JSON.parse(json) as {
+        shiftCode?: string | null;
+        shiftTime?: string | null;
+        shiftDurationHours?: number | null;
+      };
+      return {
+        code: v.shiftCode ?? null,
+        time: v.shiftTime ?? null,
+        durationHours: v.shiftDurationHours ?? null,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const conditions = [
+    eq(ctoRosterAuditLog.action, "upsert_shift"),
+    sql`${ctoRosterAuditLog.memberId} IS NOT NULL`,
+    sql`${ctoRosterAuditLog.shiftDate} IS NOT NULL`,
+  ];
+  if (startDate) conditions.push(gte(ctoRosterAuditLog.shiftDate, startDate));
+  if (endDate) conditions.push(lte(ctoRosterAuditLog.shiftDate, endDate));
+  const scoped = inCommand(ctoRosterAuditLog.command);
+  if (scoped) conditions.push(scoped);
+  const audit = await db
+    .select()
+    .from(ctoRosterAuditLog)
+    .where(and(...conditions));
+  const auditTimes = new Map<string, number[]>();
+  for (const a of audit) {
+    const after = parse(a.newValue);
+    if (!a.memberId || !a.shiftDate || !after) continue;
+    const at = a.createdAt.getTime();
+    const key = `${a.memberId}|${a.shiftDate}`;
+    auditTimes.set(key, [...(auditTimes.get(key) ?? []), at]);
+    out.push({
+      memberId: a.memberId,
+      memberName:
+        memberMap.get(a.memberId) ?? a.memberName ?? `Member ${a.memberId}`,
+      shiftDate: a.shiftDate,
+      changedAtMs: at,
+      before: parse(a.oldValue),
+      beforeKnown: true,
+      after,
+      by: a.userName ?? null,
+      source: "audit",
+    });
+  }
+
+  for (const r of rows) {
+    if (!r.createdAt || !r.updatedAt) continue;
+    if (
+      r.updatedAt.getTime() - r.createdAt.getTime() <=
+      SAME_WRITE_SECONDS * 1000
+    )
+      continue;
+    const at = r.updatedAt.getTime();
+    const seen = auditTimes.get(`${r.memberId}|${r.shiftDate}`) ?? [];
+    if (seen.some(t => Math.abs(t - at) <= SAME_EVENT_MS)) continue;
+    out.push({
+      memberId: r.memberId,
+      memberName: memberMap.get(r.memberId) ?? `Member ${r.memberId}`,
+      shiftDate: r.shiftDate,
+      changedAtMs: at,
+      before: null,
+      beforeKnown: false,
+      after: {
+        code: r.shiftCode,
+        time: r.shiftTime,
+        durationHours: r.shiftDurationHours ?? null,
+      },
+      by: null,
+      source: "row",
+    });
+  }
+  return out;
+}
+
 export type CtoRosterEbaScope = "main" | "draft" | "custom" | "saved";
 
 /**
@@ -216,8 +345,12 @@ export async function runCtoRosterEbaCheck(
     shiftCode: string;
     shiftTime: string | null;
     shiftDurationHours?: number | null;
+    createdAt?: Date;
+    updatedAt?: Date;
   }[];
   let memberMap = new Map<number, string>();
+  // Saved changes to the live roster, for the notice-of-change rule.
+  let changes: ShiftChange[] = [];
 
   if (scope === "main" || scope === "custom") {
     const allMembers = await getAllCtoRosterMembers();
@@ -234,9 +367,18 @@ export async function runCtoRosterEbaCheck(
         shiftCode: ctoRosterShifts.shiftCode,
         shiftTime: ctoRosterShifts.shiftTime,
         shiftDurationHours: ctoRosterShifts.shiftDurationHours,
+        createdAt: ctoRosterShifts.createdAt,
+        updatedAt: ctoRosterShifts.updatedAt,
       })
       .from(ctoRosterShifts)
       .where(conditions.length ? and(...conditions) : undefined);
+    changes = await liveShiftChanges(
+      db,
+      rawShifts,
+      memberMap,
+      startDate,
+      endDate
+    );
   } else if (scope === "draft") {
     if (!draftId) throw new Error("draftId required for draft scope");
     const allMembers = await getAllCtoRosterMembers();
@@ -283,7 +425,7 @@ export async function runCtoRosterEbaCheck(
     shiftDurationHours: s.shiftDurationHours ?? null,
   }));
 
-  const findings = runEbaChecks(shiftRecords, rules);
+  const findings = runEbaChecks(shiftRecords, rules, changes);
   const missingTime = shiftRecords.filter(
     s => computeShiftInterval(s.shiftCode, s.shiftTime).missingRequiredTime
   );

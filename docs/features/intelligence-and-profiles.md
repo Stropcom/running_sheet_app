@@ -194,7 +194,7 @@ Rules (`shared/visualRs.ts`, tests `server/visualRs.test.ts`; server side `serve
   state/wording (so another vehicle too) or place differs from before; the first row that places the target is
   one. No row places him → no frames, only text. A location target or no target → no flags.
 - **A vehicle is only drawn where it has its own custom marker** (`findVehicleMarker`); with none the frame says
-  "Vehicle X is not shown: it has no marker on the map, so it is not placed." — never guessed. The flag goes on the
+  "Vehicle X is not shown: no marker in this operation has its registration in its label, so it is not placed." (a marker is tied to a vehicle only by its rego in the label; one in another operation, or labelled with a description only, does not count). A marker that exists but is too far from the place to fit in the picture says so (v2.89.2) — never guessed. The flag goes on the
   vehicle's marker when he is in it and it has one, else on the place pin.
 - A place is located from a marker that carries it first, else the cached geocoder the Supervisor Summary map uses
   (`geocodeSummaryAddresses`). A place that can't be located gets "could not be found on the map" instead of a

@@ -30,6 +30,7 @@ import type {
 } from "@shared/visualRs";
 import {
   VisualRsPicture,
+  viewOfFrame,
   type PictureMode,
 } from "@/pages/visualRs/VisualRsPicture";
 
@@ -152,8 +153,10 @@ function Frame({
             <p className="m-0 text-xs text-muted-foreground">
               <b className="text-foreground">Vehicle {flag.rego}</b>{" "}
               {frame.vehicle
-                ? "is shown: it has a marker on the map."
-                : "is not shown: it has no marker on the map, so it is not placed."}
+                ? viewOfFrame(frame, mode)?.vehicleShown
+                  ? "is shown: it has a marker on the map."
+                  : "has a marker on the map, but it is too far from this place to fit in the picture."
+                : "is not shown: no marker in this operation has its registration in its label, so it is not placed."}
             </p>
           )}
           <Observation

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { enterNearbyOffers } from "@shared/enterNearby";
+import {
+  enterNearbyOffers,
+  leftNearbyLabel,
+  leftNearbySentence,
+} from "@shared/enterNearby";
 import { samePlace } from "@shared/targetPosition";
 import { scanWalkEvents } from "@shared/walkEventPatterns";
 
@@ -101,5 +105,51 @@ describe("the sentence it writes, read back by the logger", () => {
       inside: true,
       at: "JB Hi-Fi Rockingham City",
     });
+  });
+});
+
+describe("Left <place> on the nearby card (shop to shop)", () => {
+  const cotton =
+    "CORNELL entered Cotton On Hobart, 98 Elizabeth Street, HOBART TAS (Cotton On Hobart) and continued out of sight.";
+  const left = leftNearbySentence(
+    "CORNELL",
+    "Cotton On Hobart",
+    "JD Sports, 44/46 Elizabeth Street, HOBART TAS (JD Sports)"
+  );
+  const entered =
+    "CORNELL entered JD Sports, 44/46 Elizabeth Street, HOBART TAS (JD Sports) and continued out of sight.";
+  const scan = (...obs: string[]) =>
+    scanWalkEvents(
+      obs.map((observation, i) => ({ id: i + 1, sheetId: 1, observation }))
+    );
+
+  it("words the button and the sentence", () => {
+    expect(leftNearbyLabel("Cotton On Hobart")).toBe("Left Cotton On Hobart");
+    expect(left).toBe(
+      "CORNELL exited Cotton On Hobart and walked towards JD Sports, 44/46 Elizabeth Street, HOBART TAS (JD Sports)."
+    );
+  });
+
+  it("Left takes him out of Cotton On and has him heading for JD Sports", () => {
+    const s = scan(cotton, left);
+    expect(s.walkIns).toEqual([]);
+    expect(s.headingTo).toHaveLength(1);
+    expect(s.headingTo[0]).toMatchObject({
+      names: "CORNELL",
+      from: "Cotton On Hobart",
+    });
+    expect(s.headingTo[0].destination).toContain("JD Sports");
+  });
+
+  it("then Entered here puts him inside JD Sports, not Cotton On", () => {
+    const s = scan(cotton, left, entered);
+    expect(s.headingTo).toEqual([]);
+    expect(s.walkIns).toHaveLength(1);
+    expect(s.walkIns[0].location).toContain("JD Sports");
+  });
+
+  it("Entered here on its own still puts him inside JD Sports", () => {
+    const s = scan(cotton, entered);
+    expect(s.walkIns.map(w => w.location).join("|")).toContain("JD Sports");
   });
 });

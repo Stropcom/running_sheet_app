@@ -7,6 +7,14 @@
  * of sight." The click is the trigger: nothing is offered on the cards
  * otherwise, so a target inside a house never gets an extra button.
  *
+ * The same card also offers "Left <the place he is in>" — from one shop to the
+ * next he has left the first: "<names> exited <place> and walked towards
+ * <clicked place>." That leaves him heading for the clicked place, so tapping
+ * "Entered here" afterwards (or the card the clicked place then shows) takes
+ * him in. Both buttons are always offered together; the officer taps the one
+ * that happened (from a shopping centre into one of its shops he has NOT left
+ * the centre, so only "Entered here" fits). Each button writes its own row.
+ *
  * The sentence is written like any other first mention of a place — the full
  * address with its bracket short form the first time (which is what puts a pin
  * and the target flag on the shop), the short form after that. The centre he
@@ -14,6 +22,7 @@
  * Left address on the centre's own cards keep working.
  */
 import { distanceMetres } from "./nearbyLocations";
+import { shortAddressLabel } from "./markerLink";
 
 /** How close the clicked place must be to where they are logged inside. A
  * large centre is a few hundred metres across. */
@@ -34,6 +43,21 @@ export interface EnterOffer {
   rowId: number;
   /** How far the clicked place is from where they are, in metres. */
   metres: number;
+}
+
+/** The button for having left the place he is in: "Left Cotton On Hobart". */
+export function leftNearbyLabel(inside: string): string {
+  return `Left ${shortAddressLabel(inside)}`;
+}
+
+/** What "Left …" writes: he left the place he was logged inside and is heading
+ * for the place clicked (written like any other mention of it). */
+export function leftNearbySentence(
+  names: string,
+  inside: string,
+  destination: string
+): string {
+  return `${names} exited ${inside} and walked towards ${destination}.`;
 }
 
 const wordCount = (s: string): number =>

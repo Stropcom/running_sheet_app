@@ -15,7 +15,11 @@ import {
 } from "@/lib/transitCards";
 import { transitKindOfPlace } from "@shared/transitPlace";
 import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
-import { enterNearbyOffers } from "@shared/enterNearby";
+import {
+  enterNearbyOffers,
+  leftNearbyLabel,
+  leftNearbySentence,
+} from "@shared/enterNearby";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
 import { popupShortAddress } from "@shared/markerLink";
 import { vehiclesPeopleCanReach } from "@shared/targetPosition";
@@ -552,6 +556,16 @@ export function QeAddressCard({ s }: { s: MapScreen }) {
                   sub: "On foot",
                 },
                 actions: [
+                  // Left the place he is in, heading for the one tapped.
+                  {
+                    key: `left-${o.inside}-${shortAddr}`,
+                    label: leftNearbyLabel(o.inside),
+                    text: leftNearbySentence(
+                      names(o.names),
+                      o.inside,
+                      arriveAddr
+                    ),
+                  },
                   {
                     key: `ent-${o.inside}-${shortAddr}`,
                     label: "Entered here",

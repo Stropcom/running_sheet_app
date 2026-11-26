@@ -78,6 +78,8 @@ export {
   getAllCtoRosterEbaRules,
   updateCtoRosterEbaRule,
   runCtoRosterEbaCheck,
+  dismissCtoRosterEbaFindings,
+  restoreCtoRosterEbaFindings,
 } from "./ctoRoster/ebaRules";
 export type { CtoRosterEbaScope } from "./ctoRoster/ebaRules";
 export {

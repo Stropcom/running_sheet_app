@@ -138,6 +138,8 @@ export const ROSTER_ID_REFS: Record<string, Ref[]> = {
     ["savedMember", "memberId"],
     ["savedTeam", "newTeamId"],
   ],
+  "ctoRoster.eba.dismissFindings": [["member", "findings[].memberId"]],
+  "ctoRoster.eba.restoreFindings": [["member", "findings[].memberId"]],
   "ctoRoster.eba.runCheck": [
     ["draft", "draftId"],
     ["saved", "savedRosterId"],

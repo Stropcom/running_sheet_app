@@ -647,3 +647,19 @@ behaviour, and a vehicle parked anywhere else is still hidden until someone is t
 browser `e2e/target-logger-vehicle-card.spec.ts` (sheet card, 1DAR77 Depart TGT writes the row). The Quick Entry
 card shares the same rule but cannot be driven in the sandbox — check it live. The older Depart wording for an
 unattended vehicle ("unseen occupant/s") is unchanged elsewhere.
+
+## Shop to shop: the nearby card offers "Left <place>" as well as "Entered here" (v2.92.0)
+Owner's screenshot: CORNELL logged inside Cotton On Hobart, then JD Sports tapped on the map — the Quick Entry card
+offered only "Entered here". It now offers **two buttons together** on that card:
+- **"Left Cotton On Hobart"** → "CORNELL exited Cotton On Hobart and walked towards JD Sports, 44/46 Elizabeth Street,
+  HOBART TAS (JD Sports)." (the clicked place written like any other mention: full address with its bracket short form the
+  first time, the short form after). The logger then has him **out of Cotton On and heading for JD Sports** (`headingTo`
+  from "Cotton On Hobart"), so the next tap — "Entered here", or the "Entered" card the clicked place then shows — takes him in.
+- **"Entered here"** → unchanged: "CORNELL entered JD Sports … and continued out of sight."
+Each writes its own row with its own time; either can be tapped alone. Cotton On's own card (when Cotton On is tapped) is
+unchanged. Rule and wording: `leftNearbyLabel` / `leftNearbySentence` in `shared/enterNearby.ts`; tests `server/enterNearby.test.ts`
+(the wording, and that the logger reads Left → heading to JD Sports, then Entered → inside JD Sports and not Cotton On).
+**Always offered together, by design:** from a shopping centre into one of its shops he has *not* left the centre, so only
+"Entered here" fits — the officer taps the one that happened (nothing is written until a button is tapped). **Not looked at on
+the live map** (the Quick Entry card can't be driven in the sandbox) — check on the iPhone: log someone inside one shop, tap the
+next shop, tap "Left …" then "Entered here".

@@ -2262,7 +2262,7 @@ export const ctoRosterAuditLog = mysqlTable(
     command: rosterCommandColumn(),
     userId: int("userId"),
     userName: varchar("userName", { length: 128 }),
-    /** upsert_shift | delete_shift | bulk_update | bulk_copy | add_member | delete_member | change_team | reorder | draft_merge | save_as_roster */
+    /** upsert_shift | delete_shift | bulk_update | bulk_copy | add_member | delete_member | change_team | reorder | draft_merge | save_as_roster | dismiss_ea_breach | restore_ea_breach */
     action: varchar("action", { length: 64 }).notNull(),
     memberId: int("memberId"),
     memberName: varchar("memberName", { length: 128 }),
@@ -2279,6 +2279,38 @@ export const ctoRosterAuditLog = mysqlTable(
 );
 export type CtoRosterAuditLog = typeof ctoRosterAuditLog.$inferSelect;
 export type InsertCtoRosterAuditLog = typeof ctoRosterAuditLog.$inferInsert;
+
+/**
+ * EA compliance findings an admin has dismissed on the live roster, so their
+ * red dots clear from the roster and the CTO Weekly Tasking. A finding is the
+ * same finding while its rule, person and dates are the same (`datesKey` is the
+ * sorted dates joined by ","); if the roster changes so the finding names other
+ * dates, it is a new finding and shows again. Each dismissal and restore is also
+ * written to `cto_roster_audit_log` (who, the dates and the shifts).
+ */
+export const ctoRosterDismissedFindings = mysqlTable(
+  "cto_roster_dismissed_findings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    command: rosterCommandColumn(),
+    ruleKey: varchar("ruleKey", { length: 64 }).notNull(),
+    memberId: int("memberId").notNull(),
+    datesKey: varchar("datesKey", { length: 512 }).notNull(),
+    dismissedByUserId: int("dismissedByUserId"),
+    dismissedByName: varchar("dismissedByName", { length: 128 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => [
+    uniqueIndex("cto_roster_dismissed_findings_key_idx").on(
+      t.command,
+      t.ruleKey,
+      t.memberId,
+      t.datesKey
+    ),
+  ]
+);
+export type CtoRosterDismissedFinding =
+  typeof ctoRosterDismissedFindings.$inferSelect;
 
 // ─── CTO Roster: Outlook Settings (coverage minimums) ───────────────────────
 export const ctoRosterOutlookSettings = mysqlTable(

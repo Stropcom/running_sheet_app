@@ -21,6 +21,12 @@ import {
   computeShiftInterval,
   shiftToDateRange,
 } from "../shared/ctoRosterShiftDuration";
+import {
+  MIN_NOTICE_HOURS,
+  describeShift,
+  noticeOfChange,
+  type ShiftChange,
+} from "../shared/ctoRosterNotice";
 import type { CtoRosterEbaRule } from "../drizzle/schema";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -166,7 +172,10 @@ function countWeekendDaysInRange(startDate: string, endDate: string): number {
  */
 export function runEbaChecks(
   shifts: ShiftRecord[],
-  rules: CtoRosterEbaRule[]
+  rules: CtoRosterEbaRule[],
+  /** Saved changes to the live roster, for the notice-of-change rule (none
+   * for a draft or saved roster: they have no "notice"). */
+  changes: ShiftChange[] = []
 ): EbaFinding[] {
   const findings: EbaFinding[] = [];
   const activeRules = rules.filter(r => r.isActive);
@@ -193,12 +202,63 @@ export function runEbaChecks(
     }
   }
 
+  // Notice of a change is a record of what was done, not a roster still to be
+  // fixed, so it is worked out from the changes and kept when its date is past.
+  const noticeRule = activeRules.find(r => r.ruleKey === NOTICE_RULE_KEY);
+  const noticeFindings = noticeRule
+    ? checkNoticeOfChange(noticeRule, changes)
+    : [];
+
   // Filter out findings where ALL involved dates are strictly in the past.
   // This suppresses historical data that can no longer be actioned.
-  return findings.filter(f => {
-    // A finding is future-relevant if at least one of its dates is >= today
-    return f.dates.some(d => d >= todayStr);
-  });
+  return [
+    ...findings.filter(f => {
+      // A finding is future-relevant if at least one of its dates is >= today
+      return f.dates.some(d => d >= todayStr);
+    }),
+    ...noticeFindings,
+  ];
+}
+
+export const NOTICE_RULE_KEY = "min_notice_of_change";
+
+/** s.33(16)(a): at least 24 hours notice of any change to a pattern of attendance. */
+function checkNoticeOfChange(
+  rule: CtoRosterEbaRule,
+  changes: ShiftChange[]
+): EbaFinding[] {
+  const minHours = rule.thresholdValue ?? MIN_NOTICE_HOURS;
+  const findings: EbaFinding[] = [];
+  for (const change of changes) {
+    const notice = noticeOfChange(change);
+    if (!notice || notice.noticeHours >= minHours) continue;
+    const when = new Date(change.changedAtMs).toLocaleString("en-AU", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const given = notice.afterStart
+      ? "after the shift had started"
+      : `${Math.max(0, Math.round(notice.noticeHours * 10) / 10)} hours before it started`;
+    findings.push({
+      ruleKey: rule.ruleKey,
+      ruleTitle: rule.title,
+      eaReference: rule.eaReference,
+      memberId: change.memberId,
+      memberName: change.memberName,
+      dates: [change.shiftDate],
+      detail: `${change.memberName}: the ${change.shiftDate} shift was changed${
+        change.beforeKnown
+          ? ` from ${describeShift(change.before)} to ${describeShift(change.after)}`
+          : ` (now ${describeShift(change.after)}; the earlier shift is not recorded)`
+      } on ${when}${change.by ? ` by ${change.by}` : ""}, ${given} (minimum ${minHours} hours notice). It may be permitted if another arrangement was agreed or an operational requirement applied.`,
+      severity: "warning",
+    });
+  }
+  return findings;
 }
 
 function checkRule(

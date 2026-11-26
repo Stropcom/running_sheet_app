@@ -30,6 +30,7 @@ import {
   Star,
   MessageSquare,
   Info,
+  ShieldCheck,
 } from "lucide-react";
 
 const ACTION_META: Record<
@@ -65,6 +66,18 @@ const ACTION_META: Record<
     label: "Change Team",
     icon: ArrowRightLeft,
     color: "bg-amber-100 text-amber-700 border-amber-200",
+  },
+  // EA compliance breaches dismissed from (or restored to) the roster and the
+  // Weekly Tasking: who, the rule, the dates and the shifts are in the detail.
+  dismiss_ea_breach: {
+    label: "EA Dismiss",
+    icon: ShieldCheck,
+    color: "bg-rose-100 text-rose-700 border-rose-200",
+  },
+  restore_ea_breach: {
+    label: "EA Restore",
+    icon: ShieldCheck,
+    color: "bg-teal-100 text-teal-700 border-teal-200",
   },
 };
 
@@ -368,6 +381,8 @@ export default function AuditLogPage() {
               "add_member",
               "delete_member",
               "change_team",
+              "dismiss_ea_breach",
+              "restore_ea_breach",
             ].map(a => {
               const meta = a ? ACTION_META[a] : null;
               return (

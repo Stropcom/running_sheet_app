@@ -37,6 +37,7 @@ export const KEEP_TABLES = [
   "cto_roster_saved_roster_members",
   "cto_roster_saved_roster_shifts",
   "cto_roster_audit_log",
+  "cto_roster_dismissed_findings",
   "cto_roster_outlook_settings",
   "cto_roster_eba_rules",
 ];

@@ -184,7 +184,42 @@ describe("the departure wording with seats", () => {
     expect(wording).toBeNull(); // one occupant: the usual wording
   });
 
-  it("one occupant, or no seat anywhere, keeps the usual wording", () => {
+  it("a lone passenger is worded with their seat; a lone driver is not", () => {
+    // CORNELL walked to and entered "as rear passenger" with nobody else seen:
+    // the departure must not read as if he were the sole occupant.
+    const scan = scanWalkEvents([
+      {
+        id: 1,
+        sheetId: 1,
+        observation:
+          "CORNELL exited MOSS Hotel - 39 and walked to and entered as rear passenger in a black Hyundai Staria, bearing TAS registration 1DFY567 (Vehicle 1DFY567).",
+      },
+    ]);
+    const inCar = scan.placements.filter(p => p.rego === "1DFY567");
+    expect(inCar.map(p => p.seat)).toEqual(["rear passenger"]);
+    expect(
+      seatedOccupantWording({
+        desc: "",
+        descRowId: 0,
+        rego: "1DFY567",
+        occupants: inCar.map(p => p.name),
+        placements: scan.placements,
+      })
+    ).toBe("CORNELL rear passenger");
+    const solo = (seat: "driver" | "front passenger" | "rear passenger") =>
+      seatedOccupantWording({
+        desc: "",
+        descRowId: 1,
+        rego: "1DFY567",
+        occupants: ["CORNELL"],
+        placements: [{ name: "CORNELL", rego: "1DFY567", rowId: 2, seat }],
+      });
+    expect(solo("front passenger")).toBe("CORNELL front passenger");
+    expect(solo("rear passenger")).toBe("CORNELL rear passenger");
+    expect(solo("driver")).toBeNull();
+  });
+
+  it("one occupant with no seat, or no seat anywhere, keeps the usual wording", () => {
     expect(
       seatedOccupantWording({
         desc: "",

@@ -188,9 +188,10 @@ export function seatsOf(input: {
 
 /**
  * A departure's occupants worded with their seats — "MENON driver and IBARRA
- * front passenger" — for a vehicle with two or more people in it where at least
- * one seat is known. Null otherwise (the caller keeps its usual wording): one
- * occupant, or no seat stated anywhere.
+ * front passenger" — where at least one seat is known. One person alone gets
+ * their seat only as a passenger ("CORNELL rear passenger"). Null otherwise
+ * (the caller keeps its usual wording): no seat stated anywhere, or a lone
+ * driver.
  */
 export function seatedOccupantWording(input: {
   desc: string;
@@ -199,12 +200,21 @@ export function seatedOccupantWording(input: {
   occupants: string[];
   placements: SeatPlacement[];
 }): string | null {
-  if (input.occupants.length < 2) return null;
+  if (input.occupants.length < 1) return null;
   const seats = seatsOf(input);
   if (seats.size === 0) return null;
+  // One person alone is worded with their seat only when they are a
+  // passenger: "CORNELL rear passenger" says someone else was driving, which
+  // bare "CORNELL" would hide (it reads as the sole occupant). A lone driver
+  // keeps the usual wording.
+  if (input.occupants.length === 1) {
+    const seat = seats.get(input.occupants[0]);
+    if (seat !== "front passenger" && seat !== "rear passenger") return null;
+  }
   const items = input.occupants.map(o =>
     seats.has(o) ? `${o} ${seats.get(o)}` : o
   );
+  if (items.length === 1) return items[0];
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }

@@ -30,10 +30,18 @@ test("Draft Roster: a cell's shift sheet saves a shift into the draft, Bulk Edit
     new Date(Date.now() + offset * 86_400_000).toLocaleDateString("en-CA", {
       timeZone: "Australia/Perth",
     });
+  // The draft grid shows one month at a time, starting with the draft's first
+  // month — so the draft starts on the 1st of NEXT month: a whole month of
+  // cells from the left whatever today's date is. (It used to start three days
+  // ago, which left only a few cells in the first month in the last days of a
+  // month and failed this test every month end.)
+  const [ty, tm] = day(0).split("-").map(Number);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const nextFirst = new Date(Date.UTC(ty, tm, 1));
   const { draftId } = await call("ctoRoster.draft.createStandalone", {
     name: `Draft page ${Date.now()}`,
-    startDate: day(-3),
-    endDate: day(40),
+    startDate: iso(nextFirst),
+    endDate: iso(new Date(nextFirst.getTime() + 40 * 86_400_000)),
   });
   const { id: teamId } = await call("ctoRoster.draft.addTeam", {
     draftId,

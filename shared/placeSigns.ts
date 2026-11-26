@@ -1,5 +1,5 @@
 // Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
-// shopping centres, supermarkets, hardware stores, parks, cafes, restaurants, fast food / takeaway,
+// shopping centres (and retail stores, with the same handbag), supermarkets, hardware stores, parks, cafes, restaurants, fast food / takeaway,
 // airports, the health set (hospital, pharmacy / chemist, doctor / medical
 // centre, physio / chiropractor / osteopath, dentist) and the mosque —
 // the same idea as the bus stop and train station signs
@@ -164,6 +164,26 @@ const MOSQUE_RE =
 const NOT_A_MOSQUE_RE =
   /\b(?:car\s*park|carpark|parking|school|college|childcare|child\s+care|kindergarten|library|bookshop|bookstore)\b/i;
 
+// A retail store — clothing, shoes, sports, electronics, books, jewellery,
+// furniture, homewares, a department / variety / discount store, or a known
+// retail chain — gets the same handbag sign as a shopping centre. Judged by its
+// name only (the first part of the label): a kind-of-shop word, the word
+// "store", or a chain that is unmistakably a shop. Deliberately not the word
+// "shop" ("Shop 19 The Park Centre" is an address) or "market". Everything that
+// has a sign of its own (supermarket, hardware, cafe, restaurant, fast food,
+// pharmacy, the health set) is settled before this, so "Dental Boutique" is a
+// dentist and "Woolworths" a supermarket; a chain's car park, depot or head
+// office is not the store.
+const RETAIL_WORD_RE =
+  /\b(?:clothing|clothes|fashion|apparel|menswear|womenswear|lingerie|swimwear|footwear|shoes?|sneakers?|boutique|jewell?ers?|jewell?ery|bookstore|bookshop|furniture|homewares?|electronics|giftware|gifts?|toys?|stores?|department\s+store|variety\s+store|discount\s+store|dollar\s+store)\b/i;
+const RETAIL_BRAND_RE =
+  /\b(?:cotton\s+on|jd\s+sports|kmart|big\s+w|myer|david\s+jones|officeworks|rebel\s+sport|supre|glassons|uniqlo|h\s*&\s*m|zara|bonds|jeanswest|just\s+jeans|dotti|factorie|foot\s*locker|platypus|hype\s+dc|jb\s+hi-?fi|harvey\s+norman|the\s+good\s+guys|ikea|anaconda|kathmandu|lorna\s+jane|lululemon|sportsgirl|witchery|country\s+road|mimco|prouds|michael\s+hill|angus\s*(?:&|and)\s*coote|eb\s+games|cash\s+converters|best\s*(?:&|and)\s*less|bing\s+lee|reject\s+shop|nike|adidas|billabong|rip\s+curl|quiksilver|skechers|new\s+balance)\b/i;
+// "Target Hobart", "Target Australia" — the chain; "Target Practice Range" is not.
+const TARGET_STORE_RE =
+  /^target(?:\s+(?!practice|range|shooting|archery)\S+){0,2}$/i;
+const NOT_A_RETAIL_STORE_RE =
+  /\b(?:car\s*park|carpark|parking|distribution|depot|storage|head\s+office|support\s+office|wholesale)\b/i;
+
 // A numbered terminal ("Terminal 4") is only read as an airport terminal when
 // the rest of its label says the place is at an airport — the locality part,
 // as Google writes it: "Terminal 4, Perth Airport WA 6105, Australia". A bare
@@ -228,6 +248,14 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
     return "place_hospital";
   if (MOSQUE_RE.test(name) && !NOT_A_MOSQUE_RE.test(name))
     return "place_mosque";
+  // A retail store, before the airport: "JB Hi-Fi Airport West" is a shop.
+  if (
+    (RETAIL_BRAND_RE.test(name) ||
+      TARGET_STORE_RE.test(name) ||
+      RETAIL_WORD_RE.test(name)) &&
+    !NOT_A_RETAIL_STORE_RE.test(name)
+  )
+    return "place_shopping_centre";
   if (AIRPORT_RE.test(name) && !NOT_AN_AIRPORT_RE.test(name))
     return "place_airport";
   // "Terminal 4, Perth Airport WA 6105, Australia": a numbered terminal whose
@@ -343,6 +371,27 @@ export function placeSignFromTypes(
   if (cafe) return "place_cafe";
   if (restaurant) return "place_restaurant";
   if (t.has("meal_takeaway")) return "place_fast_food";
+  // Google's retail types (the generic "store" is not enough: it is on almost
+  // everything). Last, so a cafe or restaurant that is also a bookshop or gift
+  // shop stays a cafe or restaurant.
+  if (
+    [
+      "clothing_store",
+      "shoe_store",
+      "department_store",
+      "electronics_store",
+      "book_store",
+      "jewelry_store",
+      "furniture_store",
+      "home_goods_store",
+      "sporting_goods_store",
+      "toy_store",
+      "gift_shop",
+      "discount_store",
+    ].some(x => t.has(x)) &&
+    !NOT_A_RETAIL_STORE_RE.test(name)
+  )
+    return "place_shopping_centre";
   return null;
 }
 

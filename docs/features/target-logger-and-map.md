@@ -663,3 +663,15 @@ unchanged. Rule and wording: `leftNearbyLabel` / `leftNearbySentence` in `shared
 "Entered here" fits — the officer taps the one that happened (nothing is written until a button is tapped). **Not looked at on
 the live map** (the Quick Entry card can't be driven in the sandbox) — check on the iPhone: log someone inside one shop, tap the
 next shop, tap "Left …" then "Entered here".
+
+## Retail stores get the shopping centre handbag (v2.93.0)
+Owner: "can we use the shopping centre hand bag for the marker for retail stores also?" `shared/placeSigns.ts` now gives a **retail store**
+the same `place_shopping_centre` handbag sign as a shopping centre — by its **name** (`placeSignOfName`: a known chain such as Cotton On, JD Sports,
+Kmart, Myer, Officeworks, Harvey Norman, JB Hi-Fi, Apple Store …; "Target" / "Target Hobart" (not "Target Practice Range"); or a kind-of-shop word —
+clothing, fashion, footwear, shoes, boutique, jewellery, furniture, homewares, electronics, books, gifts, toys, "store") and by **Google's retail types**
+(`placeSignFromTypes`: clothing, shoe, department, electronics, book, jewelry, furniture, home goods, sporting goods, toy, gift and discount stores — never the
+generic `store` type, which is on almost everything). Order matters and is tested: everything with a sign of its own (supermarket, hardware, cafe,
+restaurant, fast food, pharmacy and the health set, mosque) is settled **before** retail, so "Dental Boutique" is a dentist, "Woolworths" a supermarket and
+"Bookstore Cafe" a cafe; a retail chain at an airport ("JB Hi-Fi Airport West") is the shop, not the airport; and a chain's car park, depot, storage or head
+office is not the store. Not the word "shop" ("Shop 19 The Park Centre" is an address) or "market". An officer's own chosen icon still wins; the Places Report
+already counts this sign as "shop". The chain list is deliberately short — add a chain to `RETAIL_BRAND_RE` with a test. Tests: `server/placeSigns.test.ts`.

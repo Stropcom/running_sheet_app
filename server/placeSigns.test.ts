@@ -361,7 +361,7 @@ describe("place signs by Google's type", () => {
     expect(placeSignFromTypes(["lodging"])).toBe("place_hotel");
     expect(placeSignFromTypes(["gym", "health"])).toBe("place_gym");
     expect(placeSignFromTypes(["shopping_mall"])).toBe("place_shopping_centre");
-    expect(placeSignFromTypes(["book_store"])).toBeNull();
+    expect(placeSignFromTypes(["car_repair"])).toBeNull();
     expect(placeSignFromTypes(undefined)).toBeNull();
   });
 
@@ -589,5 +589,78 @@ describe("the mosque sign", () => {
     const svg = getMarkerSvg("place_mosque", "purple");
     expect(svg).toContain(MARKER_COLOURS.purple);
     expect(svg).toContain("A8.6 8.6"); // the crescent
+  });
+});
+
+describe("retail stores get the shopping centre handbag", () => {
+  const bag = "place_shopping_centre";
+  it("a known retail chain or a kind-of-shop word", () => {
+    for (const label of [
+      "Cotton On Hobart, 98 Elizabeth Street, HOBART TAS",
+      "JD Sports, 44/46 Elizabeth Street, HOBART TAS",
+      "Target Hobart, Eastlands Shopping Centre",
+      "Target, Rockingham Centre",
+      "Kmart Rockingham",
+      "Myer Perth",
+      "Officeworks Subiaco",
+      "Harvey Norman Osborne Park",
+      "Apple Store Perth",
+      "Skechers Garden City",
+      "Jewellers on Hay, 100 Hay Street",
+      "Bayside Furniture Warehouse Outlet Store",
+      "Lorna Jane Carillon City",
+      "Gift World Fremantle",
+    ])
+      expect(placeSignOfName(label), label).toBe(bag);
+  });
+
+  it("a retail chain at an airport is still the shop", () => {
+    expect(placeSignOfName("JB Hi-Fi Airport West, Matthews Avenue")).toBe(bag);
+  });
+
+  it("anything with a sign of its own keeps it", () => {
+    expect(placeSignOfName("Dental Boutique Perth, 634 Murray Street")).toBe(
+      "place_dentist"
+    );
+    expect(placeSignOfName("Woolworths Rockingham")).toBe("place_supermarket");
+    expect(placeSignOfName("Bunnings Warehouse Rockingham")).toBe(
+      "place_hardware"
+    );
+    expect(placeSignOfName("Rockingham Shopping Centre, Council Avenue")).toBe(
+      bag
+    );
+    expect(placeSignOfName("Priceline Pharmacy Hobart")).toBe("place_pharmacy");
+    expect(placeSignOfName("Bookstore Cafe Fremantle")).toBe("place_cafe");
+  });
+
+  it("not a shop: an address, a car park, a depot, a street, a shooting range", () => {
+    expect(placeSignOfName("Shop 19 The Park Centre, 789 Albany Highway")).toBe(
+      null
+    );
+    expect(placeSignOfName("Cotton On Car Park, Hobart")).toBeNull();
+    expect(placeSignOfName("Myer Distribution Centre, Truganina")).toBeNull();
+    expect(placeSignOfName("Self Storage Hobart")).toBeNull();
+    expect(placeSignOfName("Store Street, HOBART")).toBeNull();
+    expect(placeSignOfName("Target Practice Range, Pinjarra")).toBeNull();
+    expect(placeSignOfName("Coles Bay, TAS")).toBeNull();
+  });
+
+  it("Google's retail types, but never the generic store type", () => {
+    expect(
+      placeSignFromTypes(["clothing_store", "store"], "Some Boutique Name")
+    ).toBe(bag);
+    expect(placeSignFromTypes(["shoe_store"], "Walk")).toBe(bag);
+    expect(placeSignFromTypes(["department_store"], "Myer")).toBe(bag);
+    expect(placeSignFromTypes(["store", "point_of_interest"], "X")).toBeNull();
+    // a food place that is also a bookshop stays food; a pharmacy stays one.
+    expect(placeSignFromTypes(["cafe", "book_store"], "Cafe Books")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignFromTypes(["pharmacy", "store"], "Chemist")).toBe(
+      "place_pharmacy"
+    );
+    expect(
+      placeSignFromTypes(["clothing_store"], "Cotton On Car Park")
+    ).toBeNull();
   });
 });

@@ -27,6 +27,7 @@ import { attributedRowIds, collapseToVisits } from "../entityAttribution";
 import { getDb } from "./core";
 import { normalizeEntityLabel } from "./attachments";
 import { getTargetById } from "./targets";
+import { dominantState } from "@shared/geocodeQuery";
 import { resolvePlaceLatLng } from "./geocoding";
 import { getAllIntelligenceEntities } from "./intelEntities";
 import {
@@ -314,9 +315,12 @@ export async function getIntelTargetPatternOfLife(
       });
   }
   const geocodable = new Set<string>();
+  const stateHint = dominantState(
+    Array.from(distinctKeys.values()).flatMap(v => v.full)
+  );
   await Promise.all(
     Array.from(distinctKeys.entries()).map(async ([key, { label, full }]) => {
-      const coords = await resolvePlaceLatLng(key, label, full);
+      const coords = await resolvePlaceLatLng(key, label, full, stateHint);
       if (coords) geocodable.add(key);
     })
   );

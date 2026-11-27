@@ -32,6 +32,7 @@ import {
   ProfileDropdownRow,
   IntelEntityDropdown,
 } from "@/components/ProfileDropdown";
+import { geocodeQueryFor, stateOfAddress } from "@shared/geocodeQuery";
 import { SectionHeading } from "@/components/ProfileSectionHeading";
 import {
   JumpBar,
@@ -202,8 +203,10 @@ export function LocationProfileContent({
     // observation's free text; only fall back to the bare label + a blanket
     // "Western Australia" when no fuller form is available.
     const baseQuery = profile?.fullAddress || label;
-    const searchQuery = /\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/.test(baseQuery)
-      ? `${baseQuery}, Australia`
+    // the State it names is kept (any of the eight); one with none is still
+    // asked for as Western Australia until the operation's State is known
+    const searchQuery = stateOfAddress(baseQuery)
+      ? geocodeQueryFor(baseQuery, baseQuery).query
       : `${baseQuery}, Western Australia, Australia`;
     geocoder.geocode({ address: searchQuery }, (results, status) => {
       if (status === "OK" && results && results[0]) {

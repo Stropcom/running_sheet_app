@@ -8,12 +8,20 @@
 // dominant cost of opening the map on any operation with more than a
 // handful of locations. Capped so a years-old install doesn't grow this
 // unboundedly; oldest entries (by insertion order) are evicted first.
+import { geocodeQueryFor, stateOfAddress } from "@shared/geocodeQuery";
+
 export const GEOCODE_CACHE_KEY = "runlog_geocode_cache_v1";
 
 export const GEOCODE_CACHE_MAX_ENTRIES = 5000;
 
-/** The address string the Geocoder is asked for — same rule the pins use. */
+/** The address string the Geocoder is asked for — same rule the pins use. A
+ * label that names its State (any of the eight, shared/geocodeQuery.ts) keeps
+ * it and is never forced into Western Australia. The labels pins carry are
+ * mostly short forms with no State at all; for those the Map page still asks
+ * for Western Australia (it has no way to know the operation's State yet — see
+ * docs/features/intelligence-and-profiles.md, v2.93.3). */
 export function geocodeQueryForLabel(label: string): string {
+  if (stateOfAddress(label)) return geocodeQueryFor(label, label).query;
   return label.includes(",") || /\d/.test(label)
     ? `${label}, Western Australia, Australia`
     : `${label}, Perth, Western Australia, Australia`;

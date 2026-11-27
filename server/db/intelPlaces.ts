@@ -20,6 +20,7 @@ import { attributedRowIds } from "../entityAttribution";
 import { getDb } from "./core";
 import { normalizeEntityLabel } from "./attachments";
 import { getTargetById } from "./targets";
+import { dominantState } from "@shared/geocodeQuery";
 import { resolvePlaceLatLng } from "./geocoding";
 import { getAllIntelligenceEntities } from "./intelEntities";
 import {
@@ -272,12 +273,14 @@ export async function getIntelPlaceCoords(
     for (const occ of entity.occurrences) list.push(occ.fullDescription);
     fullByKey.set(key, list);
   }
+  const stateHint = dominantState(Array.from(fullByKey.values()).flat());
   const results = await Promise.all(
     Array.from(nameByKey.entries()).map(async ([key, name]) => {
       const coords = await resolvePlaceLatLng(
         key,
         name,
-        fullByKey.get(key) ?? []
+        fullByKey.get(key) ?? [],
+        stateHint
       );
       return coords
         ? { placeKey: key, lat: coords.lat, lng: coords.lng }

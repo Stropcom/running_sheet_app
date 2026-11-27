@@ -146,3 +146,69 @@ describe("the State a geocoder query names (Melbourne and Tasmania pins)", () =>
     ).toBe("Bar, HOBART TAS");
   });
 });
+
+describe("every State and Territory is identified (the app is used across Australia)", () => {
+  const cases: [string, string][] = [
+    ["12 Murray Street, PERTH WA", "WA"],
+    ["5 George Street, SYDNEY NSW", "NSW"],
+    ["12 Collins Street, MELBOURNE VIC", "VIC"],
+    ["100 Queen Street, BRISBANE QLD", "QLD"],
+    ["1 King William Street, ADELAIDE SA", "SA"],
+    ["39 Salamanca Place, HOBART TAS", "TAS"],
+    ["Mitchell Street, DARWIN NT", "NT"],
+    ["1 Constitution Avenue, CANBERRA ACT", "ACT"],
+  ];
+  it.each(cases)("%s is %s", (text, state) => {
+    expect(stateOfAddress(text)).toBe(state);
+    expect(geocodeQueryFor(text, "k").state).toBe(state);
+    expect(geocodeQueryFor(text, "k").query).toBe(`${text}, Australia`);
+  });
+
+  const written: [string, string][] = [
+    ["1 Main Road, Launceston, Tasmania", "TAS"],
+    ["1 Main Road, Launceston Tasmania 7250", "TAS"],
+    ["25 Smith Street, Collingwood, Victoria, Australia", "VIC"],
+    ["25 Smith Street, Collingwood Victoria 3066", "VIC"],
+    ["3 Hunter Street, Newcastle, New South Wales", "NSW"],
+    ["3 Hunter Street, Newcastle NSW 2300, Australia", "NSW"],
+    ["9 Ann Street, Brisbane, Queensland", "QLD"],
+    ["2 North Terrace, Adelaide, South Australia 5000", "SA"],
+    ["4 Smith Street, Darwin, Northern Territory", "NT"],
+    ["1 Northbourne Avenue, Canberra, Australian Capital Territory", "ACT"],
+    ["1 Main Road, Hobart Tas", "TAS"],
+    ["5 George Street, Parramatta N.S.W.", "NSW"],
+    ["9 Ann Street, Brisbane Qld 4000", "QLD"],
+    ["12 Collins Street, Melbourne Vic 3000", "VIC"],
+  ];
+  it.each(written)("%s is %s", (text, state) => {
+    expect(stateOfAddress(text)).toBe(state);
+  });
+
+  it("a place named Victoria / Tasmania / Western Australia mid-address is not a State", () => {
+    expect(stateOfAddress("12 Victoria Street, HOBART")).toBeNull();
+    expect(
+      stateOfAddress("Victoria Park Hotel, 605 Albany Highway")
+    ).toBeNull();
+    expect(stateOfAddress("1 Tasmania Street, PERTH")).toBeNull();
+    // ...but a suburb called Victoria Park is still in the State it names
+    expect(stateOfAddress("Hotel, 605 Albany Highway, VICTORIA PARK WA")).toBe(
+      "WA"
+    );
+  });
+
+  it("each State's query names that State, and a bare place takes the hint", () => {
+    for (const [state, name] of [
+      ["NSW", "New South Wales"],
+      ["VIC", "Victoria"],
+      ["QLD", "Queensland"],
+      ["SA", "South Australia"],
+      ["TAS", "Tasmania"],
+      ["NT", "Northern Territory"],
+      ["ACT", "Australian Capital Territory"],
+      ["WA", "Western Australia"],
+    ] as const)
+      expect(geocodeQueryFor("Town Hall", "k", state).query).toBe(
+        `Town Hall, ${name}, Australia`
+      );
+  });
+});

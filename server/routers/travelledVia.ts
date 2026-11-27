@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { dominantState, geocodeQueryFor } from "@shared/geocodeQuery";
 
 import {
   makeRequest,
@@ -38,7 +39,13 @@ export const travelledViaRouter = router({
           const result = await makeRequest<GeocodingResult>(
             "/maps/api/geocode/json",
             {
-              address: address + ", Western Australia, Australia",
+              // the State the address names, else the State the surrounding
+              // rows name, else none is assumed (shared/geocodeQuery.ts)
+              address: geocodeQueryFor(
+                address,
+                address,
+                dominantState([input.departObsText, input.arriveObsText])
+              ).query,
               region: "au",
             }
           );

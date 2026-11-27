@@ -3,6 +3,7 @@ import { runningSheets, sheetRows } from "../../drizzle/schema";
 import { attributedRowIds, collapseToVisits } from "../entityAttribution";
 import { getDb } from "./core";
 import { normalizeEntityLabel } from "./attachments";
+import { dominantState } from "@shared/geocodeQuery";
 import { resolvePlaceLatLng } from "./geocoding";
 import { getAllIntelligenceEntities } from "./intelEntities";
 import {
@@ -274,12 +275,17 @@ export async function getIntelligenceHeatMapLocations(params: {
     else grouped.set(visit.entityKey, { label: visit.label, count: 1 });
   }
 
+  // The State the report's own places name, for one that names none.
+  const stateHint = dominantState(
+    Array.from(fullDescriptionsByKey.values()).flat()
+  );
   const results = await Promise.all(
     Array.from(grouped.entries()).map(async ([key, { label, count }]) => {
       const coords = await resolvePlaceLatLng(
         key,
         label,
-        fullDescriptionsByKey.get(key) ?? []
+        fullDescriptionsByKey.get(key) ?? [],
+        stateHint
       );
       if (!coords) return null;
       return { label, count, lat: coords.lat, lng: coords.lng };

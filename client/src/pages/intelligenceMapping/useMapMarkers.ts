@@ -21,7 +21,7 @@ import {
 import { trackedTargetCode } from "@shared/trackedTarget";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { toast } from "sonner";
-import { persistGeocodeCache } from "./geocodeCache";
+import { geocodeQueryForLabel, persistGeocodeCache } from "./geocodeCache";
 import {
   buildInfoWindowContent,
   normalizeEntityLabelClient,
@@ -346,10 +346,7 @@ export function useMapMarkers(
         continue;
       }
 
-      const query =
-        loc.label.includes(",") || /\d/.test(loc.label)
-          ? `${loc.label}, Western Australia, Australia`
-          : `${loc.label}, Perth, Western Australia, Australia`;
+      const query = geocodeQueryForLabel(loc.label);
 
       const cached = geocodeCacheRef.current.get(query);
       if (cached) {

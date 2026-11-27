@@ -12,15 +12,131 @@
 const SUBURB_STATE_RE =
   /,\s*[A-Za-z][\w\s]*?\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/;
 
-/** The first description that carries a "<…>, SUBURB STATE" tail, trimmed, or
- * null when none does (the caller then geocodes the bare label as before). */
+// The app writes a suburb in capitals ("…, 39 Salamanca Place, HOBART"), so a
+// description ending in one is a street address even when no state was written.
+const CAPS_SUBURB_TAIL_RE = /,\s*[A-Z][A-Z'’-]+(?:\s+[A-Z][A-Z'’-]+)*$/;
+
+/** The first description that carries a "<…>, SUBURB STATE" tail, trimmed;
+ * failing that, the first with a "<…>, SUBURB" tail (a suburb in capitals, no
+ * state written — the state then comes from `geocodeQueryFor`'s hint). Null
+ * when none does (the caller then geocodes the bare label as before). */
 export function fullAddressForGeocode(
   fullDescriptions: readonly (string | null | undefined)[]
 ): string | null {
   for (const text of fullDescriptions) {
     if (text && SUBURB_STATE_RE.test(text)) return text.trim();
   }
+  for (const text of fullDescriptions) {
+    if (text && CAPS_SUBURB_TAIL_RE.test(text.trim())) return text.trim();
+  }
   return null;
+}
+
+// ─── Which State a geocoder query names ─────────────────────────────────────
+// The geocoder used to add ", Western Australia, Australia" to EVERY address,
+// so "39 Salamanca Place, HOBART TAS" was asked for as "… TAS, Western
+// Australia" and a Melbourne address likewise — pins for operations outside WA
+// landed in the wrong place. Now an address that names its State keeps it; one
+// that names none takes the State the rest of the sheet is in (`hint`), and
+// only then Western Australia (the unit's own State).
+
+export type AuState =
+  | "WA"
+  | "NSW"
+  | "VIC"
+  | "QLD"
+  | "SA"
+  | "TAS"
+  | "NT"
+  | "ACT";
+
+const STATE_NAMES: Record<AuState, string> = {
+  WA: "Western Australia",
+  NSW: "New South Wales",
+  VIC: "Victoria",
+  QLD: "Queensland",
+  SA: "South Australia",
+  TAS: "Tasmania",
+  NT: "Northern Territory",
+  ACT: "Australian Capital Territory",
+};
+
+export const stateName = (state: AuState): string => STATE_NAMES[state];
+
+const STATE_CODE_RE = /\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b(?:\s+\d{4})?/g;
+const STATE_FULL_RE =
+  /,\s*(Western Australia|New South Wales|Victoria|Queensland|South Australia|Tasmania|Northern Territory|Australian Capital Territory)\b/gi;
+
+/** The State an address names: the last state code written in capitals after
+ * a comma-or-space ("…, HOBART TAS", "Melbourne VIC 3000"), or a full State
+ * name after a comma ("…, Tasmania"). Null when it names none. The last one
+ * wins — a vehicle's "bearing WA registration" is never part of a place, and a
+ * street called "Victoria Street" is not a State (a full name must follow a
+ * comma). */
+export function stateOfAddress(
+  text: string | null | undefined
+): AuState | null {
+  if (!text) return null;
+  let found: AuState | null = null;
+  let at = -1;
+  for (const m of Array.from(text.matchAll(STATE_CODE_RE))) {
+    found = m[1] as AuState;
+    at = m.index ?? 0;
+  }
+  for (const m of Array.from(text.matchAll(STATE_FULL_RE))) {
+    if ((m.index ?? 0) < at) continue;
+    const full = m[1].toLowerCase();
+    const code = (Object.keys(STATE_NAMES) as AuState[]).find(
+      k => STATE_NAMES[k].toLowerCase() === full
+    );
+    if (code) {
+      found = code;
+      at = m.index ?? 0;
+    }
+  }
+  return found;
+}
+
+/** The State most of a sheet's written places are in (ties: the first met), or
+ * null when none names one — the hint for the places that name no State. */
+export function dominantState(
+  texts: readonly (string | null | undefined)[]
+): AuState | null {
+  const counts = new Map<AuState, number>();
+  for (const t of texts) {
+    const s = stateOfAddress(t);
+    if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+  let best: AuState | null = null;
+  for (const [s, n] of Array.from(counts))
+    if (!best || n > (counts.get(best) ?? 0)) best = s;
+  return best;
+}
+
+/** What to ask the geocoder, and the cache key to keep the answer under.
+ * The key is the plain one when the State is WA (answers cached before this
+ * rule were asked as WA, so they stay valid) and carries the State otherwise —
+ * a position cached for the old "…, Western Australia" query is never reused
+ * for an address in another State. */
+export function geocodeQueryFor(
+  text: string,
+  key: string,
+  hint?: AuState | null
+): { query: string; key: string; state: AuState } {
+  const named = stateOfAddress(text);
+  const state: AuState = named ?? hint ?? "WA";
+  const bare = text
+    .replace(/,?\s*Australia\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const query = named
+    ? `${bare}, Australia`
+    : `${bare}, ${STATE_NAMES[state]}, Australia`;
+  return {
+    query,
+    key: state === "WA" ? key : `${key}|${state}`.slice(0, 500),
+    state,
+  };
 }
 
 /** Groups the written forms of each place by the place's label, so a caller

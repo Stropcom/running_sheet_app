@@ -1,8 +1,11 @@
 import { eq } from "drizzle-orm";
 import { makeRequest, type GeocodingResult } from "../_core/map";
 import {
+  dominantState,
   fullAddressForGeocode,
   fullDescriptionsByLabel,
+  geocodeQueryFor,
+  type AuState,
 } from "@shared/geocodeQuery";
 import { intelligenceGeocodeCache } from "../../drizzle/schema";
 import { getDb } from "./core";
@@ -15,10 +18,17 @@ import { getRowsBySheetId } from "./operations";
  * re-geocode the same addresses every time. */
 export async function resolveLatLng(
   addressKey: string,
-  rawAddress: string
+  rawAddress: string,
+  stateHint?: AuState | null
 ): Promise<{ lat: number; lng: number } | null> {
   const db = await getDb();
   if (!db) return null;
+  // The State the address names (else the sheet's, else WA): see
+  // shared/geocodeQuery.ts. A position is cached under a key that carries a
+  // non-WA State, so one cached for the old always-"Western Australia" query is
+  // never reused for an address in another State.
+  const ask = geocodeQueryFor(rawAddress, addressKey, stateHint);
+  addressKey = ask.key;
 
   const cached = await db
     .select({
@@ -33,7 +43,7 @@ export async function resolveLatLng(
   try {
     const result = await makeRequest<GeocodingResult>(
       "/maps/api/geocode/json",
-      { address: rawAddress + ", Western Australia, Australia", region: "au" }
+      { address: ask.query, region: "au" }
     );
     if (result.status !== "OK" || !result.results.length) return null;
     const loc = result.results[0].geometry.location;
@@ -57,11 +67,16 @@ export async function resolveLatLng(
 export async function resolvePlaceLatLng(
   addressKey: string,
   label: string,
-  fullDescriptions: readonly string[]
+  fullDescriptions: readonly string[],
+  stateHint?: AuState | null
 ): Promise<{ lat: number; lng: number } | null> {
   const full = fullAddressForGeocode(fullDescriptions);
-  if (!full) return resolveLatLng(addressKey, label);
-  return resolveLatLng(normalizeEntityLabel(full).slice(0, 500), full);
+  if (!full) return resolveLatLng(addressKey, label, stateHint);
+  return resolveLatLng(
+    normalizeEntityLabel(full).slice(0, 500),
+    full,
+    stateHint
+  );
 }
 
 /** Batch-geocode a list of raw address strings via the same cache-first
@@ -113,6 +128,13 @@ export async function geocodeSummaryAddresses(
     r.observation ? extractEntitiesFromText(r.observation) : []
   );
   const fullByLabel = fullDescriptionsByLabel(entities, normalizeEntityLabel);
+  // The State this sheet is in, from the places its rows write with one — so
+  // a place written without a State ("…, HOBART") is looked for in Tasmania.
+  const sheetState = dominantState(
+    entities
+      .filter(e => e.type === "address" || e.type === "business")
+      .map(e => e.fullDescription)
+  );
 
   const seen = new Set<string>();
   const unique: string[] = [];
@@ -130,7 +152,8 @@ export async function geocodeSummaryAddresses(
       const coords = await resolvePlaceLatLng(
         key,
         address,
-        fullByLabel.get(key) ?? []
+        fullByLabel.get(key) ?? [],
+        sheetState
       );
       if (!coords) return null;
       return { address, lat: coords.lat, lng: coords.lng };
